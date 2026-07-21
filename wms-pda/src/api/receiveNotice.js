@@ -1,0 +1,62 @@
+/**
+ * PDA 收料通知单 API
+ */
+import request, { withDevice } from '../utils/http.js'
+
+export function listReceiveNotices(params = {}) {
+  return request({ url: '/mobile/receive-notice', data: params })
+}
+
+export function resolveReceiveBarcode(barcodeContent) {
+  return request({
+    url: '/mobile/receive-notice/resolve-barcode',
+    method: 'POST',
+    data: { barcodeContent },
+  })
+}
+
+export function getReceiveNoticeDetail(billNo) {
+  return request({ url: `/mobile/receive-notice/${billNo}` })
+}
+
+export function scanReceiveLine(billNo, barcodeContent) {
+  return request({
+    url: `/mobile/receive-notice/${billNo}/scan`,
+    method: 'POST',
+    data: withDevice({ barcodeContent }),
+    silent: true,
+  })
+}
+
+export function toggleReceiveLine(billNo, lineNo, checked) {
+  return request({
+    url: `/mobile/receive-notice/${billNo}/lines/${lineNo}/check?checked=${checked ? 'true' : 'false'}`,
+    method: 'PUT',
+  })
+}
+
+export function updateReceiveLineQty(billNo, lineNo, qty) {
+  return request({
+    url: `/mobile/receive-notice/${billNo}/lines/${lineNo}/qty`,
+    method: 'PUT',
+    data: { qty },
+  })
+}
+
+export function submitReceiveInbound(billNo, data = {}) {
+  return request({
+    url: `/mobile/receive-notice/${billNo}/submit`,
+    method: 'POST',
+    data: withDevice(data),
+  })
+}
+
+export default {
+  listReceiveNotices,
+  resolveReceiveBarcode,
+  getReceiveNoticeDetail,
+  scanReceiveLine,
+  toggleReceiveLine,
+  updateReceiveLineQty,
+  submitReceiveInbound,
+}

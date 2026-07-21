@@ -1,0 +1,42 @@
+:root {
+  /* Sidebar */
+  --wms-sidebar-bg: #2a2218;
+  --wms-sidebar-width: 220px;
+  --wms-sidebar-active-bg: #3d3428;
+  --wms-sidebar-active-text: #d4a574;
+  --wms-sidebar-text: rgba(255, 255, 255, 0.72);
+  --wms-sidebar-text-hover: rgba(255, 255, 255, 0.92);
+  --wms-sidebar-border: rgba(255, 255, 255, 0.06);
+
+  /* Layout */
+  --wms-header-height: 56px;
+  --wms-page-bg: #f5f7fa;
+  --wms-card-bg: #ffffff;
+  --wms-card-radius: 8px;
+  --wms-card-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  --wms-card-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.08);
+
+  /* Typography */
+  --wms-text-primary: #303133;
+  --wms-text-regular: #606266;
+  --wms-text-secondary: #909399;
+  --wms-text-placeholder: #c0c4cc;
+
+  /* Stat icon tints */
+  --wms-stat-pink-bg: #fce7f3;
+  --wms-stat-pink-icon: #ec4899;
+  --wms-stat-orange-bg: #ffedd5;
+  --wms-stat-orange-icon: #f97316;
+  --wms-stat-blue-bg: #dbeafe;
+  --wms-stat-blue-icon: #3b82f6;
+  --wms-stat-yellow-bg: #fef9c3;
+  --wms-stat-yellow-icon: #eab308;
+
+  /* Motion */
+  --wms-transition-fast: 0.2s ease;
+  --wms-transition-normal: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Form controls */
+  --wms-select-min-width: 172px;
+  --wms-select-popper-min-width: 160px;
+}

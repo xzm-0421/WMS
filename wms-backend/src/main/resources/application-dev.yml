@@ -1,0 +1,133 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+  config:
+    import: optional:classpath:application-dev-local.yml
+  datasource:
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    url: jdbc:sqlserver://${SQLSERVER_HOST:localhost}:${SQLSERVER_PORT:1433};databaseName=${SQLSERVER_DB:wms};encrypt=true;trustServerCertificate=true
+    username: ${SQLSERVER_USER:wms_app}
+    password: ${SQLSERVER_PASSWORD:Wms@123456}
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis123
+      database: 0
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/sqlserver
+    baseline-on-migrate: true
+
+logging:
+  level:
+    com.wms: debug
+    org.springframework.security: info
+
+kingdee:
+  cloud:
+    enabled: true
+    # 金蝶云星空企业版 WebAPI 站点
+    base-url: http://192.168.0.134/k3cloud
+    acct-id: 6a33f3c51889fd
+    username: mes
+    password: "jd123321."
+    stock-in-form-id: STK_InStock
+    stock-in-auto-audit: true
+    material-form-id: BD_MATERIAL
+    batch-form-id: BD_BatchMainFile
+    serial-form-id: BD_SerialMainFile
+    receive-bill-form-id: PUR_ReceiveBill
+    receive-bill-list-days: 0
+    receive-bill-list-query-limit: 2000
+    # 物料盘点作业（仅拉取 FDocumentStatus=C 已审核）
+    stock-count-form-id: STK_StockCountInput
+    stock-count-list-days: 0
+    stock-count-query-limit: 2000
+    print-api-key: ""
+#    bom-query-limit: 2000
+    max-retry: 3
+    stock-in-bill-type-number: RKD01_SYS
+    stock-in-business-type: CG
+    stock-in-org-number: "100"
+    stock-in-stock-dept-number: BM000026
+    stock-in-stocker-number: "11567"
+    stock-in-purchase-dept-number: BM000003
+    stock-in-purchaser-number: "12638"
+    stock-in-stock-status-number: KCZT01_SYS
+    stock-in-settle-curr-number: PRE001
+    stock-in-exchange-type-number: HLTX01_SYS
+    stock-in-default-unit-number: Pcs
+    stock-in-default-warehouse-number: CK004
+    stock-in-default-supplier-number: G1803
+    stock-in-receive-link-s-table-id: 73
+    warehouse-form-id: BD_STOCK
+    master-data-query-limit: 500
+    master-data-approved-only: true
+    # 生产领料单（PDA 领料提交自动同步）
+    pick-mtrl-form-id: PRD_PickMtrl
+    pick-mtrl-auto-audit: true
+    pick-mtrl-bill-type-number: SCLLD01_SYS
+    pick-mtrl-work-shop-number: ""
+    pick-mtrl-send-stock-loc: false
+    pick-mtrl-stock-flag: "0"
+    pick-mtrl-pp-bom-link-rule-id: PRD_PPBOM2PICKMTRL_NORMAL
+    pick-mtrl-pp-bom-link-s-table-name: T_PRD_PPBOMENTRY
+    pick-mtrl-pp-bom-link-flow-id: "81119477-4778-4d0b-94b9-1c43a1c1f768"
+    pick-mtrl-pp-bom-link-flow-line-id: 5
+    pp-bom-line-count-field-keys: "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    pp-bom-detail-field-keys: "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FMOBillNO,FMaterialId.FNumber,FMaterialId.FName,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FMustQty,FEntity_FPickedQty,FEntity_FNoPickedQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,FEntity_FParentMaterialId.FNumber"
+    pick-mtrl-line-count-field-keys: "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    pick-mtrl-detail-field-keys: "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FActualQty,FEntity_FAppQty,FEntity_FBaseActualQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,FEntity_FParentMaterialId.FNumber,FEntity_FPPBomEntryId,FEntity_FPPBomBillNo"
+    # 委外领料单（PDA 扫委外用料清单后自动同步）
+    sub-pick-mtrl-form-id: SUB_PickMtrl
+    sub-pick-mtrl-auto-audit: true
+    sub-pick-mtrl-bill-type-number: WWLLD01_SYS
+    sub-pick-mtrl-default-supplier-number: ""
+    sub-pick-mtrl-send-stock-loc: false
+    sub-pick-mtrl-stock-flag: "0"
+    sub-pick-mtrl-pp-bom-link-rule-id: SUB_PPBOM2PICKMTRL_NORMAL
+    sub-pick-mtrl-pp-bom-link-s-table-name: T_SUB_PPBOMENTRY
+    sub-pick-mtrl-pp-bom-link-flow-id: "81119477-4778-4d0b-94b9-1c43a1c1f768"
+    sub-pick-mtrl-pp-bom-link-flow-line-id: 5
+    sub-pp-bom-line-count-field-keys: "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    sub-pp-bom-detail-field-keys: "FBillNo,FID,FDate,FSupplierId.FNumber,FSupplierId.FName,FSubReqBillNo,FMaterialId.FNumber,FMaterialId.FName,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FMustQty,FEntity_FPickedQty,FEntity_FNoPickedQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FSubReqBillNo,FEntity_FSubReqId,FEntity_FSubReqEntryId,FEntity_FSubReqEntrySeq,FEntity_FParentMaterialId.FNumber"
+    # 委外退料单（PDA 退料提交自动同步，源单为委外领料单）
+    sub-return-mtrl-form-id: SUB_RETURNMTRL
+    sub-return-mtrl-auto-audit: true
+    sub-return-mtrl-bill-type-number: WWTLD01_SYS
+    sub-return-mtrl-default-supplier-number: ""
+    sub-return-mtrl-return-type: "1"
+    sub-return-mtrl-return-type2: "1"
+    sub-return-mtrl-return-reason-number: ""
+    sub-return-mtrl-send-stock-loc: false
+    sub-return-mtrl-stock-flag: "0"
+    sub-return-mtrl-pick-link-rule-id: SUB_PickMtrl-SUB_RETURNMTRL
+    sub-return-mtrl-pick-link-s-table-name: T_SUB_PICKMTRLDATA
+    sub-return-mtrl-pick-link-flow-id: "81119477-4778-4d0b-94b9-1c43a1c1f768"
+    sub-return-mtrl-pick-link-flow-line-id: 5
+    sub-pick-mtrl-line-count-field-keys: "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    sub-pick-mtrl-detail-field-keys: "FBillNo,FID,FDate,FSupplierId.FNumber,FSupplierId.FName,FEntity_FSubReqBillNo,FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FActualQty,FEntity_FAppQty,FEntity_FBaseActualQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FSubReqBillNo,FEntity_FSubReqId,FEntity_FSubReqEntryId,FEntity_FSubReqEntrySeq,FEntity_FParentMaterialId.FNumber,FEntity_FPPbomEntryId,FEntity_FPPbomBillNo"
+    # 生产退料单（PDA 退料提交自动同步，源单为生产领料单）
+    return-mtrl-form-id: PRD_ReturnMtrl
+    return-mtrl-auto-audit: true
+    return-mtrl-bill-type-number: SCTLD01_SYS
+    return-mtrl-work-shop-number: ""
+    return-mtrl-return-type: "1"
+    return-mtrl-return-reason-number: ""
+    return-mtrl-send-stock-loc: false
+    return-mtrl-stock-flag: "0"
+    return-mtrl-pick-link-rule-id: PRD_PickMtrl-PRD_ReturnMtrl
+    return-mtrl-pick-link-s-table-name: T_PRD_PICKMTRLDATA
+    return-mtrl-pick-link-flow-id: "81119477-4778-4d0b-94b9-1c43a1c1f768"
+    return-mtrl-pick-link-flow-line-id: 5
+#    PUR_ReceiveBill
+
+wms:
+  pda:
+    list-fetch-limit: 200
+    short-cache-ttl-seconds: 60
+    async-erp-sync: true
+    scan-skip-kingdee-refresh: true
+    detail-local-prefer-seconds: 120

@@ -1,0 +1,68 @@
+/* ===== 右侧面板（Tab 结构） ===== */
+.right-panel {
+  width: var(--props-width);
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.rp-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.rp-tab {
+  flex: 1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+.rp-tab:hover {
+  background: var(--color-border-light);
+  color: var(--color-text);
+}
+.rp-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 600;
+}
+.rp-tab.preview {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.rp-tab-icon {
+  font-size: 14px;
+}
+
+.rp-tab-badge {
+  font-size: 10px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  padding: 0 4px;
+  border-radius: 6px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.rp-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}

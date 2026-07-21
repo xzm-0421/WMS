@@ -1,0 +1,40 @@
+---
+description: 阿里巴巴编码规范（Java/前端命名与工程约定），后续新增与修改代码必须遵守
+alwaysApply: true
+---
+
+# 阿里编码规范（WMS）
+
+后续**新增代码**与**改动到的代码**按《阿里巴巴 Java 开发手册》及同系列前端命名约定规范化；不主动大范围重构未触及的历史代码。
+
+## Java（后端 `wms-backend`）
+
+- **命名**：类 UpperCamelCase；方法/变量 lowerCamelCase；常量全大写下划线；包名全小写；禁止拼音与无意义缩写（`id/erp/wms/pda/qty` 等业务通用缩写除外）
+- **常量**：魔法值提取为常量或枚举；布尔不用 `is` 前缀作基本类型字段名（DB/JSON 映射字段按现有实体约定）
+- **空指针**：集合返回空集合不返回 null；`Optional` 仅用于返回值场景；字符串判空用 `StringUtils.hasText`（与现有 Spring 风格一致）
+- **集合**：`foreach` 中禁止 `remove/add`；需要删除用 Iterator 或 `removeIf`
+- **并发**：线程池禁止 `Executors` 快捷创建，用 `ThreadPoolExecutor`；共享可变状态需同步或不可变
+- **异常**：不吞异常；捕获后要么处理要么带上下文再抛；禁止直接 `e.printStackTrace()`，用日志
+- **事务**：`@Transactional` 放在 Service 实现类 public 方法；注意自调用失效
+- **注释**：类/公共方法说明用途与业务约束；TODO 必须带负责人/说明；禁止大段注释掉的废代码入库
+- **日志**：占位符 `{}`，禁止字符串拼接；异常日志带完整堆栈
+
+```java
+// ❌
+log.error("同步失败: " + e.getMessage());
+// ✅
+log.error("同步失败 batchNo={}", batchNo, e);
+```
+
+## 前端（`wms-pda` / `wms-web`）
+
+- **命名**：组件/文件与业务域一致；变量方法 camelCase；常量 UPPER_SNAKE 或模块内统一风格；布尔语义清晰（`is/has/can`）
+- **函数**：单一职责；避免超长函数；异步错误要提示或上抛，禁止空 `catch`
+- **Vue**：`script setup` 与现有页面一致；业务逻辑优先 composable，页面只做编排
+
+## 通用
+
+- **可读性优先于炫技**：早返回减少嵌套；卫语句处理非法入参
+- **改动范围**：只改任务相关代码；新逻辑对齐就近模块的包结构与分层（Controller → Service → Mapper/集成）
+- **接口与 DTO**：入参校验前置；对外错误信息可理解，内部细节打日志
+- **与现有冲突时**：同文件内先与周边风格一致，再向本规范靠拢；新文件严格按本规范

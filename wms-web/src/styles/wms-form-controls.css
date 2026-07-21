@@ -1,0 +1,19 @@
+/* 列表页 inline 筛选：保证状态/类型等选项文字不被截断 */
+.wms-main .el-form--inline .el-form-item .wms-select:not(.wms-select--block) {
+  min-width: var(--wms-select-min-width);
+}
+
+/* 对话框、全宽筛选栏内下拉框占满表单项 */
+.wms-main .el-dialog .wms-select,
+.wms-main .wms-select--block {
+  width: 100%;
+}
+
+/* 下拉面板最小宽度，避免选项文字被截断 */
+.wms-select-popper.el-select-dropdown {
+  min-width: var(--wms-select-popper-min-width) !important;
+}
+
+.wms-select-popper .el-select-dropdown__item {
+  white-space: nowrap;
+}

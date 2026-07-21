@@ -1,0 +1,11 @@
+[
+  {"sourceBillNo":"SLD20260706001","materialCode":"MAT-10001","materialName":"电阻 10K","specification":"10KΩ ±1%","batchNo":"B20260701","unitCode":"PCS","quantity":1000,"productionDate":"2026-07-06"},
+  {"sourceBillNo":"SLD20260706001","materialCode":"MAT-10002","materialName":"电容 100uF","specification":"100uF/25V","batchNo":"B20260702","unitCode":"PCS","quantity":500,"productionDate":"2026-07-06"},
+  {"sourceBillNo":"SLD20260706001","materialCode":"MAT-10003","materialName":"PCB主板","specification":"V2.1-A","batchNo":"B20260703","unitCode":"PCS","quantity":200,"productionDate":"2026-07-06"},
+  {"sourceBillNo":"SLD20260705002","materialCode":"MAT-20001","materialName":"连接器","specification":"Type-C","batchNo":"B20260628","unitCode":"PCS","quantity":300,"productionDate":"2026-07-05"},
+  {"sourceBillNo":"SLD20260705002","materialCode":"MAT-20002","materialName":"屏蔽罩","specification":"SUS304","batchNo":"B20260629","unitCode":"PCS","quantity":300,"productionDate":"2026-07-05"},
+  {"sourceBillNo":"SLD20260704003","materialCode":"MAT-30001","materialName":"螺丝 M3","specification":"M3*8","batchNo":"B20260620","unitCode":"PCS","quantity":5000,"productionDate":"2026-07-04"},
+  {"sourceBillNo":"SLD20260704003","materialCode":"MAT-30002","materialName":"垫片","specification":"φ3","batchNo":"B20260621","unitCode":"PCS","quantity":5000,"productionDate":"2026-07-04"},
+  {"sourceBillNo":"SLD20260704003","materialCode":"MAT-30003","materialName":"包装盒","specification":"200*150","batchNo":"B20260622","unitCode":"PCS","quantity":800,"productionDate":"2026-07-04"},
+  {"sourceBillNo":"SLD20260704003","materialCode":"MAT-30004","materialName":"标签纸","specification":"100*60","batchNo":"B20260623","unitCode":"PCS","quantity":800,"productionDate":"2026-07-04"}
+]

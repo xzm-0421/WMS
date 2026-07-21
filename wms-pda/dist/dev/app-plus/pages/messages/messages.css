@@ -1,0 +1,21 @@
+
+.page[data-v-f5640984] { padding: 0.75rem;
+}
+.header[data-v-f5640984] { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;
+}
+.card[data-v-f5640984] { background: #fff; padding: 0.75rem; border-radius: 0.375rem; margin-bottom: 0.5rem;
+}
+.row[data-v-f5640984] { display: flex; justify-content: space-between; margin-bottom: 0.25rem;
+}
+.type[data-v-f5640984] { font-size: 0.75rem; color: #64748b;
+}
+.dot[data-v-f5640984] { color: #ef4444; font-size: 0.75rem;
+}
+.title[data-v-f5640984] { font-weight: bold; display: block;
+}
+.content[data-v-f5640984] { color: #475569; font-size: 0.8125rem; display: block; margin: 0.25rem 0;
+}
+.time[data-v-f5640984] { font-size: 0.6875rem; color: #94a3b8;
+}
+.empty[data-v-f5640984] { text-align: center; color: #94a3b8; padding: 1.25rem;
+}

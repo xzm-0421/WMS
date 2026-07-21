@@ -1,0 +1,11 @@
+{
+  "sqlHost": "localhost",
+  "sqlPort": 1433,
+  "saUser": "sa",
+  "saPassword": "sa@2019.",
+  "database": "wms",
+  "appUser": "wms_app",
+  "appPassword": "Wms@123456",
+  "useDocker": false,
+  "collation": "Chinese_PRC_CI_AS"
+}

@@ -1,0 +1,91 @@
+/* ===== 顶部工具栏 ===== */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--toolbar-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-center {
+  display: flex;
+  align-items: center;
+}
+
+.tb-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border-light);
+  margin: 0 6px;
+}
+
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+.tb-btn:hover {
+  background: var(--color-border-light);
+  color: var(--color-text);
+}
+.tb-btn:active {
+  background: #d2d5d9;
+}
+.tb-btn.active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.tb-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.tb-btn-icon {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+.tb-btn span {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tb-zoom-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.tb-info {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}

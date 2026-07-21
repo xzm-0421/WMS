@@ -1,0 +1,207 @@
+/* ===== 画布区域 ===== */
+.canvas-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #d7d9dd;
+  position: relative;
+}
+
+.canvas-scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+}
+
+.canvas-drop-zone {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: fit-content;
+  min-height: fit-content;
+  transition: background-color 0.2s;
+  border-radius: 2px;
+}
+
+.canvas-drop-zone.drop-active {
+  background: rgba(26, 115, 232, 0.06);
+  outline: 2px dashed var(--color-primary);
+  outline-offset: 4px;
+}
+
+/* A4 页面 / 标签页 */
+.canvas-page {
+  background: white;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* 60×40mm 标签页（无边框，内容铺满纸张） */
+.canvas-page.label-oval {
+  box-shadow: var(--shadow-md);
+}
+
+/* 页边距辅助线 */
+.page-margin-guide {
+  position: absolute;
+  border: 1px dashed #ff9800;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ===== 画布上单个元素 ===== */
+.canvas-element {
+  position: absolute;
+  cursor: move;
+  box-sizing: border-box;
+  transition: box-shadow 0.15s;
+  overflow: hidden;
+  user-select: none;
+  display: flex;
+  align-items: center;
+}
+
+/* 非表格元素保持内容可溢出（线条、文字类等） */
+.canvas-element[data-type='line'],
+.canvas-element[data-type='rectangle'],
+.canvas-element[data-type='text'],
+.canvas-element[data-type='data-field'],
+.canvas-element[data-type='page-number'] {
+  overflow: visible;
+}
+
+.canvas-element:hover {
+  outline: 1px solid var(--color-primary);
+}
+
+.canvas-element.selected {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px white, 0 0 0 3px var(--color-primary);
+  z-index: 9999 !important;
+}
+
+.canvas-element.locked {
+  cursor: not-allowed;
+}
+.canvas-element.locked:hover {
+  outline: 1px solid var(--color-danger);
+}
+
+/* ===== 8 控制柄 ===== */
+.resize-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: white;
+  border: 2px solid var(--color-primary);
+  box-sizing: border-box;
+  z-index: 20;
+}
+.resize-handle:hover {
+  background: var(--color-primary);
+}
+
+/* 四角 */
+.resize-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.resize-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.resize-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.resize-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+
+/* 四边 */
+.resize-n { top: -5px; left: calc(50% - 5px); cursor: ns-resize; width: 10px; }
+.resize-s { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; width: 10px; }
+.resize-e { right: -5px; top: calc(50% - 5px); cursor: ew-resize; height: 10px; }
+.resize-w { left: -5px; top: calc(50% - 5px); cursor: ew-resize; height: 10px; }
+
+/* 元素类型特定样式 */
+.canvas-element[data-type='text'] { cursor: move; }
+.canvas-element[data-type='data-field'] { cursor: move; background: rgba(26, 115, 232, 0.04); }
+.canvas-element[data-type='line'] { cursor: move; }
+.canvas-element[data-type='rectangle'] { cursor: move; }
+.canvas-element[data-type='table'] { cursor: move; }
+.canvas-element[data-type='image'] { cursor: move; }
+.canvas-element[data-type='barcode'] { cursor: move; }
+.canvas-element[data-type='page-number'] { cursor: move; background: rgba(26, 115, 232, 0.04); }
+
+/* 表格元素内部样式 */
+.table-element {
+  width: 100%;
+  height: 100%;
+  border-collapse: collapse;
+  font-size: inherit;
+  line-height: 1;
+  table-layout: fixed;
+}
+
+.table-element th,
+.table-element td {
+  border: 1px solid #000;
+  padding: 2px 4px;
+  font-weight: normal;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.table-element thead th {
+  background: #f0f0f0;
+  font-weight: 600;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.table-element tbody td {
+  font-size: 10px;
+  min-height: 16px;
+}
+
+/* 条码渲染器 */
+.barcode-renderer svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* 条码占位（仅用于 fallback） */
+.barcode-preview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  border: 1px dashed #999;
+  text-align: center;
+}
+
+/* 图片占位 */
+.image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  border: 1px dashed #ccc;
+  font-size: 10px;
+  color: #999;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.image-placeholder img {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}

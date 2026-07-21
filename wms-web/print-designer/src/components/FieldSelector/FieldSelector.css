@@ -1,0 +1,222 @@
+/* ===== 字段选择器 ===== */
+.field-selector {
+  padding: 2px 0;
+}
+
+.fs-section {
+  padding: 4px 2px;
+}
+
+.fs-section-label {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.fs-desc {
+  font-size: 10px;
+  color: #9aa0a6;
+  margin-top: 2px;
+}
+
+/* 当前绑定 */
+.fs-current-binding {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin: 2px 2px 6px;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(26, 115, 232, 0.2);
+}
+
+.fs-bound-label {
+  font-size: 10px;
+  color: var(--color-primary);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.fs-bound-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.fs-bound-table {
+  color: var(--color-text-secondary);
+}
+
+.fs-bound-sep {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.fs-bound-field {
+  color: var(--color-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fs-clear-btn {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: rgba(26, 115, 232, 0.1);
+  border-radius: 50%;
+  font-size: 10px;
+  color: var(--color-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.fs-clear-btn:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* 关联切换 */
+.fs-relation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+.fs-relation-toggle:hover {
+  color: var(--color-primary);
+}
+
+.fs-relation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.fs-relation-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background: white;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.fs-relation-item:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.fs-relation-item.active {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.fs-relation-type {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: var(--color-border-light);
+}
+
+/* 字段列表 */
+.fs-fields {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  margin: 4px 2px;
+}
+
+.fs-field-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  transition: background var(--transition-fast);
+}
+.fs-field-item:last-child {
+  border-bottom: none;
+}
+.fs-field-item:hover {
+  background: var(--color-primary-light);
+}
+.fs-field-item.active {
+  background: var(--color-primary-light);
+  border-left: 3px solid var(--color-primary);
+  padding-left: 5px;
+}
+
+.fs-field-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fs-icon-string {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+.fs-icon-number {
+  background: #e6f4ea;
+  color: #34a853;
+}
+.fs-icon-date {
+  background: #fef7e0;
+  color: #f9ab00;
+}
+.fs-icon-boolean {
+  background: #fce8e6;
+  color: #ea4335;
+}
+
+.fs-field-name {
+  flex: 1;
+  color: var(--color-text);
+}
+
+.fs-field-code {
+  font-size: 10px;
+  color: #9aa0a6;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+.fs-no-results {
+  padding: 16px;
+  text-align: center;
+  color: #9aa0a6;
+  font-size: 12px;
+}

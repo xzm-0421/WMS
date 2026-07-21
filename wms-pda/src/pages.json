@@ -1,0 +1,151 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": { "navigationBarTitleText": "登录", "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "工作台",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/inbound/notice-hub",
+      "style": { "navigationBarTitleText": "入库业务" }
+    },
+    {
+      "path": "pages/inbound/receive-list",
+      "style": { "navigationBarTitleText": "收料通知单" }
+    },
+    {
+      "path": "pages/inbound/receive-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/outbound/notice-hub",
+      "style": { "navigationBarTitleText": "出库业务" }
+    },
+    {
+      "path": "pages/notice/list",
+      "style": { "navigationBarTitleText": "通知单列表" }
+    },
+    {
+      "path": "pages/notice/scan",
+      "style": { "navigationBarTitleText": "通知单扫码" }
+    },
+    {
+      "path": "pages/inbound/direct",
+      "style": { "navigationBarTitleText": "快速入库" }
+    },
+    {
+      "path": "pages/outbound/outbound",
+      "style": { "navigationBarTitleText": "扫码出库" }
+    },
+    {
+      "path": "pages/inventory/inventory",
+      "style": { "navigationBarTitleText": "库存查询" }
+    },
+    {
+      "path": "pages/transfer/transfer",
+      "style": { "navigationBarTitleText": "移库作业" }
+    },
+    {
+      "path": "pages/stockcheck/stockcheck-list",
+      "style": {
+        "navigationBarTitleText": "盘点作业",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/stockcheck/stockcheck-scan",
+      "style": { "navigationBarTitleText": "盘点作业" }
+    },
+    {
+      "path": "pages/stockcheck/stockcheck",
+      "style": { "navigationBarTitleText": "本地盘点任务" }
+    },
+    {
+      "path": "pages/tasklist/tasklist",
+      "style": {
+        "navigationBarTitleText": "任务列表",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/panel/panel",
+      "style": { "navigationBarTitleText": "板码校验" }
+    },
+    {
+      "path": "pages/qc/qc",
+      "style": { "navigationBarTitleText": "质检作业" }
+    },
+    {
+      "path": "pages/trace/trace",
+      "style": { "navigationBarTitleText": "批次追溯" }
+    },
+    {
+      "path": "pages/picking/production-issue",
+      "style": { "navigationBarTitleText": "生产领料单" }
+    },
+    {
+      "path": "pages/picking/production-issue-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/picking/outsource-issue",
+      "style": { "navigationBarTitleText": "委外领料" }
+    },
+    {
+      "path": "pages/picking/outsource-issue-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/picking/production-return",
+      "style": { "navigationBarTitleText": "生产退料单" }
+    },
+    {
+      "path": "pages/picking/production-return-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/picking/outsource-return",
+      "style": { "navigationBarTitleText": "委外退料单" }
+    },
+    {
+      "path": "pages/picking/outsource-return-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/picking/issue-pick",
+      "style": { "navigationBarTitleText": "扫码拣货" }
+    },
+    {
+      "path": "pages/picking/pickup",
+      "style": { "navigationBarTitleText": "领料确认" }
+    },
+    {
+      "path": "pages/picking/workshop-return",
+      "style": { "navigationBarTitleText": "车间退库" }
+    },
+    {
+      "path": "pages/messages/messages",
+      "style": { "navigationBarTitleText": "消息中心" }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": { "navigationBarTitleText": "系统设置" }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": { "navigationBarTitleText": "我的" }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "WMS PDA",
+    "navigationBarBackgroundColor": "#1d4ed8",
+    "backgroundColor": "#f1f5f9"
+  }
+}

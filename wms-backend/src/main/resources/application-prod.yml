@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    url: jdbc:sqlserver://${SQLSERVER_HOST:localhost}:${SQLSERVER_PORT:1433};databaseName=${SQLSERVER_DB:wms};encrypt=true;trustServerCertificate=true
+    username: ${SQLSERVER_USER:sa}
+    password: ${SQLSERVER_PASSWORD:sa@2019}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/sqlserver
+    baseline-on-migrate: true
+
+wms:
+  pda:
+    list-fetch-limit: 200
+    short-cache-ttl-seconds: 90
+    async-erp-sync: true
+    scan-skip-kingdee-refresh: true
+    detail-local-prefer-seconds: 120
+
+logging:
+  level:
+    com.wms: info
+    root: warn

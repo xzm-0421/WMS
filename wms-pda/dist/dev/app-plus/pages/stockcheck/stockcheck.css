@@ -1,0 +1,28 @@
+
+.page[data-v-dc8a8113] { padding: 0.75rem; padding-bottom: 3.75rem;
+}
+.header[data-v-dc8a8113] { background: #fff; padding: 0.75rem; border-radius: 0.375rem; margin-bottom: 0.75rem;
+}
+.tabs[data-v-dc8a8113] { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.5rem;
+}
+.tab[data-v-dc8a8113] { padding: 0.3125rem 0.625rem; background: #e2e8f0; border-radius: 0.25rem; font-size: 0.75rem;
+}
+.tab.active[data-v-dc8a8113] { background: #1d4ed8; color: #fff;
+}
+.line-card[data-v-dc8a8113] { background: #fff; padding: 0.75rem; border-radius: 0.375rem; margin-bottom: 0.5rem;
+}
+.form-card[data-v-dc8a8113] { background: #fff; padding: 0.75rem; border-radius: 0.375rem; margin-bottom: 0.5rem;
+}
+.name[data-v-dc8a8113] { font-weight: bold; display: block; margin-bottom: 0.25rem;
+}
+.row[data-v-dc8a8113] { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.375rem;
+}
+.qty-input[data-v-dc8a8113], .input[data-v-dc8a8113] {
+  flex: 1;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.25rem;
+  padding: 0.375rem;
+  margin-bottom: 0.375rem;
+}
+.complete-btn[data-v-dc8a8113] { position: fixed; left: 0.75rem; right: 0.75rem; bottom: 1rem;
+}

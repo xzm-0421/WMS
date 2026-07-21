@@ -1,0 +1,36 @@
+{
+    "name" : "WMS PDA",
+    "appid" : "__UNI__WMS_PDA",
+    "description" : "WMS 仓储 PDA 作业端",
+    "versionName" : "1.0.0",
+    "versionCode" : "100",
+    "transformPx" : false,
+    "app-plus" : {
+        "usingComponents" : true,
+        "splashscreen" : {
+            "alwaysShowBeforeRender" : true,
+            "waiting" : true,
+            "autoclose" : true,
+            "delay" : 0
+        },
+        "modules" : {},
+        "distribute" : {
+            "android" : {
+                "permissions" : [
+                    "<uses-permission android:name=\"android.permission.CAMERA\"/>",
+                    "<uses-permission android:name=\"android.permission.INTERNET\"/>"
+                ]
+            }
+        }
+    },
+    "h5" : {
+        "title" : "WMS PDA",
+        "router" : {
+            "mode" : "hash"
+        },
+        "devServer" : {
+            "port" : 5174
+        }
+    },
+    "vueVersion" : "3"
+}

@@ -1,0 +1,27 @@
+# Backend
+wms-backend/target/
+wms-backend/.idea/
+*.iml
+
+# Frontend
+wms-web/node_modules/
+wms-web/dist/
+
+# PDA
+wms-pda/node_modules/
+wms-pda/unpackage/
+
+# Temp extract
+_extract_*/
+_*.zip
+_*.txt
+
+# IDE
+.vscode/
+*.log
+
+# Env
+.env
+.env.local
+wms-backend/src/main/resources/application-dev-local.yml
+wms-backend/application-dev-local.yml
