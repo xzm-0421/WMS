@@ -58,13 +58,31 @@ export function parseMobileBarcode(barcodeContent) {
   })
 }
 
-// ========== 板码校验 ==========
-export function verifyPanelCode(data) {
+// ========== 条码校验 ==========
+export function resolveBarcodeBill(barcodeContent) {
   return request({
-    url: '/mobile/panel/verify',
+    url: '/mobile/panel/resolve-bill',
     method: 'POST',
-    data: withDevice(data),
+    data: { barcodeContent },
   })
+}
+
+export function getBarcodeBillDetail(billNo) {
+  return request({ url: `/mobile/panel/bills/${encodeURIComponent(billNo)}` })
+}
+
+export function verifyBarcodeMaterial(billNo, barcodeContent) {
+  return request({
+    url: `/mobile/panel/bills/${encodeURIComponent(billNo)}/verify`,
+    method: 'POST',
+    data: withDevice({ barcodeContent }),
+    silent: true,
+  })
+}
+
+/** @deprecated 使用 verifyBarcodeMaterial */
+export function verifyPanelCode(data) {
+  return verifyBarcodeMaterial(data?.billNo, data?.panelCode || data?.barcodeContent)
 }
 
 // ========== 待办任务 ==========

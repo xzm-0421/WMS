@@ -60,7 +60,7 @@
             </view>
             <view class="menu-item" @click="goPage('/pages/panel/panel')">
               <text class="menu-icon">🏷️</text>
-              <text>板码校验</text>
+              <text>条码校验</text>
             </view>
             <view class="menu-item" @click="goPage('/pages/inventory/inventory')">
               <text class="menu-icon">📦</text>

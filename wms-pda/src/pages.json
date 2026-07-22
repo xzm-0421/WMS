@@ -75,7 +75,7 @@
     },
     {
       "path": "pages/panel/panel",
-      "style": { "navigationBarTitleText": "板码校验" }
+      "style": { "navigationBarTitleText": "条码校验" }
     },
     {
       "path": "pages/qc/qc",
