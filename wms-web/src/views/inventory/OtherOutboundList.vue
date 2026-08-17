@@ -93,7 +93,7 @@ onMounted(loadData)
         <el-input v-model="form.lines[0]!.materialName" readonly placeholder="选择物料后自动带出" />
       </el-form-item>
       <el-form-item label="库位"><el-input v-model="form.lines[0]!.locationCode" /></el-form-item>
-      <el-form-item label="数量"><el-input-number v-model="form.lines[0]!.quantity" :min="1" /></el-form-item>
+      <el-form-item label="数量"><el-input-number v-model="form.lines[0]!.quantity" :min="0.001" :precision="4" :step="0.001" /></el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>

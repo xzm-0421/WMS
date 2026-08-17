@@ -21,6 +21,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { clearSession, hasSession } from '@/utils/authStorage.js'
 import {
   getBaseUrl,
   getServerDisplay,
@@ -52,25 +53,47 @@ function refresh() {
   testResult.value = null
 }
 
+function onServerChanged(prevBase, nextBase) {
+  // 换服务器后旧 Token 无效，必须清掉，否则登录页会凭旧 Token 自动跳首页形成死循环
+  if (prevBase === nextBase) {
+    return false
+  }
+  const hadSession = hasSession()
+  clearSession()
+  return hadSession
+}
+
 function save() {
   if (!serverInput.value.trim() && !hasCustomServer()) {
     uni.showToast({ title: '请输入服务器地址', icon: 'none' })
     return
   }
+  const prevBase = getBaseUrl()
   const saved = setBaseUrl(serverInput.value || '/api/v1')
+  const needRelogin = onServerChanged(prevBase, saved)
   hasCustom.value = hasCustomServer()
-  testResult.value = { ok: true, message: `已保存: ${getServerDisplay()}` }
-  uni.showToast({ title: '服务器已更新', icon: 'success' })
-  emit('saved', saved)
+  testResult.value = {
+    ok: true,
+    message: needRelogin
+      ? `已保存: ${getServerDisplay()}（已退出登录，请重新登录）`
+      : `已保存: ${getServerDisplay()}`,
+  }
+  uni.showToast({ title: needRelogin ? '服务器已更新，请重新登录' : '服务器已更新', icon: 'success' })
+  emit('saved', { baseUrl: saved, needRelogin })
 }
 
 function reset() {
-  resetBaseUrl()
+  const prevBase = getBaseUrl()
+  const next = resetBaseUrl()
+  const needRelogin = onServerChanged(prevBase, next)
   serverInput.value = getServerInputValue()
   hasCustom.value = false
-  testResult.value = { ok: true, message: '已恢复默认配置' }
-  uni.showToast({ title: '已恢复默认', icon: 'none' })
-  emit('saved', getBaseUrl())
+  testResult.value = {
+    ok: true,
+    message: needRelogin ? '已恢复默认配置（已退出登录）' : '已恢复默认配置',
+  }
+  uni.showToast({ title: needRelogin ? '已恢复默认，请重新登录' : '已恢复默认', icon: 'none' })
+  emit('saved', { baseUrl: next, needRelogin })
 }
 
 async function testConnection() {

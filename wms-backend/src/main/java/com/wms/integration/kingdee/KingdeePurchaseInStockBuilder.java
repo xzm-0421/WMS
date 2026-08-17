@@ -18,6 +18,12 @@ public final class KingdeePurchaseInStockBuilder {
 
     private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    /**
+     * 收料通知单 / 采购入库分录「送货单号」自定义字段 {@code F_QVHU_Text_qtr}
+     *（采购入库仅挂在 InStockEntry，勿写表头 InStock）。
+     */
+    public static final String SEND_BILL_NO_FIELD = "F_QVHU_Text_qtr";
+
     private KingdeePurchaseInStockBuilder() {
     }
 
@@ -27,27 +33,35 @@ public final class KingdeePurchaseInStockBuilder {
     public static String build(ObjectMapper mapper, KingdeeCloudProperties props,
                                KingdeePurchaseInStockRequest req) {
         try {
+            String sendBillNo = resolveSendBillNo(req);
             ObjectNode root = mapper.createObjectNode();
+            // 新建单据 NeedUpDateFields 留空表示提交 Model 全部字段；勿只列部分字段否则其它列可能不落库
             root.putArray("NeedUpDateFields");
             ArrayNode needReturn = root.putArray("NeedReturnFields");
             needReturn.add("FBillNo");
             needReturn.add("FID");
+            // 送货单号挂在分录 InStockEntry，表头 InStock 无此属性
+            needReturn.add("FInStockEntry." + SEND_BILL_NO_FIELD);
             root.put("IsDeleteEntry", "true");
             root.put("SubSystemId", "");
             root.put("IsVerifyBaseDataField", "false");
             root.put("IsEntryBatchFill", "true");
             root.put("ValidateFlag", "true");
             root.put("NumberSearch", "true");
+            // 自动调整字段顺序；送货单号在分录末尾再次写入，避免被关联源单空值覆盖
             root.put("IsAutoAdjustField", "true");
             root.put("InterationFlags", "");
             root.put("IgnoreInterationFlag", "");
             root.put("IsControlPrecision", "false");
-            root.put("ValidateRepeatJson", "true");
+            root.put("ValidateRepeatJson", "false");
 
             ObjectNode model = root.putObject("Model");
             model.put("FID", 0);
-            putNumberRef(model, "FBillTypeID", props.getStockInBillTypeNumber());
-            model.put("FBusinessType", props.getStockInBusinessType());
+            boolean outsource = isOutsourceBusiness(req, props);
+            String billTypeNumber = resolveBillTypeNumber(req, props, outsource);
+            String businessType = resolveBusinessType(req, props, outsource);
+            putNumberRef(model, "FBillTypeID", billTypeNumber);
+            model.put("FBusinessType", businessType);
             model.put("FDate", formatBillDate(req.getBillDate()));
             putNumberRef(model, "FStockOrgId", props.getStockInOrgNumber());
             putNumberRef(model, "FStockDeptId", props.getStockInStockDeptNumber());
@@ -87,7 +101,7 @@ public final class KingdeePurchaseInStockBuilder {
             ArrayNode entries = model.putArray("FInStockEntry");
             List<KingdeePurchaseInStockRequest.Line> lines = req.getLines() == null ? List.of() : req.getLines();
             for (KingdeePurchaseInStockRequest.Line line : lines) {
-                entries.add(buildEntry(mapper, props, req, line));
+                entries.add(buildEntry(mapper, props, req, line, sendBillNo));
             }
             return mapper.writeValueAsString(root);
         } catch (Exception e) {
@@ -97,21 +111,29 @@ public final class KingdeePurchaseInStockBuilder {
 
     private static ObjectNode buildEntry(ObjectMapper mapper, KingdeeCloudProperties props,
                                          KingdeePurchaseInStockRequest req,
-                                         KingdeePurchaseInStockRequest.Line line) {
+                                         KingdeePurchaseInStockRequest.Line line,
+                                         String sendBillNo) {
         ObjectNode entry = mapper.createObjectNode();
         BigDecimal qty = line.getQuantity() == null ? BigDecimal.ZERO : line.getQuantity();
+        BigDecimal priceQty = line.getPriceUnitQty() != null && line.getPriceUnitQty().compareTo(BigDecimal.ZERO) > 0
+                ? line.getPriceUnitQty() : qty;
+        String unit = defaultUnit(line.getUnitCode(), props);
+        String priceUnit = defaultUnit(
+                StringUtils.hasText(line.getPriceUnitCode()) ? line.getPriceUnitCode() : line.getUnitCode(),
+                props);
+        String lineSendBillNo = firstNonBlank(line.getSendBillNo(), sendBillNo);
 
         entry.put("FRowType", "Standard");
         entry.put("FWWInType", props.getStockInWwInType());
         entry.put("FProductType", "1");
         putNumberRef(entry, "FMaterialId", line.getMaterialCode());
-        putNumberRef(entry, "FUnitID", defaultUnit(line.getUnitCode(), props));
+        putNumberRef(entry, "FUnitID", unit);
         if (StringUtils.hasText(line.getMaterialName())) {
             entry.put("FMaterialDesc", line.getMaterialName().trim());
         }
         entry.put("FWWPickMtlQty", 0.0);
-        applyConsistentInboundQty(entry, qty);
-        putNumberRef(entry, "FPriceUnitID", defaultUnit(line.getUnitCode(), props));
+        applyConsistentInboundQty(entry, qty, priceQty);
+        putNumberRef(entry, "FPriceUnitID", priceUnit);
         entry.put("FPrice", 0.0);
         String lot = resolveLot(req, line);
         if (StringUtils.hasText(lot)) {
@@ -132,7 +154,7 @@ public final class KingdeePurchaseInStockBuilder {
         entry.put("FCheckInComing", fromReceiveBill && props.isStockInCheckInComing());
         entry.put("FIsReceiveUpdateStock", false);
         entry.put("FInvoicedJoinQty", 0.0);
-        putNumberRef(entry, "FRemainInStockUnitId", defaultUnit(line.getUnitCode(), props));
+        putNumberRef(entry, "FRemainInStockUnitId", unit);
         entry.put("FBILLINGCLOSE", false);
         entry.put("FTaxPrice", 0.0);
         entry.put("FEntryTaxRate", props.getStockInEntryTaxRate());
@@ -183,13 +205,59 @@ public final class KingdeePurchaseInStockBuilder {
         ArrayNode taxDetails = entry.putArray("FTaxDetailSubEntity");
         ObjectNode tax = taxDetails.addObject();
         tax.put("FTaxRate", 0.0);
+        // 送货单号放在分录最后写入：关联源单/自动调整后仍保证必填有值
+        putSendBillNo(entry, lineSendBillNo);
         return entry;
     }
 
-    private static void applyConsistentInboundQty(ObjectNode entry, BigDecimal qty) {
+    private static boolean isOutsourceBusiness(KingdeePurchaseInStockRequest req, KingdeeCloudProperties props) {
+        String biz = StringUtils.hasText(req.getBusinessType())
+                ? req.getBusinessType().trim()
+                : "";
+        String ww = StringUtils.hasText(props.getStockInWwBusinessType())
+                ? props.getStockInWwBusinessType().trim()
+                : "WW";
+        return ww.equalsIgnoreCase(biz);
+    }
+
+    private static String resolveBusinessType(KingdeePurchaseInStockRequest req,
+                                              KingdeeCloudProperties props,
+                                              boolean outsource) {
+        if (StringUtils.hasText(req.getBusinessType())) {
+            return req.getBusinessType().trim();
+        }
+        if (outsource && StringUtils.hasText(props.getStockInWwBusinessType())) {
+            return props.getStockInWwBusinessType().trim();
+        }
+        return StringUtils.hasText(props.getStockInBusinessType())
+                ? props.getStockInBusinessType().trim() : "CG";
+    }
+
+    private static String resolveBillTypeNumber(KingdeePurchaseInStockRequest req,
+                                                KingdeeCloudProperties props,
+                                                boolean outsource) {
+        if (StringUtils.hasText(req.getBillTypeNumber())) {
+            return req.getBillTypeNumber().trim();
+        }
+        if (outsource && StringUtils.hasText(props.getStockInWwBillTypeNumber())) {
+            return props.getStockInWwBillTypeNumber().trim();
+        }
+        return props.getStockInBillTypeNumber();
+    }
+
+    /**
+     * 采购入库送货单号写入分录 {@link #SEND_BILL_NO_FIELD}（表头 InStock 实体无此属性）。
+     */
+    private static void putSendBillNo(ObjectNode entry, String sendBillNo) {
+        String value = StringUtils.hasText(sendBillNo) ? sendBillNo.trim() : "WMS";
+        entry.put(SEND_BILL_NO_FIELD, value);
+    }
+
+    private static void applyConsistentInboundQty(ObjectNode entry, BigDecimal qty, BigDecimal priceQty) {
         BigDecimal value = qty == null ? BigDecimal.ZERO : qty;
+        BigDecimal price = priceQty == null ? value : priceQty;
         entry.put("FRealQty", value);
-        entry.put("FPriceUnitQty", value);
+        entry.put("FPriceUnitQty", price);
         entry.put("FPriceBaseQty", value);
         entry.put("FStockBaseQty", value);
         entry.put("FBaseUnitQty", value);
@@ -198,6 +266,26 @@ public final class KingdeePurchaseInStockBuilder {
         entry.put("FRemainInStockQty", value);
         entry.put("FRemainInStockBaseQty", value);
         entry.put("FAPNotJoinQty", value);
+    }
+
+    /**
+     * 送货单号取值：行上收料通知单 F_QVHU_Text_qtr → 收料单号 → 批次号 → 固定占位，保证必填不为空。
+     */
+    private static String resolveSendBillNo(KingdeePurchaseInStockRequest req) {
+        if (req.getLines() != null) {
+            for (KingdeePurchaseInStockRequest.Line line : req.getLines()) {
+                if (line != null && StringUtils.hasText(line.getSendBillNo())) {
+                    return line.getSendBillNo().trim();
+                }
+            }
+        }
+        if (StringUtils.hasText(req.getSourceBillNo())) {
+            return req.getSourceBillNo().trim();
+        }
+        if (StringUtils.hasText(req.getBatchNo())) {
+            return req.getBatchNo().trim();
+        }
+        return "WMS";
     }
 
     private static String resolveLot(KingdeePurchaseInStockRequest req,

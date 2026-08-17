@@ -24,11 +24,133 @@ public class KingdeeCloudProperties {
 
     private String password = "";
 
+    /** 金蝶用户 FormId（解析 FUserID） */
+    private String secUserFormId = "SEC_User";
+
+    /**
+     * 金蝶用户查询 FieldKeys：0=FUserID，1=用户名称 FName，2=电话 FPhone。
+     */
+    private String secUserFieldKeys = "FUserID,FName,FPhone";
+
     /** 入库单 FormId，默认采购入库单 */
     private String stockInFormId = "STK_InStock";
 
     /** 采购入库单 Save 成功后是否自动调用 Audit 审核 */
     private boolean stockInAutoAudit = true;
+
+    /** 生产入库单 FormId（Save 目标单据） */
+    private String prdInStockFormId = "PRD_INSTOCK";
+    private boolean prdInStockAutoAudit = true;
+    /**
+     * 生产入库单据类型。
+     * 汇报下推常用普通生产入库 SCRKD01_SYS；简单生产入库为 SCRKD02_SYS。
+     */
+    private String prdInStockBillTypeNumber = "SCRKD01_SYS";
+    private String prdInStockWorkShopNumber = "BM000020";
+    /** 入库类型：1=合格品入库 */
+    private String prdInStockInStockType = "1";
+
+    /** 生产汇报 → 生产入库 转换规则 */
+    private String prdInStockMorptLinkRuleId = "PRD_MORPT2INSTOCK";
+    /** 生产汇报分录表 */
+    private String prdInStockMorptLinkSTableName = "T_PRD_MORPTENTRY";
+    private String prdInStockMorptLinkFlowId = "";
+    private int prdInStockMorptLinkFlowLineId = 0;
+
+    /**
+     * PDA 扫码源单：生产汇报单 FormId。
+     * 列表/明细查询用此 FormId；Save 仍写入 {@link #prdInStockFormId}。
+     */
+    private String prdMorptFormId = "PRD_MORPT";
+
+    /** 生产汇报单列表 FieldKeys（车间槽位） */
+    private String prdMorptLineCountFieldKeys =
+            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 生产汇报单明细 FieldKeys。
+     * 合格 FQuaQty、合格品入库选单 FStockInSelQty；计划=合格，已处理=选单，可入=合格−选单。
+     */
+    private String prdMorptDetailFieldKeys =
+            "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FQuaQty,FEntity_FStockInSelQty,FEntity_FBaseQuaQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq";
+
+    /** 兼容旧配置名：生产入库单列表 FieldKeys（仅审计旧未审入库单时使用） */
+    private String prdInStockLineCountFieldKeys =
+            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 兼容旧配置：生产入库单明细 FieldKeys。
+     */
+    private String prdInStockDetailFieldKeys =
+            "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FRealQty,FEntity_FMustQty,FEntity_FBaseRealQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq";
+
+    /** 生产退库单 FormId */
+    private String prdRetStockFormId = "PRD_RetStock";
+
+    /** 生产退库单据类型，标准 SCTK01_SYS */
+    private String prdRetStockBillTypeNumber = "SCTK01_SYS";
+
+    /** 生产退库单列表 FieldKeys（布局与生产入库接近） */
+    private String prdRetStockLineCountFieldKeys =
+            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 生产退库单明细 FieldKeys。
+     * 数量：实退 FRealQty、应退 FMustQty（未审核单计划取应退）。
+     */
+    private String prdRetStockDetailFieldKeys =
+            "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FRealQty,FEntity_FMustQty,FEntity_FBaseRealQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq";
+
+    /** 其他入库单 FormId */
+    private String miscInStockFormId = "STK_Miscellaneous";
+    private boolean miscInStockAutoAudit = true;
+    private String miscInStockBillTypeNumber = "QTRKD01_SYS";
+    private String miscInStockDeptNumber = "";
+    private boolean miscInStockSendStockLoc = false;
+
+    /** 其他出库单 FormId */
+    private String misDeliveryFormId = "STK_MisDelivery";
+    private boolean misDeliveryAutoAudit = true;
+    private String misDeliveryBillTypeNumber = "QTCKD01_SYS";
+    private String misDeliveryDeptNumber = "";
+    private String misDeliveryBizType = "0";
+    private boolean misDeliverySendStockLoc = false;
+
+    /** 生产补料单 FormId */
+    private String feedMtrlFormId = "PRD_FeedMtrl";
+
+    /** 生产补料单列表 FieldKeys（布局对齐领料单） */
+    private String feedMtrlLineCountFieldKeys =
+            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 生产补料单明细 FieldKeys。
+     * 数量：实发 FActualQty、申请 FAppQty / FBaseAppQty（未审核单计划取申请数量）。
+     */
+    private String feedMtrlDetailFieldKeys =
+            "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FActualQty,FEntity_FAppQty,FEntity_FBaseAppQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FPPBomEntryId,FEntity_FPPBomBillNo";
 
     /** 生产领料单 FormId */
     private String pickMtrlFormId = "PRD_PickMtrl";
@@ -115,16 +237,34 @@ public class KingdeeCloudProperties {
                     + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,"
                     + "FEntity_FParentMaterialId.FNumber";
 
-    /** 生产领料单列表 FieldKeys（生产退料源单） */
+    /** 生产领料单列表 FieldKeys */
     private String pickMtrlLineCountFieldKeys =
             "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
 
-    /** 生产领料单明细 FieldKeys（生产退料源单） */
+    /** 生产领料单明细 FieldKeys */
     private String pickMtrlDetailFieldKeys =
             "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,"
                     + "FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,"
                     + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
                     + "FEntity_FActualQty,FEntity_FAppQty,FEntity_FBaseActualQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FPPBomEntryId,FEntity_FPPBomBillNo";
+
+    /** 生产退料单列表 FieldKeys（字段布局与领料单一致，便于共用解析） */
+    private String returnMtrlLineCountFieldKeys =
+            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 生产退料单明细 FieldKeys。
+     * 数量字段与领料不同：申请=FAPPQty，实退=FQty（非 FActualQty/FAppQty）。
+     */
+    private String returnMtrlDetailFieldKeys =
+            "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FQty,FEntity_FAPPQty,FEntity_FBaseQty,"
                     + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
                     + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
                     + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,"
@@ -201,16 +341,55 @@ public class KingdeeCloudProperties {
                     + "FEntity_FSubReqBillNo,FEntity_FSubReqId,FEntity_FSubReqEntryId,FEntity_FSubReqEntrySeq,"
                     + "FEntity_FParentMaterialId.FNumber";
 
-    /** 委外领料单列表 FieldKeys（委外退料源单） */
+    /** 委外领料单列表 FieldKeys（未审核单据列表） */
     private String subPickMtrlLineCountFieldKeys =
             "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
 
-    /** 委外领料单明细 FieldKeys（委外退料源单） */
+    /** 委外领料单明细 FieldKeys */
     private String subPickMtrlDetailFieldKeys =
             "FBillNo,FID,FDate,FSupplierId.FNumber,FSupplierId.FName,FEntity_FSubReqBillNo,"
                     + "FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,"
                     + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
                     + "FEntity_FActualQty,FEntity_FAppQty,FEntity_FBaseActualQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FSubReqBillNo,FEntity_FSubReqId,FEntity_FSubReqEntryId,FEntity_FSubReqEntrySeq,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FPPbomEntryId,FEntity_FPPbomBillNo";
+
+    /** 委外补料单 FormId（金蝶官方标识 SUB_FEEDMTRL） */
+    private String subFeedMtrlFormId = "SUB_FEEDMTRL";
+
+    /** 委外补料单列表 FieldKeys（委外供应商槽位） */
+    private String subFeedMtrlLineCountFieldKeys =
+            "FBillNo,FSubSupplierId.FNumber,FSubSupplierId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 委外补料单明细 FieldKeys。
+     * 数量：实发 FActualQty、申请 FAppQty / FBaseAppQty；布局对齐委外领料。
+     */
+    private String subFeedMtrlDetailFieldKeys =
+            "FBillNo,FID,FDate,FSubSupplierId.FNumber,FSubSupplierId.FName,FEntity_FSubReqBillNo,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FActualQty,FEntity_FAppQty,FEntity_FBaseAppQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
+                    + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
+                    + "FEntity_FSubReqBillNo,FEntity_FSubReqId,FEntity_FSubReqEntryId,FEntity_FSubReqEntrySeq,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FPPbomEntryId,FEntity_FPPbomBillNo";
+
+    /** 委外退料单列表 FieldKeys */
+    private String subReturnMtrlLineCountFieldKeys =
+            "FBillNo,FSubSupplierId.FNumber,FSubSupplierId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 委外退料单明细 FieldKeys。
+     * 数量：申请=FAPPQty，实退=FQty（与生产退料一致）。
+     */
+    private String subReturnMtrlDetailFieldKeys =
+            "FBillNo,FID,FDate,FSubSupplierId.FNumber,FSubSupplierId.FName,FEntity_FSubReqBillNo,"
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,"
+                    + "FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,"
+                    + "FEntity_FQty,FEntity_FAPPQty,FEntity_FBaseQty,"
                     + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
                     + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
                     + "FEntity_FSubReqBillNo,FEntity_FSubReqId,FEntity_FSubReqEntryId,FEntity_FSubReqEntrySeq,"
@@ -273,7 +452,7 @@ public class KingdeeCloudProperties {
     private String stockCountFormId = "STK_StockCountInput";
 
     /**
-     * 盘点作业列表 FieldKeys（仅头字段，用于已审核单据列表）
+     * 盘点作业列表 FieldKeys（仅头字段，用于未审核单据列表）
      */
     private String stockCountListFieldKeys =
             "FBillNo,FDocumentStatus,FDate,FStockOrgId.FNumber,FNoteHead";
@@ -311,12 +490,19 @@ public class KingdeeCloudProperties {
 
     /**
      * 来料检验列表 FieldKeys（分录字段在本环境为扁平名，勿用 FDetailEntity. 前缀）
-     * 检验数量 FCheckBaseQty、收料数 FActReceiveQty、判退数量 FRefuseBaseQty、
-     * 合格数量(基本单位) FReceiveBaseQty、样本破坏数量(基本单位) FSampleDamageBaseQty、
-     * 让步接收数量(基本单位) FCsnReceiveBaseQty、工废数量(基本单位) FProcScrapBaseQty、
-     * 料废数量(基本单位) FMtrlScrapBaseQty
+     * 末尾含已入库/剩余可入库，用于列表剔除可处理=0 的单据。
      */
     private String receiveBillInspectionListFieldKeys =
+            "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,"
+                    + "FCheckInComing,FActReceiveQty,FCheckBaseQty,"
+                    + "FRefuseBaseQty,FReceiveBaseQty,FSampleDamageBaseQty,"
+                    + "FCsnReceiveBaseQty,FProcScrapBaseQty,FMtrlScrapBaseQty,"
+                    + "FInStockJoinBaseQty,FRemainInStockBaseQty";
+
+    /**
+     * 检验列表降级 FieldKeys（不含已入库/剩余字段，账套缺字段时回退用，仍走检验+本地余量推算）。
+     */
+    private String receiveBillInspectionListFieldKeysNoRemain =
             "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,"
                     + "FCheckInComing,FActReceiveQty,FCheckBaseQty,"
                     + "FRefuseBaseQty,FReceiveBaseQty,FSampleDamageBaseQty,"
@@ -335,13 +521,136 @@ public class KingdeeCloudProperties {
             "FBillNo,FID,FDate,FSupplierId.FNumber,FSupplierId.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FActReceiveQty,"
                     + "FReceiveBaseQty,FStockBaseQty,FInStockJoinBaseQty,FBaseUnitQty,"
-                    + "FDetailEntity_FSeq,FDetailEntity_FEntryID,FLot.FNumber,FBaseUnitId.FNumber,FStockId.FNumber";
+                    + "FDetailEntity_FSeq,FDetailEntity_FEntryID,FLot.FNumber,FBaseUnitId.FNumber,FStockId.FNumber,"
+                    + "FUnitID.FNumber,FPriceUnitId.FNumber,FPriceUnitQty,"
+                    // 收料通知单送货单号（与采购入库同字段 F_QVHU_Text_qtr）
+                    + "F_QVHU_Text_qtr";
+
+    /** 其他入库/出库列表 FieldKeys（部门占供应商位，便于复用列表解析） */
+    private String miscBillLineCountFieldKeys =
+            "FBillNo,FDeptId.FNumber,FDeptId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /** 其他入库/出库明细 FieldKeys（数量优先取申请/应收） */
+    private String miscBillDetailFieldKeys =
+            "FBillNo,FID,FDate,FDeptId.FNumber,FDeptId.FName,"
+                    + "FMaterialId.FNumber,FMaterialId.FName,FQty,"
+                    + "FQty,FQty,FQty,FQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
+
+    /** 销售发货通知列表 FieldKeys */
+    private String salesDeliveryLineCountFieldKeys =
+            "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /** 销售发货通知明细 FieldKeys */
+    private String salesDeliveryDetailFieldKeys =
+            "FBillNo,FID,FDate,FCustomerID.FNumber,FCustomerID.FName,"
+                    + "FMaterialId.FNumber,FMaterialId.FName,FQty,"
+                    + "FQty,FQty,FQty,FQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
+
+    /** 销售出库单 FormId */
+    private String salOutStockFormId = "SAL_OUTSTOCK";
+
+    /**
+     * 发货通知 → 销售出库 转换规则（BOS 单据转换 RuleId）。
+     * 标准规则一般为 DeliveryNotice-OutStock。
+     */
+    private String salesDeliveryPushRuleId = "DeliveryNotice-OutStock";
+
+    /**
+     * PDA 确认发货通知时：true=下推生成销售出库并审核出库单；false=仅提交审核发货通知本身。
+     */
+    private boolean salesDeliveryPushToOutStock = true;
+
+    /**
+     * 销售出库缺省仓库（发货通知分录 FStockID 为空且 PDA 未指定时回退）。
+     */
+    private String salesOutStockDefaultWarehouseNumber = "CK004";
+
+    /**
+     * 销售退货通知单 FormId（PDA 扫已审核通知 → 新建销售退货单）。
+     */
+    private String salReturnNoticeFormId = "SAL_RETURNNOTICE";
+
+    /** 销售退货通知列表 FieldKeys（客户 FRetcustId） */
+    private String salReturnNoticeLineCountFieldKeys =
+            "FBillNo,FRetcustId.FNumber,FRetcustId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /**
+     * 销售退货通知明细 FieldKeys。
+     * 布局对齐 {@link KingdeeReceiveBillDetailRowParser}：客户槽位 + 物料 + FQty + 批号/单位/仓库。
+     */
+    private String salReturnNoticeDetailFieldKeys =
+            "FBillNo,FID,FDate,FRetcustId.FNumber,FRetcustId.FName,"
+                    + "FMaterialId.FNumber,FMaterialId.FName,FQty,"
+                    + "FQty,FQty,FQty,FQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
+
+    /** 销售退货单 FormId（SAL_RETURNSTOCK） */
+    private String salReturnStockFormId = "SAL_RETURNSTOCK";
+
+    private boolean salReturnStockAutoAudit = true;
+
+    /** 销售退货单据类型，标准 THD01_SYS */
+    private String salReturnStockBillTypeNumber = "THD01_SYS";
+
+    /** 退货类型（FReturnType），按账套核对 */
+    private String salReturnStockReturnTypeNumber = "THLX01_SYS";
+
+    /** 缺省退货客户（通知单客户为空时回退，一般勿依赖） */
+    private String salReturnStockDefaultCustomerNumber = "";
+
+    private boolean salReturnStockSendStockLoc = false;
+
+    /** 退货通知 → 销售退货 转换规则 */
+    private String salReturnStockLinkRuleId = "ReturnNotice-ReturnStock";
+
+    private String salReturnStockLinkSTableName = "T_SAL_RETURNNOTICEENTRY";
+
+    private String salReturnStockLinkFlowId = " ";
+
+    private int salReturnStockLinkFlowLineId = 0;
+
+    /** @deprecated 列表已改为退货通知；保留字段以免旧 yml 报错 */
+    private String salReturnStockLineCountFieldKeys =
+            "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+
+    /** @deprecated 见 salReturnNoticeDetailFieldKeys */
+    private String salReturnStockDetailFieldKeys =
+            "FBillNo,FID,FDate,FCustomerID.FNumber,FCustomerID.FName,"
+                    + "FMaterialId.FNumber,FMaterialId.FName,FQty,"
+                    + "FQty,FQty,FQty,FQty,"
+                    + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
+
+    /** 采购退料单 FormId */
+    private String purMrbFormId = "PUR_MRB";
+
+    /** 采购退料单列表 FieldKeys（分录实体为 FPURMRBENTRY，非 FEntity） */
+    private String purMrbLineCountFieldKeys =
+            "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,FPURMRBENTRY_FEntryID";
+
+    /**
+     * 采购退料单明细 FieldKeys。
+     * 布局对齐 {@link KingdeeReceiveBillDetailRowParser}：
+     * 实退 FRMREALQTY 作库存计划量；计价数量必须用 FPriceUnitQty（勿填实退，否则 PCS↔KG 换算率变 1）。
+     * 第 11 列（原 FInStockJoin）用 FNOTE 占位，避免实退被当成已处理。
+     */
+    private String purMrbDetailFieldKeys =
+            "FBillNo,FID,FDate,FSupplierId.FNumber,FSupplierId.FName,"
+                    + "FMaterialId.FNumber,FMaterialId.FName,FRMREALQTY,"
+                    + "FRMREALQTY,FRMREALQTY,FNOTE,FRMREALQTY,"
+                    + "FPURMRBENTRY_FSeq,FPURMRBENTRY_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber,"
+                    + "FUnitID.FNumber,FPriceUnitId.FNumber,FPriceUnitQty";
 
     private int receiveBillQueryLimit = 2000;
 
     /** 采购入库单（STK_InStock）保存默认字段 */
     private String stockInBillTypeNumber = "RKD01_SYS";
     private String stockInBusinessType = "CG";
+    /** 委外收料下推采购入库单时的单据类型（委外入库），空则沿用 stockInBillTypeNumber */
+    private String stockInWwBillTypeNumber = "RKD02_SYS";
+    /** 委外业务类型编码 */
+    private String stockInWwBusinessType = "WW";
     private String stockInOrgNumber = "100";
     private String stockInStockDeptNumber = "BM000026";
     private String stockInStockerNumber = "11567";
@@ -381,6 +690,12 @@ public class KingdeeCloudProperties {
 
     /** 金蝶调用 WMS 标签打印接口的 API Key（为空则不校验） */
     private String printApiKey = "";
+
+    /**
+     * WMS 对外访问根地址（金蝶浏览器可打开），如 http://192.168.1.10:9980
+     * 用于拼装绝对 printUrl；为空则仅返回相对路径。
+     */
+    private String printPublicBaseUrl = "";
 
     private int connectTimeoutMs = 10000;
 

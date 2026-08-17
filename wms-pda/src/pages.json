@@ -78,10 +78,6 @@
       "style": { "navigationBarTitleText": "条码校验" }
     },
     {
-      "path": "pages/qc/qc",
-      "style": { "navigationBarTitleText": "质检作业" }
-    },
-    {
       "path": "pages/trace/trace",
       "style": { "navigationBarTitleText": "批次追溯" }
     },
@@ -91,6 +87,22 @@
     },
     {
       "path": "pages/picking/production-issue-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/picking/production-feed",
+      "style": { "navigationBarTitleText": "生产补料单" }
+    },
+    {
+      "path": "pages/picking/production-feed-scan",
+      "style": { "navigationBarTitleText": "物料扫描" }
+    },
+    {
+      "path": "pages/picking/outsource-feed",
+      "style": { "navigationBarTitleText": "委外补料" }
+    },
+    {
+      "path": "pages/picking/outsource-feed-scan",
       "style": { "navigationBarTitleText": "物料扫描" }
     },
     {
@@ -140,6 +152,10 @@
     {
       "path": "pages/profile/profile",
       "style": { "navigationBarTitleText": "我的" }
+    },
+    {
+      "path": "pages/profile/update",
+      "style": { "navigationBarTitleText": "检查更新" }
     }
   ],
   "globalStyle": {

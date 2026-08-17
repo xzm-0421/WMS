@@ -40,7 +40,7 @@ export interface FlowGap {
 export const OVERVIEW_MODULES = [
   { group: '出入库', items: ['入库单 RK', '出库单 CK', 'PDA快速入库 PIR'] },
   { group: '库存作业', items: ['实时库存', '其他入/出库', '调拨 YK', '盘点 ST'] },
-  { group: '质量', items: ['质检任务 QC', '库存抽检 SP'] },
+  { group: '质量', items: ['库存抽检 SP'] },
 ]
 
 export const AUTO_CODE_RULES = [
@@ -163,19 +163,6 @@ export const FLOW_MODULES: FlowModule[] = [
     ],
   },
   {
-    id: 'qc',
-    title: '质检任务',
-    docCode: 'QC',
-    webMenu: '库存管理 → 质检任务',
-    pdaMenu: '质检作业',
-    transitions: [{ from: 'PENDING', to: 'COMPLETED', label: '提交结果' }],
-    steps: [
-      { order: 1, action: '扫码收货', channel: 'Web/PDA', note: '有质检标准则自动建 QC' },
-      { order: 2, action: '待检任务处理', channel: 'Web/PDA', statusChange: 'PENDING → COMPLETED' },
-      { order: 3, action: '录入结果', channel: 'Web/PDA', note: 'PASS/FAIL 回写入库明细 qcStatus' },
-    ],
-  },
-  {
     id: 'st',
     title: '盘点管理',
     docCode: 'ST',
@@ -206,7 +193,6 @@ export const PDA_FEATURES: PdaFeature[] = [
   { name: '出库作业', biz: '出库单 CK', api: '/mobile/outbound/*' },
   { name: '移库', biz: '即时移库（非 YK 单）', api: 'POST /mobile/transfer' },
   { name: '盘点', biz: '盘点任务', api: '/mobile/stockcheck/*' },
-  { name: '质检', biz: '质检任务 QC', api: '/mobile/quality/*' },
   { name: '库存查询', biz: '实时库存', api: '/mobile/inventory/query' },
   { name: '批次追溯', biz: '流水追溯', api: '/mobile/trace' },
 ]

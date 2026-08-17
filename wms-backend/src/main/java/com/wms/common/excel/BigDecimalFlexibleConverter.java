@@ -4,11 +4,12 @@ import com.alibaba.excel.converters.Converter;
 import com.alibaba.excel.enums.CellDataTypeEnum;
 import com.alibaba.excel.metadata.GlobalConfiguration;
 import com.alibaba.excel.metadata.data.ReadCellData;
+import com.alibaba.excel.metadata.data.WriteCellData;
 import com.alibaba.excel.metadata.property.ExcelContentProperty;
 
 import java.math.BigDecimal;
 
-/** 兼容 Excel 数字单元格与文本型数字 */
+/** 兼容 Excel 数字单元格与文本型数字；同时支持导入读取与导出写入。 */
 public class BigDecimalFlexibleConverter implements Converter<BigDecimal> {
 
     @Override
@@ -35,5 +36,14 @@ public class BigDecimalFlexibleConverter implements Converter<BigDecimal> {
             return null;
         }
         return new BigDecimal(text.trim().replace(",", ""));
+    }
+
+    @Override
+    public WriteCellData<?> convertToExcelData(BigDecimal value, ExcelContentProperty contentProperty,
+                                               GlobalConfiguration globalConfiguration) {
+        if (value == null) {
+            return new WriteCellData<>("");
+        }
+        return new WriteCellData<>(value);
     }
 }

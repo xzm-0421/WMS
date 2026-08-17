@@ -30,26 +30,77 @@ kingdee:
     enabled: true
     # 金蝶云星空企业版 WebAPI 站点
     base-url: http://192.168.0.134/k3cloud
-    acct-id: 6a33f3c51889fd
-    username: mes
-    password: "jd123321."
+    acct-id: 6a6bfc83694892
+    username: cloudee
+    password: "jd123456."
     stock-in-form-id: STK_InStock
     stock-in-auto-audit: true
+    feed-mtrl-form-id: PRD_FeedMtrl
+    sub-feed-mtrl-form-id: SUB_FEEDMTRL
     material-form-id: BD_MATERIAL
     batch-form-id: BD_BatchMainFile
     serial-form-id: BD_SerialMainFile
     receive-bill-form-id: PUR_ReceiveBill
     receive-bill-list-days: 0
     receive-bill-list-query-limit: 2000
-    # 物料盘点作业（仅拉取 FDocumentStatus=C 已审核）
+    # 物料盘点作业（拉取 FDocumentStatus in A/B 未审核，完成盘点后 Submit+Audit）
     stock-count-form-id: STK_StockCountInput
     stock-count-list-days: 0
     stock-count-query-limit: 2000
+    # 生产汇报入库：PDA 扫已审核 PRD_MORPT → Save 新建 PRD_INSTOCK（带 Link 反写选单量）并审核
+    prd-morpt-form-id: PRD_MORPT
+    prd-morpt-line-count-field-keys: "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    # 合格 FQuaQty、入库选单 FStockInSelQty；计划=合格，已处理=选单，可入=合格-选单
+    prd-morpt-detail-field-keys: "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FQuaQty,FEntity_FStockInSelQty,FEntity_FBaseQuaQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq"
+    prd-in-stock-form-id: PRD_INSTOCK
+    prd-in-stock-bill-type-number: SCRKD01_SYS
+    prd-in-stock-work-shop-number: BM000020
+    prd-in-stock-auto-audit: true
+    prd-in-stock-morpt-link-rule-id: PRD_MORPT2INSTOCK
+    prd-in-stock-morpt-link-s-table-name: T_PRD_MORPTENTRY
+    prd-in-stock-morpt-link-flow-id: ""
+    prd-in-stock-morpt-link-flow-line-id: 0
+    # 兼容旧配置（审计未审入库单时仍可用）
+    prd-in-stock-line-count-field-keys: "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    prd-in-stock-detail-field-keys: "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FRealQty,FEntity_FMustQty,FEntity_FBaseRealQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq"
+    prd-ret-stock-form-id: PRD_RetStock
+    prd-ret-stock-bill-type-number: SCTK01_SYS
+    prd-ret-stock-line-count-field-keys: "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    prd-ret-stock-detail-field-keys: "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FRealQty,FEntity_FMustQty,FEntity_FBaseRealQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq"
+    misc-in-stock-form-id: STK_Miscellaneous
+    misc-in-stock-bill-type-number: QTRKD01_SYS
+    misc-in-stock-auto-audit: true
+    mis-delivery-form-id: STK_MisDelivery
+    mis-delivery-bill-type-number: QTCKD01_SYS
+    mis-delivery-auto-audit: true
+    # 采购退料单（PDA 通用扫码：未审核 PUR_MRB → 提交审核）
+    pur-mrb-form-id: PUR_MRB
+    pur-mrb-line-count-field-keys: "FBillNo,FSupplierId.FNumber,FSupplierId.FName,FDocumentStatus,FDate,FPURMRBENTRY_FEntryID"
+    pur-mrb-detail-field-keys: "FBillNo,FID,FDate,FSupplierId.FNumber,FSupplierId.FName,FMaterialId.FNumber,FMaterialId.FName,FRMREALQTY,FRMREALQTY,FRMREALQTY,FNOTE,FRMREALQTY,FPURMRBENTRY_FSeq,FPURMRBENTRY_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber,FUnitID.FNumber,FPriceUnitId.FNumber,FPriceUnitQty"
+    # 销售退货：扫已审核退货通知 SAL_RETURNNOTICE → Save 销售退货 SAL_RETURNSTOCK 并审核
+    sal-return-notice-form-id: SAL_RETURNNOTICE
+    sal-return-notice-line-count-field-keys: "FBillNo,FRetcustId.FNumber,FRetcustId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    sal-return-notice-detail-field-keys: "FBillNo,FID,FDate,FRetcustId.FNumber,FRetcustId.FName,FMaterialId.FNumber,FMaterialId.FName,FQty,FQty,FQty,FQty,FQty,FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber"
+    sal-return-stock-form-id: SAL_RETURNSTOCK
+    sal-return-stock-auto-audit: true
+    sal-return-stock-bill-type-number: THD01_SYS
+    sal-return-stock-return-type-number: THLX01_SYS
+    sal-return-stock-link-rule-id: ReturnNotice-ReturnStock
+    sal-return-stock-link-s-table-name: T_SAL_RETURNNOTICEENTRY
+    # 销售发货通知：下推销售出库并审核（RuleId 按账套 BOS 转换规则核对）
+    sal-out-stock-form-id: SAL_OUTSTOCK
+    sales-delivery-push-rule-id: DeliveryNotice-OutStock
+    sales-delivery-push-to-out-stock: true
     print-api-key: ""
+    # 金蝶二开打开打印页的 WMS 根地址（须金蝶客户端能访问），例：http://192.168.0.10:9980
+    print-public-base-url: ${WMS_PUBLIC_BASE_URL:http://localhost:9980}
 #    bom-query-limit: 2000
     max-retry: 3
     stock-in-bill-type-number: RKD01_SYS
     stock-in-business-type: CG
+    # 委外收料通知单下推入库（FBusinessType=WW）；单据类型按环境可改
+    stock-in-ww-bill-type-number: RKD02_SYS
+    stock-in-ww-business-type: WW
     stock-in-org-number: "100"
     stock-in-stock-dept-number: BM000026
     stock-in-stocker-number: "11567"
@@ -122,12 +173,24 @@ kingdee:
     return-mtrl-pick-link-s-table-name: T_PRD_PICKMTRLDATA
     return-mtrl-pick-link-flow-id: "81119477-4778-4d0b-94b9-1c43a1c1f768"
     return-mtrl-pick-link-flow-line-id: 5
+    return-mtrl-line-count-field-keys: "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID"
+    return-mtrl-detail-field-keys: "FBillNo,FID,FDate,FWorkShopId.FNumber,FWorkShopId.FName,FEntity_FMoBillNo,FEntity_FParentMaterialId.FNumber,FEntity_FParentMaterialId.FName,FEntity_FMaterialId.FNumber,FEntity_FMaterialId.FName,FEntity_FQty,FEntity_FAPPQty,FEntity_FBaseQty,FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,FEntity_FParentMaterialId.FNumber,FEntity_FPPBomEntryId,FEntity_FPPBomBillNo"
 #    PUR_ReceiveBill
 
 wms:
   pda:
     list-fetch-limit: 200
     short-cache-ttl-seconds: 60
-    async-erp-sync: true
+    # 必须同步等金蝶结果，PDA 才能当场提示成败；勿改为 true 除非另做轮询
+    async-erp-sync: false
     scan-skip-kingdee-refresh: true
     detail-local-prefer-seconds: 120
+    # PDA 应用更新：将 wgt/apk 放到 backend static/pda-update/，并提高 version-code
+    app-update:
+      enabled: true
+      version-name: "1.0.0"
+      version-code: 100
+      force: false
+      package-type: wgt
+      download-url: "/pda-update/wms-pda.wgt"
+      changelog: "功能优化与问题修复"

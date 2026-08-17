@@ -28,6 +28,16 @@ public class PdaErpSyncAsyncService {
     }
 
     @Async("erpSyncExecutor")
+    public void syncPrdInStock(String batchNo) {
+        run(batchNo, NoticeBillType.PRODUCTION_IN, () -> submitBatchService.syncPrdInStockBatch(batchNo));
+    }
+
+    @Async("erpSyncExecutor")
+    public void syncPrdRetStock(String batchNo) {
+        run(batchNo, NoticeBillType.PRODUCTION_RET_STOCK, () -> submitBatchService.syncPrdRetStockBatch(batchNo));
+    }
+
+    @Async("erpSyncExecutor")
     public void syncReturnMtrl(String batchNo, List<KingdeeReturnMtrlRequest.Line> lines) {
         run(batchNo, NoticeBillType.PRODUCTION_RETURN,
                 () -> submitBatchService.syncReturnMtrlBatch(batchNo, lines));
@@ -46,19 +56,42 @@ public class PdaErpSyncAsyncService {
     }
 
     @Async("erpSyncExecutor")
+    public void syncFeedMtrl(String batchNo) {
+        run(batchNo, NoticeBillType.PRODUCTION_FEED,
+                () -> submitBatchService.syncFeedMtrlBatch(batchNo));
+    }
+
+    @Async("erpSyncExecutor")
+    public void syncSubFeedMtrl(String batchNo) {
+        run(batchNo, NoticeBillType.OUTSOURCE_FEED,
+                () -> submitBatchService.syncSubFeedMtrlBatch(batchNo));
+    }
+
+    @Async("erpSyncExecutor")
     public void syncSubPickMtrl(String batchNo, List<KingdeeSubPickMtrlRequest.Line> lines) {
         run(batchNo, NoticeBillType.OUTSOURCE_ISSUE,
                 () -> submitBatchService.syncSubPickMtrlBatch(batchNo, lines));
     }
 
+    @Async("erpSyncExecutor")
+    public void syncSalReturnStock(String batchNo) {
+        run(batchNo, NoticeBillType.SALES_RETURN, () -> submitBatchService.syncSalReturnStockBatch(batchNo));
+    }
+
+    @Async("erpSyncExecutor")
+    public void syncAuditExistingBill(String batchNo) {
+        run(batchNo, null, () -> submitBatchService.syncAuditExistingBillBatch(batchNo));
+    }
+
     private void run(String batchNo, NoticeBillType billType, Runnable action) {
+        String typeCode = billType != null ? billType.getCode() : "AUDIT_EXISTING";
         try {
-            log.info("Async ERP sync start batchNo={} billType={}", batchNo, billType.getCode());
+            log.info("Async ERP sync start batchNo={} billType={}", batchNo, typeCode);
             action.run();
-            log.info("Async ERP sync finished batchNo={} billType={}", batchNo, billType.getCode());
+            log.info("Async ERP sync finished batchNo={} billType={}", batchNo, typeCode);
         } catch (Exception e) {
             log.error("Async ERP sync failed batchNo={} billType={}: {}",
-                    batchNo, billType.getCode(), e.getMessage(), e);
+                    batchNo, typeCode, e.getMessage(), e);
         }
     }
 }

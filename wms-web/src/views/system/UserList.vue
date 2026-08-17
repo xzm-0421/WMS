@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search } from '@element-plus/icons-vue'
 import {
   getUsers,
   createUser,
@@ -8,7 +9,9 @@ import {
   deleteUser,
   resetPassword,
   updateUserStatus,
+  getKingdeeUsers,
   type SysUser,
+  type KingdeeSecUser,
 } from '@/api/user'
 
 const loading = ref(false)
@@ -26,11 +29,27 @@ const form = reactive<SysUser>({
   email: '',
   status: 1,
   password: '',
+  kdUserNumber: '',
+  kdUserId: undefined,
 })
 
 const resetDialogVisible = ref(false)
 const resetUserId = ref<number | null>(null)
 const newPassword = ref('')
+
+const pickerVisible = ref(false)
+const pickerLoading = ref(false)
+const pickerKeyword = ref('')
+const pickerRows = ref<KingdeeSecUser[]>([])
+
+const kdDisplay = computed(() => {
+  if (form.kdUserId && form.kdUserNumber) {
+    return `${form.kdUserNumber} (${form.kdUserId})`
+  }
+  if (form.kdUserNumber) return form.kdUserNumber
+  if (form.kdUserId) return String(form.kdUserId)
+  return ''
+})
 
 function resetForm() {
   Object.assign(form, {
@@ -40,6 +59,8 @@ function resetForm() {
     email: '',
     status: 1,
     password: '',
+    kdUserNumber: '',
+    kdUserId: undefined,
   })
   editingId.value = null
 }
@@ -64,7 +85,12 @@ function handleAdd() {
 function handleEdit(row: SysUser) {
   resetForm()
   editingId.value = row.id!
-  Object.assign(form, { ...row, password: '' })
+  Object.assign(form, {
+    ...row,
+    password: '',
+    kdUserNumber: row.kdUserNumber || '',
+    kdUserId: row.kdUserId ?? undefined,
+  })
   dialogTitle.value = '编辑用户'
   dialogVisible.value = true
 }
@@ -113,6 +139,32 @@ async function toggleStatus(row: SysUser) {
   loadData()
 }
 
+async function openKingdeePicker() {
+  pickerVisible.value = true
+  pickerKeyword.value = ''
+  await loadKingdeeUsers()
+}
+
+async function loadKingdeeUsers() {
+  pickerLoading.value = true
+  try {
+    pickerRows.value = await getKingdeeUsers(pickerKeyword.value || undefined)
+  } finally {
+    pickerLoading.value = false
+  }
+}
+
+function selectKingdeeUser(row: KingdeeSecUser) {
+  form.kdUserId = row.userId
+  form.kdUserNumber = row.userName || String(row.userId)
+  pickerVisible.value = false
+}
+
+function clearKingdeeUser() {
+  form.kdUserId = undefined
+  form.kdUserNumber = ''
+}
+
 onMounted(loadData)
 </script>
 
@@ -134,6 +186,12 @@ onMounted(loadData)
     <el-table v-loading="loading" :data="tableData" stripe>
       <el-table-column prop="username" label="用户名" width="140" />
       <el-table-column prop="realName" label="姓名" width="120" />
+      <el-table-column prop="kdUserNumber" label="金蝶用户" min-width="140">
+        <template #default="{ row }">
+          <span v-if="row.kdUserId">{{ row.kdUserNumber || '-' }} ({{ row.kdUserId }})</span>
+          <span v-else style="color: #909399">未绑定</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="phone" label="手机" width="140" />
       <el-table-column prop="email" label="邮箱" min-width="180" />
       <el-table-column prop="status" label="状态" width="90">
@@ -163,13 +221,23 @@ onMounted(loadData)
     />
   </el-card>
 
-  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="480px">
-    <el-form :model="form" label-width="90px">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
+    <el-form :model="form" label-width="100px">
       <el-form-item label="用户名" required>
         <el-input v-model="form.username" :disabled="!!editingId" />
       </el-form-item>
       <el-form-item label="姓名" required>
         <el-input v-model="form.realName" />
+      </el-form-item>
+      <el-form-item label="金蝶用户">
+        <el-input :model-value="kdDisplay" readonly placeholder="点击右侧按钮选择金蝶用户">
+          <template #append>
+            <el-button :icon="Search" @click="openKingdeePicker" />
+          </template>
+        </el-input>
+        <div v-if="form.kdUserId" style="margin-top: 6px">
+          <el-button link type="danger" @click="clearKingdeeUser">清除绑定</el-button>
+        </div>
       </el-form-item>
       <el-form-item v-if="!editingId" label="密码" required>
         <el-input v-model="form.password" type="password" show-password />
@@ -185,6 +253,40 @@ onMounted(loadData)
       <el-button @click="dialogVisible = false">取消</el-button>
       <el-button type="primary" @click="handleSave">确定</el-button>
     </template>
+  </el-dialog>
+
+  <el-dialog v-model="pickerVisible" title="选择金蝶用户" width="720px" append-to-body>
+    <el-form :inline="true" @submit.prevent>
+      <el-form-item label="关键字">
+        <el-input
+          v-model="pickerKeyword"
+          clearable
+          placeholder="用户名称 / 电话"
+          style="width: 240px"
+          @keyup.enter="loadKingdeeUsers"
+        />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="loadKingdeeUsers">查询</el-button>
+      </el-form-item>
+    </el-form>
+    <el-table
+      v-loading="pickerLoading"
+      :data="pickerRows"
+      stripe
+      height="420"
+      highlight-current-row
+      @row-dblclick="selectKingdeeUser"
+    >
+      <el-table-column prop="userId" label="用户Id" width="120" />
+      <el-table-column prop="userName" label="用户名称" min-width="160" />
+      <el-table-column prop="phone" label="电话" width="140" />
+      <el-table-column label="操作" width="100" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="selectKingdeeUser(row)">选择</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
   </el-dialog>
 
   <el-dialog v-model="resetDialogVisible" title="重置密码" width="400px">

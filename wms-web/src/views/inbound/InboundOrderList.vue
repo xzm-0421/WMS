@@ -231,7 +231,7 @@ onMounted(loadData)
       </el-table-column>
       <el-table-column label="数量" width="100">
         <template #default="{ row }">
-          <el-input-number v-model="row.orderQty" :min="0" size="small" controls-position="right" />
+          <el-input-number v-model="row.orderQty" :min="0" :precision="4" :step="0.001" size="small" controls-position="right" />
         </template>
       </el-table-column>
       <el-table-column label="操作" width="70">

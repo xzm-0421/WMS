@@ -25,6 +25,8 @@ const BIZ_TEMPLATE_MAP: Record<string, string> = {
   kingdee_label: 'tpl-kingdee-material-label',
 }
 
+const KINGDEE_PUBLIC_BASE = '/api/v1/integration/kingdee/label-print'
+
 function getWmsToken(): string | null {
   try {
     if (window.parent && window.parent !== window) {
@@ -36,20 +38,47 @@ function getWmsToken(): string | null {
   return localStorage.getItem('wms_token')
 }
 
-async function fetchPrintData(biz: string, docNo: string) {
-  const token = getWmsToken()
-  const url = `/api/v1/print/data?biz=${encodeURIComponent(biz)}&docNo=${encodeURIComponent(docNo)}`
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+async function fetchJson(url: string, init?: RequestInit) {
+  const res = await fetch(url, init)
   if (!res.ok) {
-    throw new Error(`加载打印数据失败 (${res.status})`)
+    throw new Error(`请求失败 (${res.status})`)
   }
   const json = await res.json()
   if (json.code !== 200) {
-    throw new Error(json.message || '加载打印数据失败')
+    throw new Error(json.message || '请求失败')
   }
   return json.data
+}
+
+async function fetchPrintData(biz: string, docNo: string, jobId?: string | null) {
+  const token = getWmsToken()
+  // 金蝶浏览器打开时通常无 WMS token：走免登录公共接口
+  if (biz === 'kingdee_label' && jobId && !token) {
+    return fetchJson(`${KINGDEE_PUBLIC_BASE}/jobs/${encodeURIComponent(jobId)}/data`)
+  }
+  const url = `/api/v1/print/data?biz=${encodeURIComponent(biz)}&docNo=${encodeURIComponent(docNo)}`
+  return fetchJson(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+async function postKingdeeJob(path: string, body?: unknown) {
+  const token = getWmsToken()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  // 有 token 走业务接口；无 token 走金蝶公共接口
+  const url = token
+    ? `/api/v1/print/label-jobs/${path}`
+    : `${KINGDEE_PUBLIC_BASE}/jobs/${path}`
+  await fetch(url, {
+    method: 'POST',
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  }).catch(() => {})
 }
 
 function triggerAutoPrint() {
@@ -91,10 +120,6 @@ function applyKingdeeLabelOverrides(doc: Record<string, unknown>) {
   applyArchivePrintOverrides(doc)
 }
 
-function getWmsTokenForApi(): string | null {
-  return getWmsToken()
-}
-
 export function getEmbedPrintContext() {
   const params = new URLSearchParams(window.location.search)
   const headerCopies = useDesignerStore.getState().documentData?.header?.FCopies
@@ -113,15 +138,10 @@ export function getEmbedPrintContext() {
 export async function notifyLabelPrintResult(errorMessage?: string) {
   const { biz, jobId } = getEmbedPrintContext()
   if (biz !== 'kingdee_label' || !jobId) return
-  const token = getWmsTokenForApi()
-  await fetch(`/api/v1/print/label-jobs/${encodeURIComponent(jobId)}/printed`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(errorMessage ? { errorMessage } : {}),
-  }).catch(() => {})
+  await postKingdeeJob(
+    `${encodeURIComponent(jobId)}/printed`,
+    errorMessage ? { errorMessage } : {},
+  )
 }
 
 /** WMS 打印引导：按 biz 加载对应模板与真实单据数据 */
@@ -147,13 +167,9 @@ export async function bootstrapWmsEmbed() {
 
   try {
     if (jobId && biz === 'kingdee_label') {
-      const token = getWmsToken()
-      await fetch(`/api/v1/print/label-jobs/${encodeURIComponent(jobId)}/open`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      }).catch(() => {})
+      await postKingdeeJob(`${encodeURIComponent(jobId)}/open`)
     }
-    const doc = await fetchPrintData(biz, docNo)
+    const doc = await fetchPrintData(biz, docNo, jobId)
     store.loadTemplate(templateId)
     store.setDocumentData(doc)
     if (biz === 'barcode_archive') {
@@ -174,15 +190,9 @@ export async function bootstrapWmsEmbed() {
     console.error('[WMS Print]', err)
     alert(err instanceof Error ? err.message : '加载打印数据失败')
     if (jobId && biz === 'kingdee_label') {
-      const token = getWmsToken()
-      await fetch(`/api/v1/print/label-jobs/${encodeURIComponent(jobId)}/printed`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ errorMessage: err instanceof Error ? err.message : '加载失败' }),
-      }).catch(() => {})
+      await postKingdeeJob(`${encodeURIComponent(jobId)}/printed`, {
+        errorMessage: err instanceof Error ? err.message : '加载失败',
+      })
     }
   }
 }

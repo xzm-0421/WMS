@@ -135,10 +135,6 @@
   color: #2563eb;
   font-weight: 600;
 }
-.bill-erp[data-v-88752e11] {
-  color: #16a34a;
-  font-weight: 600;
-}
 .row-side[data-v-88752e11] {
   display: flex;
   align-items: center;
@@ -163,6 +159,8 @@
 .empty-icon[data-v-88752e11] { font-size: 2rem; opacity: 0.25; display: block;
 }
 .empty-text[data-v-88752e11] { display: block; margin-top: 0.5rem; font-size: 0.75rem; color: #94a3b8;
+}
+.empty-hint[data-v-88752e11] { display: block; margin-top: 0.25rem; font-size: 0.6875rem; color: #cbd5e1;
 }
 .loading-tip[data-v-88752e11] { text-align: center; color: #94a3b8; padding: 0.75rem; font-size: 0.75rem;
 }

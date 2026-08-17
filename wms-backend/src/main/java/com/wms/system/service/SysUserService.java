@@ -6,8 +6,11 @@ import com.wms.auth.service.AuthService;
 import com.wms.common.constant.ErrorCode;
 import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
+import com.wms.integration.kingdee.KingdeeCloudService;
+import com.wms.integration.kingdee.dto.KingdeeSecUserVo;
 import com.wms.system.dto.*;
 import com.wms.system.entity.SysUser;
+import com.wms.system.entity.SysUserKingdeeMap;
 import com.wms.system.entity.SysUserRole;
 import com.wms.system.mapper.SysUserMapper;
 import com.wms.system.mapper.SysUserRoleMapper;
@@ -27,6 +30,8 @@ public class SysUserService {
     private final SysUserMapper userMapper;
     private final SysUserRoleMapper userRoleMapper;
     private final PasswordEncoder passwordEncoder;
+    private final SysUserKingdeeMapService userKingdeeMapService;
+    private final KingdeeCloudService kingdeeCloudService;
 
     public PageResult<SysUserDto> page(String username, String realName, Integer status,
                                        long current, long size) {
@@ -43,6 +48,10 @@ public class SysUserService {
     public SysUserDto getById(Long id) {
         SysUser user = getUser(id);
         return toDto(user);
+    }
+
+    public List<KingdeeSecUserVo> listKingdeeUsers(String keyword) {
+        return kingdeeCloudService.listSecUsers(keyword, 2000);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -63,6 +72,7 @@ public class SysUserService {
         user.setWarehouseScopeJson(request.getWarehouseScopeJson());
         userMapper.insert(user);
         saveUserRoles(user.getId(), request.getRoleIds());
+        userKingdeeMapService.upsertBinding(user.getId(), request.getKdUserNumber(), request.getKdUserId());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -83,12 +93,14 @@ public class SysUserService {
             userRoleMapper.deleteByUserId(id);
             saveUserRoles(id, request.getRoleIds());
         }
+        userKingdeeMapService.upsertBinding(id, request.getKdUserNumber(), request.getKdUserId());
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         getUser(id);
         userRoleMapper.deleteByUserId(id);
+        userKingdeeMapService.deleteByExternalUserId(id);
         userMapper.deleteById(id);
     }
 
@@ -132,6 +144,11 @@ public class SysUserService {
         SysUserDto dto = new SysUserDto();
         BeanUtils.copyProperties(user, dto);
         dto.setRoleIds(userRoleMapper.selectRoleIdsByUserId(user.getId()));
+        SysUserKingdeeMap map = userKingdeeMapService.findByExternalUserId(String.valueOf(user.getId()));
+        if (map != null) {
+            dto.setKdUserNumber(map.getKdUserNumber());
+            dto.setKdUserId(map.getKdUserId());
+        }
         return dto;
     }
 }

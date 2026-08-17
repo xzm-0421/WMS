@@ -10,6 +10,8 @@ import com.wms.system.service.AuditTrailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,18 +31,18 @@ public class ReportService {
         data.put("todayInboundCount", reportMapper.countTodayInbound());
         data.put("todayOutboundCount", reportMapper.countTodayOutbound());
         data.put("skuCount", reportMapper.countSku());
-        long pendingTasks = reportMapper.countPendingInbound()
-                + reportMapper.countPendingOutbound()
-                + reportMapper.countPendingStockcheck()
-                + reportMapper.countPendingQc();
+        long pendingInbound = reportMapper.countPendingInbound();
+        long pendingOutbound = reportMapper.countPendingOutbound();
+        long pendingStockcheck = reportMapper.countPendingStockcheck();
+        long pendingQc = reportMapper.countPendingQc();
+        long pendingTasks = pendingInbound + pendingOutbound + pendingStockcheck + pendingQc;
         data.put("pendingTaskCount", pendingTasks);
-        data.put("pendingInbound", reportMapper.countPendingInbound());
-        data.put("pendingOutbound", reportMapper.countPendingOutbound());
-        data.put("pendingStockcheck", reportMapper.countPendingStockcheck());
-        data.put("pendingQc", reportMapper.countPendingQc());
+        data.put("pendingInbound", pendingInbound);
+        data.put("pendingOutbound", pendingOutbound);
+        data.put("pendingStockcheck", pendingStockcheck);
+        data.put("pendingQc", pendingQc);
 
-        Map<String, Object> trend = inboundStatistics(null, null);
-        data.put("weeklyTrend", trend);
+        data.put("weeklyTrend", buildWeeklyPdaIoTrend());
 
         List<Map<String, Object>> whDist = reportMapper.warehouseStockDistribution();
         List<Map<String, Object>> pie = new ArrayList<>();
@@ -51,6 +53,13 @@ public class ReportService {
             pie.add(item);
         }
         data.put("warehouseDistribution", pie);
+
+        List<Map<String, Object>> taskPie = new ArrayList<>();
+        taskPie.add(pieItem("待入库", pendingInbound));
+        taskPie.add(pieItem("待出库", pendingOutbound));
+        taskPie.add(pieItem("待盘点", pendingStockcheck));
+        taskPie.add(pieItem("待质检", pendingQc));
+        data.put("taskDistribution", taskPie);
 
         List<InventoryWarningDto> warnings = inventoryService.getWarnings(null);
         data.put("warnings", warnings.size() > 10 ? warnings.subList(0, 10) : warnings);
@@ -68,6 +77,13 @@ public class ReportService {
         }
         data.put("recentLogs", logs);
         return data;
+    }
+
+    private static Map<String, Object> pieItem(String name, long value) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("name", name);
+        item.put("value", value);
+        return item;
     }
 
     public Map<String, Object> pickingDashboard() {
@@ -111,6 +127,48 @@ public class ReportService {
 
     public Map<String, Object> outboundStatistics(String startDate, String endDate) {
         return buildDailyChart(reportMapper.outboundDailyStatistics(startDate, endDate), "outbound");
+    }
+
+    /**
+     * 工作台近 7 天趋势：入库取 PDA 入库记录，出库取 PDA 出库提交批次。
+     */
+    private Map<String, Object> buildWeeklyPdaIoTrend() {
+        Map<String, Long> inboundByDay = toDayCountMap(reportMapper.pdaInboundDailyStatistics());
+        Map<String, Long> outboundByDay = toDayCountMap(reportMapper.pdaOutboundDailyStatistics());
+        DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        DateTimeFormatter labelFmt = DateTimeFormatter.ofPattern("MM-dd");
+        List<String> labels = new ArrayList<>();
+        List<Number> inbound = new ArrayList<>();
+        List<Number> outbound = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate day = today.minusDays(i);
+            String key = day.format(dayFmt);
+            labels.add(day.format(labelFmt));
+            inbound.add(inboundByDay.getOrDefault(key, 0L));
+            outbound.add(outboundByDay.getOrDefault(key, 0L));
+        }
+        Map<String, Object> chart = new HashMap<>();
+        chart.put("labels", labels);
+        chart.put("inbound", inbound);
+        chart.put("outbound", outbound);
+        return chart;
+    }
+
+    private static Map<String, Long> toDayCountMap(List<Map<String, Object>> rows) {
+        Map<String, Long> map = new HashMap<>();
+        if (rows == null) {
+            return map;
+        }
+        for (Map<String, Object> row : rows) {
+            if (row == null || row.get("dayLabel") == null) {
+                continue;
+            }
+            String day = String.valueOf(row.get("dayLabel"));
+            Number cnt = row.get("cnt") instanceof Number n ? n : 0;
+            map.put(day, cnt.longValue());
+        }
+        return map;
     }
 
     private Map<String, Object> buildDailyChart(List<Map<String, Object>> rows, String seriesKey) {

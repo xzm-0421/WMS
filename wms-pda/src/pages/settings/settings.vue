@@ -18,7 +18,7 @@
     <view class="section-card">
       <text class="section-title">设备信息</text>
       <text class="info-row">设备编号: {{ deviceNo }}</text>
-      <text class="info-row">应用版本: WMS PDA 1.0</text>
+      <text class="info-row">应用版本: {{ appVersionText }}</text>
     </view>
 
     <button v-if="fromLogin" class="btn-back" @click="goBack">返回登录</button>
@@ -31,24 +31,32 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import ServerConfigForm from '@/components/ServerConfigForm.vue'
 import defaultConfig from '@/utils/config.js'
 import { changePassword } from '@/api/mobile.js'
+import { getLocalAppVersion } from '@/utils/appUpdate.js'
 
 const serverFormRef = ref(null)
 const fromLogin = ref(false)
 const pwd = reactive({ old: '', new1: '', new2: '' })
 const deviceNo = defaultConfig.deviceNo
+const appVersionText = ref('WMS PDA')
 
 const isLoggedIn = computed(() => !!uni.getStorageSync('wms_token'))
 
 onLoad((options) => {
   fromLogin.value = options?.from === 'login'
+  getLocalAppVersion().then((v) => {
+    appVersionText.value = `WMS PDA ${v.versionName}`
+  })
 })
 
 onShow(() => {
   serverFormRef.value?.refresh?.()
 })
 
-function onServerSaved() {
-  // 服务器配置已写入 localStorage，登录页与个人主页读取同一 key
+function onServerSaved(payload) {
+  // 换服务器后本地登录态已清除；若当前不在登录流程，跳回登录页
+  if (payload?.needRelogin && !fromLogin.value) {
+    uni.reLaunch({ url: '/pages/login/login' })
+  }
 }
 
 async function handleChangePwd() {

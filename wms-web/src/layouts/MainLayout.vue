@@ -53,7 +53,7 @@ const menus = [
       { path: '/base/warehouses', title: '仓库信息', permission: MENU_PERMISSIONS['/base/warehouses'] },
       { path: '/base/locations', title: '库位信息', permission: MENU_PERMISSIONS['/base/locations'] },
       { path: '/barcode/rules', title: '条码规则', permission: MENU_PERMISSIONS['/barcode/rules'] },
-      { path: '/print/label-jobs', title: '物料标签打印', permission: MENU_PERMISSIONS['/print/label-jobs'] },
+      { path: '/print/label-jobs', title: '期初库存', permission: MENU_PERMISSIONS['/print/label-jobs'] },
     ],
   },
   {
@@ -64,7 +64,6 @@ const menus = [
       { path: '/inbound/orders', title: '入库单', permission: MENU_PERMISSIONS['/inbound/orders'] },
       { path: '/inbound/pda-records', title: 'PDA入库记录', permission: MENU_PERMISSIONS['/inbound/pda-records'] },
       { path: '/inbound/receive-batches', title: '收料入库批次', permission: MENU_PERMISSIONS['/inbound/pda-records'] },
-      { path: '/outbound/orders', title: '出库单', permission: MENU_PERMISSIONS['/outbound/orders'] },
       { path: '/outbound/pda-records', title: 'PDA出库记录', permission: MENU_PERMISSIONS['/outbound/pda-records'] },
     ],
   },
@@ -74,12 +73,7 @@ const menus = [
     icon: Goods,
     children: [
       { path: '/inventory/list', title: '实时库存', permission: MENU_PERMISSIONS['/inventory/list'] },
-      { path: '/inventory/other-inbound', title: '其他入库', permission: MENU_PERMISSIONS['/inventory/other-inbound'] },
-      { path: '/inventory/other-outbound', title: '其他出货', permission: MENU_PERMISSIONS['/inventory/other-outbound'] },
-      { path: '/inventory/transfers', title: '库存调拨', permission: MENU_PERMISSIONS['/inventory/transfers'] },
-      { path: '/stocktake/tasks', title: '库存盘点', permission: MENU_PERMISSIONS['/stocktake/tasks'] },
       { path: '/inventory/sample-plans', title: '库存抽检', permission: MENU_PERMISSIONS['/inventory/sample-plans'] },
-      { path: '/qc/tasks', title: '质检任务', permission: MENU_PERMISSIONS['/qc/tasks'] },
     ],
   },
   {

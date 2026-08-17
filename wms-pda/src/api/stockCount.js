@@ -1,5 +1,5 @@
 /**
- * PDA 金蝶盘点作业 API
+ * PDA 金蝶盘点作业 API（未审核单据 → 实盘 → 提交审核）
  */
 import request, { withDevice } from '../utils/http.js'
 
@@ -54,6 +54,22 @@ export function completeStockCount(billNo) {
   })
 }
 
+export function heartbeatStockCountLock(billNo) {
+  return request({
+    url: `/mobile/stock-count/${encodeURIComponent(billNo)}/lock/heartbeat`,
+    method: 'POST',
+    silent: true,
+  })
+}
+
+export function releaseStockCountLock(billNo) {
+  return request({
+    url: `/mobile/stock-count/${encodeURIComponent(billNo)}/lock/release`,
+    method: 'POST',
+    silent: true,
+  })
+}
+
 export default {
   listStockCountBills,
   resolveStockCountBarcode,
@@ -62,4 +78,6 @@ export default {
   scanStockCountLine,
   updateStockCountLineQty,
   completeStockCount,
+  heartbeatStockCountLock,
+  releaseStockCountLock,
 }

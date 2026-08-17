@@ -49,15 +49,15 @@
           <view class="qty-grid">
             <view class="qty-cell">
               <text class="qty-label">计划</text>
-              <text class="qty-value">{{ formatQty(line.planQty) }}</text>
+              <text class="qty-value">{{ formatQty(line.planQty, line.unitCode) }}</text>
             </view>
             <view class="qty-cell">
               <text class="qty-label">已退</text>
-              <text class="qty-value submitted">{{ formatQty(line.submittedQty) }}</text>
+              <text class="qty-value submitted">{{ formatQty(line.submittedQty, line.unitCode) }}</text>
             </view>
             <view class="qty-cell">
               <text class="qty-label">可退</text>
-              <text class="qty-value remain">{{ formatQty(line.remainQty) }}</text>
+              <text class="qty-value remain">{{ formatQty(line.remainQty, line.unitCode) }}</text>
             </view>
             <view class="qty-cell unit-cell">
               <text class="qty-label">单位</text>
@@ -118,6 +118,8 @@ import CompactScanBox from '@/components/CompactScanBox.vue'
 import WarehousePicker from '@/components/WarehousePicker.vue'
 import useOutsourceReturnScan from '@/composables/useOutsourceReturnScan.js'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { sanitizeDecimalInput } from '@/utils/decimalInput.js'
+import { qtyDecimalScale, formatQtyInput } from '@/utils/formatQty.js'
 
 const billNo = ref('')
 const scanInputRef = ref(null)
@@ -171,26 +173,26 @@ function isPartialLine(line) {
 
 function syncQtyDrafts() {
   lines.value.forEach((line) => {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
   })
 }
 
 function getQtyDraft(line) {
   if (qtyDrafts[line.lineNo] == null) {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
   }
   return qtyDrafts[line.lineNo]
 }
 
 function onQtyInput(line, e) {
-  qtyDrafts[line.lineNo] = e.detail.value
+  qtyDrafts[line.lineNo] = sanitizeDecimalInput(e.detail.value, qtyDecimalScale(line.unitCode))
 }
 
 async function onQtyBlur(line) {
   const raw = qtyDrafts[line.lineNo]
   const num = raw === '' || raw == null ? 0 : Number(raw)
   if (Number.isNaN(num) || num < 0) {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
     return
   }
   const current = Number(line.pendingSubmitQty) || 0
@@ -200,9 +202,9 @@ async function onQtyBlur(line) {
   updatingLineNo.value = null
   if (ok) {
     const updated = lines.value.find((l) => l.lineNo === line.lineNo)
-    if (updated) qtyDrafts[line.lineNo] = formatQty(updated.pendingSubmitQty || 0)
+    if (updated) qtyDrafts[line.lineNo] = formatQtyInput(updated.pendingSubmitQty || 0, updated.unitCode)
   } else {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
   }
 }
 

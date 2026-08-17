@@ -1,4 +1,4 @@
--- 生产领料单 PDA 联调种子：物料 / 仓库 / 库存
+-- 生产领料单 PDA 联调种子：物料 / 仓库 / 库存（历史脚本；新环境会被后续迁移清理）
 IF NOT EXISTS (SELECT 1 FROM base_warehouse WHERE warehouse_code = 'CK004' AND deleted = 0)
     INSERT INTO base_warehouse (warehouse_code, warehouse_name, warehouse_type, status, create_by, erp_warehouse_code)
     VALUES ('CK004', N'原材料仓', 'RAW', 1, 'system', 'CK004');

@@ -78,13 +78,18 @@ function buildSingleLabelInnerHtml(job: LabelPrintJob, qrDataUrl: string): strin
       </div>`
 }
 
-async function buildLabelItems(jobs: LabelPrintJob[], options?: DirectLabelPrintOptions): Promise<LabelItem[]> {
+async function buildLabelItems(
+  jobs: LabelPrintJob[],
+  options?: DirectLabelPrintOptions,
+  paperHeightMm?: number,
+): Promise<LabelItem[]> {
+  const qrPx = Math.min(512, Math.max(180, Math.round((paperHeightMm || 80) * 8)))
   const items: LabelItem[] = []
   for (const job of jobs) {
     const barcode = job.barcodeContent?.trim() || job.materialCode
     const copies = resolveCopies(job, options)
     const qrDataUrl = await QRCode.toDataURL(barcode, {
-      width: 248,
+      width: qrPx,
       margin: 0,
       color: { dark: '#000000', light: '#ffffff' },
     })
@@ -96,29 +101,37 @@ async function buildLabelItems(jobs: LabelPrintJob[], options?: DirectLabelPrint
   return items
 }
 
-function labelStyles(widthMm: number, heightMm: number): string {
+function labelStyles(contentWidthMm: number, contentHeightMm: number): string {
+  const baseFontMm = Math.min(3.8, Math.max(1.6, contentHeightMm * 0.048))
+  const padY = Math.max(0.8, contentHeightMm * 0.035)
+  const padX = Math.max(1.0, contentWidthMm * 0.022)
+  const qrBoxMm = Math.min(contentHeightMm * 0.55, contentWidthMm * 0.3, contentHeightMm * 0.7)
+  const qrImgMm = qrBoxMm * 0.9
+  const mainGapMm = Math.max(0.8, contentWidthMm * 0.018)
+
   return `
   .label-sheet {
-    width: ${widthMm}mm;
-    height: ${heightMm}mm;
-    padding: 1.2mm 1.5mm;
+    width: ${contentWidthMm}mm;
+    height: ${contentHeightMm}mm;
+    padding: ${padY.toFixed(2)}mm ${padX.toFixed(2)}mm;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     background: #fff;
     box-sizing: border-box;
+    font-size: ${baseFontMm.toFixed(3)}mm;
   }
   .label-title {
-    font-size: 9pt;
+    font-size: 1.3em;
     font-weight: bold;
     line-height: 1.1;
-    margin-bottom: 0.6mm;
+    margin-bottom: 0.25em;
     flex-shrink: 0;
   }
   .label-main {
     flex: 1;
     display: flex;
-    gap: 1mm;
+    gap: ${mainGapMm.toFixed(2)}mm;
     min-height: 0;
     align-items: stretch;
   }
@@ -127,18 +140,19 @@ function labelStyles(widthMm: number, heightMm: number): string {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5mm;
-    justify-content: flex-start;
+    gap: 0.15em;
+    justify-content: space-between;
   }
   .field-row {
     display: flex;
     flex-direction: column;
     gap: 0;
     line-height: 1.15;
+    min-height: 0;
   }
   .field-row.split {
     flex-direction: row;
-    gap: 1.5mm;
+    gap: 0.6em;
   }
   .field-row.split > span {
     flex: 1;
@@ -149,91 +163,119 @@ function labelStyles(widthMm: number, heightMm: number): string {
   }
   .field-row .label {
     color: #666;
-    font-size: 5pt;
+    font-size: 0.6em;
     line-height: 1.1;
   }
   .field-row .value {
-    font-size: 7pt;
+    font-size: 0.92em;
     font-weight: bold;
     word-break: break-all;
     line-height: 1.15;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
   .field-row .value.qty {
     color: #1a8c44;
-    font-size: 8pt;
+    font-size: 1.05em;
+    -webkit-line-clamp: 1;
   }
   .label-qr {
-    width: 17mm;
+    width: ${qrBoxMm.toFixed(2)}mm;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    padding-top: 0.2mm;
+    justify-content: center;
   }
   .label-qr img {
-    width: 15.5mm;
-    height: 15.5mm;
+    width: ${qrImgMm.toFixed(2)}mm;
+    height: ${qrImgMm.toFixed(2)}mm;
     display: block;
   }
   .qr-hint {
-    font-size: 4.5pt;
+    font-size: 0.5em;
     color: #999;
-    margin-top: 0.3mm;
+    margin-top: 0.2em;
     text-align: center;
-    line-height: 1;
+    line-height: 1.1;
   }`
 }
 
+/** 按标签真实尺寸直打（默认 110×80mm），打印对话框选「纵向」；驱动纸张宽110×高80。 */
 function buildSinglePrintHtml(
   items: LabelItem[],
-  widthMm: number,
-  heightMm: number,
+  labelWidthMm: number,
+  labelHeightMm: number,
   autoPrint: boolean,
 ): string {
-  const widthIn = (widthMm / 25.4).toFixed(3)
-  const heightIn = (heightMm / 25.4).toFixed(3)
+  const pageWidthMm = labelWidthMm
+  const pageHeightMm = labelHeightMm
+
   const printScript = autoPrint
-    ? `window.onload=function(){setTimeout(function(){window.focus();window.print();},400);};
-       window.onafterprint=function(){setTimeout(function(){window.close();},600);};`
+    ? `window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};
+       window.onafterprint=function(){setTimeout(function(){window.close();},500);};`
     : ''
   const pagesHtml = items
-    .map((item) => `<div class="print-page"><div class="label-sheet">${item.html}</div></div>`)
+    .map((item, index) => {
+      const breakClass = index < items.length - 1 ? ' has-break' : ''
+      return `<div class="print-page${breakClass}"><div class="label-sheet">${item.html}</div></div>`
+    })
     .join('')
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>标签 ${widthMm}×${heightMm}mm</title>
+<html><head><meta charset="utf-8">
+<title>标签 ${labelWidthMm}×${labelHeightMm}mm</title>
 <style>
   @page {
-    size: ${widthMm}mm ${heightMm}mm;
-    size: ${widthIn}in ${heightIn}in;
+    size: ${pageWidthMm}mm ${pageHeightMm}mm portrait;
     margin: 0;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     margin: 0;
     padding: 0;
+    width: ${pageWidthMm}mm;
     background: #fff;
     font-family: "Microsoft YaHei", SimHei, sans-serif;
   }
   .print-page {
-    width: ${widthMm}mm;
-    height: ${heightMm}mm;
-    page-break-after: always;
+    width: ${pageWidthMm}mm;
+    height: ${pageHeightMm}mm;
+    max-width: ${pageWidthMm}mm;
+    max-height: ${pageHeightMm}mm;
     overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-after: auto;
+    break-after: auto;
   }
-  .print-page:last-child { page-break-after: auto; }
-  ${labelStyles(widthMm, heightMm)}
+  .print-page.has-break {
+    page-break-after: always;
+    break-after: page;
+  }
+  ${labelStyles(pageWidthMm, pageHeightMm)}
   @media print {
-    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .print-page, .label-sheet {
-      width: ${widthMm}mm !important;
-      height: ${heightMm}mm !important;
+    html, body {
+      width: ${pageWidthMm}mm !important;
+      height: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .print-page {
+      width: ${pageWidthMm}mm !important;
+      height: ${pageHeightMm}mm !important;
+      max-height: ${pageHeightMm}mm !important;
+      overflow: hidden !important;
     }
   }
   @media screen {
-    html { background: #e8e8e8; }
+    html { background: #e8e8e8; width: auto; }
     body {
+      width: auto;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -242,14 +284,18 @@ function buildSinglePrintHtml(
       gap: 12px;
       padding: 16px;
     }
-    .print-page { box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+    .print-page {
+      box-shadow: 0 2px 12px rgba(0,0,0,.12);
+      background: #fff;
+    }
   }
-</style></head><body>${pagesHtml}
-<script>${printScript}</script></body></html>`
+</style>
+<script>${printScript}</script>
+</head><body>${pagesHtml}</body></html>`
 }
 
 function openPrintWindow(html: string): Window | null {
-  const win = window.open('', '_blank', 'width=480,height=360')
+  const win = window.open('', '_blank', 'width=900,height=640')
   if (!win) return null
   win.document.open()
   win.document.write(html)
@@ -270,7 +316,14 @@ function attachPrintedNotify(printWin: Window, jobs: LabelPrintJob[], preview?: 
   setTimeout(notifyPrinted, 15000)
 }
 
-/** 直接打印/预览物料标签（不经过套打设计器，每张纸一个标签） */
+function resolvePageSize(widthMm: number, heightMm: number): { pageWidthMm: number; pageHeightMm: number } {
+  return {
+    pageWidthMm: widthMm > 0 ? widthMm : DEFAULT_LABEL_PAPER.width,
+    pageHeightMm: heightMm > 0 ? heightMm : DEFAULT_LABEL_PAPER.height,
+  }
+}
+
+/** 直接打印/预览物料标签（HTML 直打，不用 Canvas） */
 export async function printKingdeeLabelDirect(
   job: LabelPrintJob,
   options?: DirectLabelPrintOptions,
@@ -280,8 +333,9 @@ export async function printKingdeeLabelDirect(
   await markLabelJobOpened(syncedJob.jobId).catch(() => {})
 
   const { widthMm, heightMm } = assertSamePaperSize([syncedJob])
-  const items = await buildLabelItems([syncedJob], options)
-  const html = buildSinglePrintHtml(items, widthMm, heightMm, !options?.preview)
+  const { pageWidthMm, pageHeightMm } = resolvePageSize(widthMm, heightMm)
+  const items = await buildLabelItems([syncedJob], options, pageHeightMm)
+  const html = buildSinglePrintHtml(items, pageWidthMm, pageHeightMm, !options?.preview)
   const printWin = openPrintWindow(html)
   if (!printWin) {
     throw new Error('浏览器拦截了打印窗口，请允许弹窗后重试')
@@ -289,7 +343,7 @@ export async function printKingdeeLabelDirect(
   attachPrintedNotify(printWin, [syncedJob], options?.preview)
 }
 
-/** 批量打印/预览物料标签（每张纸一个标签，要求标签尺寸一致） */
+/** 批量打印/预览物料标签（要求标签尺寸一致） */
 export async function printKingdeeLabelsBatch(
   jobs: LabelPrintJob[],
   options?: DirectLabelPrintOptions,
@@ -311,8 +365,9 @@ export async function printKingdeeLabelsBatch(
   await Promise.all(syncedJobs.map((job) => markLabelJobOpened(job.jobId).catch(() => {})))
 
   const { widthMm, heightMm } = assertSamePaperSize(syncedJobs)
-  const items = await buildLabelItems(syncedJobs, options)
-  const html = buildSinglePrintHtml(items, widthMm, heightMm, !options?.preview)
+  const { pageWidthMm, pageHeightMm } = resolvePageSize(widthMm, heightMm)
+  const items = await buildLabelItems(syncedJobs, options, pageHeightMm)
+  const html = buildSinglePrintHtml(items, pageWidthMm, pageHeightMm, !options?.preview)
   const printWin = openPrintWindow(html)
   if (!printWin) {
     throw new Error('浏览器拦截了打印窗口，请允许弹窗后重试')

@@ -91,7 +91,9 @@ public class PdaInboundRecordService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "物料不存在: " + materialCode, "MATERIAL_NOT_FOUND");
         }
 
-        String locationCode = "";
+        // 库位可选：未传则仅仓库入库
+        String locationCode = StringUtils.hasText(req.getLocationCode())
+                ? req.getLocationCode().trim() : "";
 
         PdaInboundRecord record = new PdaInboundRecord();
         record.setRecordNo(generateRecordNo());

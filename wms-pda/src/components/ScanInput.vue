@@ -70,12 +70,12 @@ const {
   onFocus,
 } = useScannerInput((code) => {
   emit('scan', code)
-})
+}, { getDisabled: () => props.disabled })
 
 const statusText = computed(() => {
   if (props.disabled) return '处理中，请稍候...'
   if (ready.value) return '扫码枪已就绪，扫描后自动录入'
-  return '请对准条码扫描'
+  return '无需点击输入框，直接扫码即可'
 })
 
 function handleFocus() {
@@ -86,7 +86,6 @@ function handleFocus() {
 function handleBlur() {
   onBlur()
   ready.value = false
-  // 不在 blur 时自动抢焦点，避免与扫码枪输入冲突
 }
 
 function clearInput() {

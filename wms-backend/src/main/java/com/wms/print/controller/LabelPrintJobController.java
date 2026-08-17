@@ -1,5 +1,6 @@
 package com.wms.print.controller;
 
+import com.wms.common.excel.ExcelHttpHelper;
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
 import com.wms.print.dto.KingdeeLabelPrintRequest;
@@ -7,14 +8,19 @@ import com.wms.print.dto.LabelPrintJobVo;
 import com.wms.print.service.LabelPrintJobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
-@Tag(name = "物料标签打印")
+@Tag(name = "期初库存标签打印")
 @RestController
 @RequestMapping("/print/label-jobs")
 @RequiredArgsConstructor
@@ -22,26 +28,63 @@ public class LabelPrintJobController {
 
     private final LabelPrintJobService labelPrintJobService;
 
-    @Operation(summary = "打印任务列表")
+    @Operation(summary = "期初库存打印任务列表")
     @GetMapping
     public ApiResult<PageResult<LabelPrintJobVo>> list(
+            @RequestParam(required = false) String warehouseCode,
+            @RequestParam(required = false) String warehouseName,
+            @RequestParam(required = false) String materialKeyword,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") long current,
             @RequestParam(defaultValue = "20") long size) {
-        return ApiResult.ok(labelPrintJobService.page(keyword, status, current, size));
+        String material = StringUtils.hasText(materialKeyword) ? materialKeyword : keyword;
+        return ApiResult.ok(labelPrintJobService.page(warehouseCode, warehouseName, material, current, size));
     }
 
-    @Operation(summary = "打印任务详情")
-    @GetMapping("/{jobId}")
-    public ApiResult<LabelPrintJobVo> detail(@PathVariable String jobId) {
-        return ApiResult.ok(labelPrintJobService.getByJobId(jobId));
+    @Operation(summary = "下载期初库存导入模板")
+    @GetMapping("/import/template")
+    public void importTemplate(HttpServletResponse response) throws IOException {
+        ExcelHttpHelper.writeXlsx(response, "期初库存导入模板.xlsx",
+                labelPrintJobService::writeImportTemplate);
+    }
+
+    @Operation(summary = "导入期初库存 Excel")
+    @PostMapping("/import")
+    public ApiResult<Integer> importExcel(@RequestParam("file") MultipartFile file) throws IOException {
+        int count = labelPrintJobService.importExcel(file);
+        return ApiResult.ok("成功导入 " + count + " 条", count);
+    }
+
+    @Operation(summary = "导出期初库存 Excel")
+    @GetMapping("/export")
+    public void exportExcel(
+            @RequestParam(required = false) String warehouseCode,
+            @RequestParam(required = false) String warehouseName,
+            @RequestParam(required = false) String materialKeyword,
+            @RequestParam(required = false) String keyword,
+            HttpServletResponse response) throws IOException {
+        String material = StringUtils.hasText(materialKeyword) ? materialKeyword : keyword;
+        ExcelHttpHelper.writeXlsx(response, "期初库存.xlsx",
+                out -> labelPrintJobService.exportExcel(warehouseCode, warehouseName, material, out));
+    }
+
+    @Operation(summary = "批量删除期初库存数据")
+    @DeleteMapping("/opening")
+    public ApiResult<Integer> deleteOpeningStock(@RequestBody List<Long> ids) {
+        int count = labelPrintJobService.deleteOpeningStock(ids);
+        return ApiResult.ok("已删除 " + count + " 条", count);
     }
 
     @Operation(summary = "手工创建打印任务")
     @PostMapping
     public ApiResult<LabelPrintJobVo> create(@Valid @RequestBody KingdeeLabelPrintRequest request) {
         return ApiResult.ok("任务已创建", labelPrintJobService.createManual(request));
+    }
+
+    @Operation(summary = "打印任务详情")
+    @GetMapping("/{jobId}")
+    public ApiResult<LabelPrintJobVo> detail(@PathVariable String jobId) {
+        return ApiResult.ok(labelPrintJobService.getByJobId(jobId));
     }
 
     @Operation(summary = "同步物料主数据到打印任务")

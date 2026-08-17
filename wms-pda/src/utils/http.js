@@ -1,7 +1,20 @@
 import defaultConfig from './config.js'
+import { clearSession } from './authStorage.js'
 import { getBaseUrl } from './server.js'
 
 let refreshing = null
+let loggingOut = false
+
+function forceLogout(message = '登录已过期') {
+  if (loggingOut) return
+  loggingOut = true
+  clearSession()
+  uni.showToast({ title: message, icon: 'none' })
+  uni.reLaunch({ url: '/pages/login/login' })
+  setTimeout(() => {
+    loggingOut = false
+  }, 2000)
+}
 
 async function tryRefreshToken() {
   const refreshToken = uni.getStorageSync('wms_refresh_token')
@@ -21,10 +34,14 @@ async function tryRefreshToken() {
               uni.setStorageSync('wms_refresh_token', body.data.refreshToken)
             }
             resolve(true)
-          } else resolve(false)
+          } else {
+            resolve(false)
+          }
         },
         fail: () => resolve(false),
-        complete: () => { refreshing = null },
+        complete: () => {
+          refreshing = null
+        },
       })
     })
   }
@@ -39,6 +56,7 @@ export function request(options) {
         url: getBaseUrl() + options.url,
         method: options.method || 'GET',
         data: options.data,
+        timeout: options.timeout || 60000,
         header: {
           'Content-Type': 'application/json',
           Authorization: token ? `Bearer ${token}` : '',
@@ -47,17 +65,21 @@ export function request(options) {
         },
         success(res) {
           const body = res.data
+          const unauthorized = body?.code === 401 || res.statusCode === 401
           if (body && body.code === 200) {
             resolve(body.data)
-          } else if (body?.code === 401 && !retried) {
+          } else if (unauthorized && !retried) {
             tryRefreshToken().then((ok) => {
-              if (ok) doRequest(true)
-              else {
-                uni.showToast({ title: '登录已过期', icon: 'none' })
-                uni.reLaunch({ url: '/pages/login/login' })
-                reject(body)
+              if (ok) {
+                doRequest(true)
+              } else {
+                forceLogout('登录已过期，请重新登录')
+                reject(body || { code: 401, message: '登录已过期' })
               }
             })
+          } else if (unauthorized) {
+            forceLogout('登录已过期，请重新登录')
+            reject(body || { code: 401, message: '登录已过期' })
           } else {
             if (!options.silent) {
               uni.showToast({ title: body?.message || '请求失败', icon: 'none' })
@@ -66,7 +88,9 @@ export function request(options) {
           }
         },
         fail(err) {
-          uni.showToast({ title: '网络错误', icon: 'none' })
+          if (!options.silent) {
+            uni.showToast({ title: '网络错误', icon: 'none' })
+          }
           reject(err)
         },
       })

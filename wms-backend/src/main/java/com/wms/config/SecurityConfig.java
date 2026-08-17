@@ -7,6 +7,7 @@ import com.wms.common.result.ApiResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -19,6 +20,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 @Configuration
 @EnableWebSecurity
@@ -34,6 +36,7 @@ public class SecurityConfig {
             "/api/v1/auth/mobile/login",
             "/api/v1/auth/captcha",
             "/api/v1/auth/refresh",
+            "/api/v1/mobile/app/update-check",
             "/api/v1/integration/kingdee/label-print",
             "/api/v1/integration/kingdee/label-print/**",
             "/doc.html",
@@ -44,6 +47,48 @@ public class SecurityConfig {
             "/h2-console/**"
     };
 
+    /** 前端静态资源（打包进 classpath:/static/） */
+    private static final String[] STATIC_PATHS = {
+            "/",
+            "/index.html",
+            "/assets/**",
+            "/print-designer/**",
+            "/pda-update/**",
+            "/favicon.ico",
+            "/vite.svg",
+            "/*.js",
+            "/*.css",
+            "/*.map",
+            "/*.png",
+            "/*.jpg",
+            "/*.jpeg",
+            "/*.gif",
+            "/*.svg",
+            "/*.ico",
+            "/*.woff",
+            "/*.woff2",
+            "/*.ttf",
+            "/*.wgt",
+            "/*.apk"
+    };
+
+    /** Vue Router history：非 API 的 GET 页面放行 */
+    private static final RequestMatcher SPA_PAGE_GET = request -> {
+        if (!HttpMethod.GET.matches(request.getMethod())) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        if (uri == null) {
+            return false;
+        }
+        return !uri.startsWith("/api/")
+                && !uri.startsWith("/doc.html")
+                && !uri.startsWith("/swagger")
+                && !uri.startsWith("/v3/api-docs")
+                && !uri.startsWith("/webjars/")
+                && !uri.startsWith("/h2-console");
+    };
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -52,6 +97,8 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
+                        .requestMatchers(STATIC_PATHS).permitAll()
+                        .requestMatchers(SPA_PAGE_GET).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((req, res, e) -> writeError(res, ErrorCode.UNAUTHORIZED, "未认证"))

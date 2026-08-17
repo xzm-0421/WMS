@@ -51,19 +51,35 @@ const DEMO_STATS: DashboardStats = {
   todayOutboundCount: 0,
   skuCount: 0,
   pendingTaskCount: 0,
+  pendingInbound: 0,
+  pendingOutbound: 0,
+  pendingStockcheck: 0,
+  pendingQc: 0,
   weeklyTrend: {
     labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
     inbound: [0, 0, 0, 0, 0, 0, 0],
     outbound: [0, 0, 0, 0, 0, 0, 0],
   },
-  warehouseDistribution: [
-    { name: '原料仓', value: 0 },
-    { name: '成品仓', value: 0 },
-    { name: '辅料仓', value: 0 },
-    { name: '其他', value: 0 },
+  taskDistribution: [
+    { name: '待入库', value: 0 },
+    { name: '待出库', value: 0 },
+    { name: '待盘点', value: 0 },
+    { name: '待质检', value: 0 },
   ],
   warnings: [],
   recentLogs: [],
+}
+
+function buildTaskDistribution(data: DashboardStats): { name: string; value: number }[] {
+  if (data.taskDistribution?.length) {
+    return data.taskDistribution
+  }
+  return [
+    { name: '待入库', value: Number(data.pendingInbound) || 0 },
+    { name: '待出库', value: Number(data.pendingOutbound) || 0 },
+    { name: '待盘点', value: Number(data.pendingStockcheck) || 0 },
+    { name: '待质检', value: Number(data.pendingQc) || 0 },
+  ]
 }
 
 function applyDashboardData(data: DashboardStats) {
@@ -74,7 +90,7 @@ function applyDashboardData(data: DashboardStats) {
   warnings.value = data.warnings
   recentLogs.value = data.recentLogs
   updateTrendChart(data.weeklyTrend.labels, data.weeklyTrend.inbound, data.weeklyTrend.outbound)
-  updatePieChart(data.warehouseDistribution)
+  updatePieChart(buildTaskDistribution(data))
 }
 
 function updateTrendChart(labels: string[], inbound: number[], outbound: number[]) {
@@ -84,7 +100,7 @@ function updateTrendChart(labels: string[], inbound: number[], outbound: number[
     color: ['#d4a574', '#3b82f6'],
     tooltip: { trigger: 'axis' },
     legend: {
-      data: ['入库', '出库'],
+      data: ['入库记录', '出库记录'],
       right: 16,
       top: 0,
       textStyle: { color: '#909399', fontSize: 12 },
@@ -99,12 +115,13 @@ function updateTrendChart(labels: string[], inbound: number[], outbound: number[
     },
     yAxis: {
       type: 'value',
+      minInterval: 1,
       splitLine: { lineStyle: { color: '#f0f2f5', type: 'dashed' } },
       axisLabel: { color: '#909399' },
     },
     series: [
       {
-        name: '入库',
+        name: '入库记录',
         type: 'line',
         smooth: true,
         symbol: 'circle',
@@ -119,7 +136,7 @@ function updateTrendChart(labels: string[], inbound: number[], outbound: number[
         },
       },
       {
-        name: '出库',
+        name: '出库记录',
         type: 'line',
         smooth: true,
         symbol: 'circle',
@@ -140,9 +157,19 @@ function updateTrendChart(labels: string[], inbound: number[], outbound: number[
 function updatePieChart(distribution: { name: string; value: number }[]) {
   if (!pieRef.value) return
   if (!pieChart) pieChart = echarts.init(pieRef.value)
+  const total = distribution.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
   pieChart.setOption({
     color: ['#d4a574', '#3b82f6', '#10b981', '#f97316'],
-    tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    title: {
+      text: String(total),
+      subtext: '待处理',
+      left: '38%',
+      top: '40%',
+      textAlign: 'center',
+      textStyle: { fontSize: 22, fontWeight: 600, color: '#303133' },
+      subtextStyle: { fontSize: 12, color: '#909399' },
+    },
     legend: {
       orient: 'vertical',
       right: 8,
@@ -157,7 +184,10 @@ function updatePieChart(distribution: { name: string; value: number }[]) {
         avoidLabelOverlap: true,
         itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
         label: { show: false },
-        data: distribution,
+        data: distribution.map((item) => ({
+          name: item.name,
+          value: Number(item.value) || 0,
+        })),
       },
     ],
   })
@@ -224,7 +254,7 @@ onBeforeUnmount(() => {
       <el-col :xs="24" :lg="16">
         <div class="panel-card chart-panel">
           <div class="panel-header">
-            <span class="panel-title">近7天入库 / 出库趋势</span>
+            <span class="panel-title">近7天 PDA 入库 / 出库趋势</span>
           </div>
           <div ref="trendRef" class="chart-box chart-box--trend" />
         </div>
@@ -232,7 +262,7 @@ onBeforeUnmount(() => {
       <el-col :xs="24" :lg="8">
         <div class="panel-card chart-panel">
           <div class="panel-header">
-            <span class="panel-title">各仓库库存占比</span>
+            <span class="panel-title">待处理任务占比</span>
           </div>
           <div ref="pieRef" class="chart-box chart-box--pie" />
         </div>

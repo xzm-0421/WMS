@@ -17,7 +17,7 @@ import java.util.List;
  */
 public final class KingdeeSubReturnMtrlBuilder {
 
-    private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String SRC_BILL_TYPE = "SUB_PickMtrl";
 
     private KingdeeSubReturnMtrlBuilder() {
@@ -205,7 +205,7 @@ public final class KingdeeSubReturnMtrlBuilder {
 
     private static String formatBillDate(LocalDate date) {
         LocalDate d = date != null ? date : LocalDate.now();
-        return d.format(DATE_ONLY);
+        return d.atStartOfDay().format(DATE_TIME);
     }
 
     private static String defaultUnit(String unitCode, KingdeeCloudProperties props) {

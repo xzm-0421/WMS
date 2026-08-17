@@ -152,16 +152,6 @@ watch(() => generateForm.ruleCode, () => {
   }
 })
 
-const previewBarcode = computed(() => {
-  const ctx: Record<string, string> = {
-    MATERIAL_CODE: generateForm.materialCode || 'MAT001',
-    BATCH_NO: generateForm.batchNo || 'B20260101',
-    PACK_BARCODE: generateForm.packBarcode || 'PKG001',
-    SERIAL_NO: generateForm.autoSerial ? 'SN00000001' : (generateForm.serialNo || 'SN00000001'),
-  }
-  return assemblePreview(segments.value.length ? segments.value : parseSegments(form.segmentsJson), form.separator || '', ctx)
-})
-
 function parseSegments(json?: string): BarcodeSegment[] {
   if (!json) return []
   try {

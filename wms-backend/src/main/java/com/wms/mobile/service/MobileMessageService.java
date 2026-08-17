@@ -6,8 +6,6 @@ import com.wms.inbound.entity.InboundOrder;
 import com.wms.inbound.mapper.InboundOrderMapper;
 import com.wms.outbound.entity.OutboundOrder;
 import com.wms.outbound.mapper.OutboundOrderMapper;
-import com.wms.quality.entity.QcOrder;
-import com.wms.quality.mapper.QcOrderMapper;
 import com.wms.stockcheck.entity.StockcheckTask;
 import com.wms.stockcheck.mapper.StockcheckTaskMapper;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +28,6 @@ public class MobileMessageService {
     private final InboundOrderMapper inboundOrderMapper;
     private final OutboundOrderMapper outboundOrderMapper;
     private final StockcheckTaskMapper stockcheckTaskMapper;
-    private final QcOrderMapper qcOrderMapper;
 
     public PageResult<Map<String, Object>> listMessages(String messageType, Boolean isRead, long current, long size) {
         List<Map<String, Object>> all = buildTaskMessages();
@@ -67,8 +64,6 @@ public class MobileMessageService {
                 .in(OutboundOrder::getStatus, "PENDING", "PICKING", "OUTBOUND").eq(OutboundOrder::getDeleted, 0));
         long pendingStockcheck = stockcheckTaskMapper.selectCount(new LambdaQueryWrapper<StockcheckTask>()
                 .eq(StockcheckTask::getStatus, "PENDING"));
-        long pendingQc = qcOrderMapper.selectCount(new LambdaQueryWrapper<QcOrder>()
-                .eq(QcOrder::getStatus, "PENDING"));
 
         if (pendingInbound > 0) {
             messages.add(buildMessage("TASK", "待入库任务", "您有 " + pendingInbound + " 个入库任务待处理", false));
@@ -78,9 +73,6 @@ public class MobileMessageService {
         }
         if (pendingStockcheck > 0) {
             messages.add(buildMessage("TASK", "待盘点任务", "您有 " + pendingStockcheck + " 个盘点任务待处理", false));
-        }
-        if (pendingQc > 0) {
-            messages.add(buildMessage("TASK", "待质检任务", "您有 " + pendingQc + " 个质检任务待处理", false));
         }
         messages.add(buildMessage("SYSTEM", "系统通知", "WMS PDA 移动端已连接", true));
         return messages;

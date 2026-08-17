@@ -200,22 +200,6 @@ export function completeStockcheck(taskNo) {
   })
 }
 
-// ========== 质检 ==========
-export function getQcOrder(qcNo) {
-  return request({ url: `/mobile/quality/${qcNo}` })
-}
-
-export function submitQcResult(qcNo, data) {
-  return request({
-    url: `/mobile/quality/${qcNo}/result`,
-    method: 'POST',
-    data: withDevice({
-      result: data.overallResult || data.result,
-      remark: data.remark,
-    }),
-  })
-}
-
 // ========== 追溯 ==========
 export function traceBatch(data) {
   return request({
@@ -231,6 +215,14 @@ export function syncOfflineData(offlineData, lastSyncTime) {
     url: '/mobile/sync',
     method: 'POST',
     data: withDevice({ offlineData, lastSyncTime }),
+  })
+}
+
+// ========== 应用更新 ==========
+export function checkAppUpdate(versionCode) {
+  return request({
+    url: '/mobile/app/update-check',
+    data: { versionCode },
   })
 }
 
@@ -282,10 +274,9 @@ export default {
   gainStockcheck,
   confirmEmptyStockcheck,
   completeStockcheck,
-  getQcOrder,
-  submitQcResult,
   traceBatch,
   syncOfflineData,
+  checkAppUpdate,
   getMessages,
   getUnreadCount,
   markMessageRead,

@@ -45,6 +45,9 @@ public class MobileInventoryService {
     private final BarcodeRecognizeService barcodeRecognizeService;
 
     public Map<String, Object> query(MobileInventoryQueryRequest req) {
+        if (req == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供查询条件");
+        }
         String materialCode = req.getMaterialCode();
         String locationCode = req.getLocationCode();
         String batchNo = req.getBatchNo();
@@ -63,6 +66,14 @@ public class MobileInventoryService {
         }
         if ("BATCH".equalsIgnoreCase(req.getQueryType()) && StringUtils.hasText(req.getBarcode())) {
             batchNo = req.getBarcode();
+        }
+
+        // 禁止无条件（或仅仓库）全表扫描，避免拖垮性能
+        if (!StringUtils.hasText(materialCode)
+                && !StringUtils.hasText(locationCode)
+                && !StringUtils.hasText(batchNo)
+                && !StringUtils.hasText(req.getBarcode())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请扫码或输入物料/库位/批次后再查询");
         }
 
         boolean locationQuery = "LOCATION".equalsIgnoreCase(req.getQueryType())
@@ -158,6 +169,9 @@ public class MobileInventoryService {
     }
 
     public Map<String, Object> trace(MobileTraceRequest req) {
+        if (req == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供追溯条件");
+        }
         String materialCode = req.getMaterialCode();
         String batchNo = req.getBatchNo();
         if (StringUtils.hasText(req.getBarcode()) && !StringUtils.hasText(materialCode)) {
@@ -166,6 +180,11 @@ public class MobileInventoryService {
             if (!StringUtils.hasText(batchNo)) {
                 batchNo = recognized.getBatchNo();
             }
+        }
+        if (!StringUtils.hasText(materialCode)
+                && !StringUtils.hasText(batchNo)
+                && !StringUtils.hasText(req.getBarcode())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请扫码或输入物料/批次后再追溯");
         }
         LambdaQueryWrapper<InventoryTransaction> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(StringUtils.hasText(materialCode), InventoryTransaction::getMaterialCode, materialCode)

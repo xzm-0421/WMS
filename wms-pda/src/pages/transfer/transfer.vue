@@ -73,7 +73,8 @@
         <input
           v-model="form.transferQty"
           class="qty-input"
-          type="digit"
+          type="text"
+          inputmode="decimal"
           placeholder="输入移库数量"
           :disabled="busy"
         />

@@ -51,50 +51,246 @@ public class KingdeeConfigurableNoticeBillService {
         }
         String no = billNo.trim();
         if (kingdeeCloudService.isEnabled()) {
-            // 列表 FieldKeys 查询更轻；View 作补全
+            // 列表 FieldKeys 查询更轻；数量全 0 时强制 View 补全（补料/领料常见 Query 字段空）
             KingdeeReceiveBillVo bill = pullFromQuery(billType, no);
-            if (bill != null && bill.getLines() != null && !bill.getLines().isEmpty()) {
+            if (bill != null && bill.getLines() != null && !bill.getLines().isEmpty()
+                    && isAllowedDocumentStatus(billType, bill)
+                    && !isAllPlanQtyZero(bill)) {
                 return bill;
             }
             KingdeeReceiveBillVo viewBill = pullFromView(billType, no);
-            if (viewBill != null) {
-                return viewBill;
+            if (viewBill != null && isAllowedDocumentStatus(billType, viewBill)
+                    && viewBill.getLines() != null && !viewBill.getLines().isEmpty()) {
+                return mergeQueryMetaIntoView(bill, viewBill);
             }
-            if (bill != null) {
+            if (bill != null && isAllowedDocumentStatus(billType, bill)) {
                 return bill;
             }
         }
         return mockBills(billType).stream()
                 .filter(b -> no.equalsIgnoreCase(b.getBillNo())
                         || (billType == NoticeBillType.PRODUCTION_ISSUE
-                        && ("SCL20260715001".equalsIgnoreCase(no) || "YLD20260715001".equalsIgnoreCase(no))
-                        && "YLD20260715001".equalsIgnoreCase(b.getBillNo()))
+                        && ("SCL20260715001".equalsIgnoreCase(no) || "SOUT20260715001".equalsIgnoreCase(no))
+                        && "SCL20260715001".equalsIgnoreCase(b.getBillNo()))
+                        || (billType == NoticeBillType.PRODUCTION_FEED
+                        && ("SCB20260715001".equalsIgnoreCase(no) || "SCL20260715001".equalsIgnoreCase(no))
+                        && "SCB20260715001".equalsIgnoreCase(b.getBillNo()))
                         || (billType == NoticeBillType.OUTSOURCE_ISSUE
-                        && ("WWC20260715001".equalsIgnoreCase(no) || "YWW20260715001".equalsIgnoreCase(no))
-                        && "YWW20260715001".equalsIgnoreCase(b.getBillNo()))
+                        && ("WWL20260715001".equalsIgnoreCase(no) || "YWW20260715001".equalsIgnoreCase(no))
+                        && "WWL20260715001".equalsIgnoreCase(b.getBillNo()))
+                        || (billType == NoticeBillType.OUTSOURCE_FEED
+                        && ("WWB20260715001".equalsIgnoreCase(no) || "WWL20260715001".equalsIgnoreCase(no))
+                        && "WWB20260715001".equalsIgnoreCase(b.getBillNo()))
                         || (billType == NoticeBillType.PRODUCTION_RETURN
                         && ("SCT20260715001".equalsIgnoreCase(no) || "SCL20260715001".equalsIgnoreCase(no))
-                        && "SCL20260715001".equalsIgnoreCase(b.getBillNo()))
+                        && "SCT20260715001".equalsIgnoreCase(b.getBillNo()))
                         || (billType == NoticeBillType.OUTSOURCE_RETURN
                         && ("WWT20260715001".equalsIgnoreCase(no) || "WWL20260715001".equalsIgnoreCase(no))
-                        && "WWL20260715001".equalsIgnoreCase(b.getBillNo())))
+                        && "WWT20260715001".equalsIgnoreCase(b.getBillNo())))
                 .findFirst()
                 .orElse(null);
     }
 
+    private static boolean isAllPlanQtyZero(KingdeeReceiveBillVo bill) {
+        if (bill == null || bill.getLines() == null || bill.getLines().isEmpty()) {
+            return true;
+        }
+        return bill.getLines().stream().allMatch(line ->
+                line == null
+                        || line.getPlanQty() == null
+                        || line.getPlanQty().compareTo(BigDecimal.ZERO) <= 0);
+    }
+
+    /**
+     * View 有数量时优先用 View；Query 上的分录内码/仓库等仍尽量保留。
+     */
+    private static KingdeeReceiveBillVo mergeQueryMetaIntoView(KingdeeReceiveBillVo queryBill,
+                                                               KingdeeReceiveBillVo viewBill) {
+        if (viewBill == null) {
+            return queryBill;
+        }
+        if (queryBill == null) {
+            return viewBill;
+        }
+        if (viewBill.getBillId() == null || viewBill.getBillId() <= 0) {
+            viewBill.setBillId(queryBill.getBillId());
+        }
+        if (viewBill.getLines() == null || queryBill.getLines() == null) {
+            return viewBill;
+        }
+        for (KingdeeReceiveBillLineVo viewLine : viewBill.getLines()) {
+            if (viewLine == null) {
+                continue;
+            }
+            KingdeeReceiveBillLineVo q = findMatchingLine(queryBill.getLines(), viewLine);
+            if (q == null) {
+                continue;
+            }
+            if ((viewLine.getEntryId() == null || viewLine.getEntryId() <= 0)
+                    && q.getEntryId() != null && q.getEntryId() > 0) {
+                viewLine.setEntryId(q.getEntryId());
+            }
+            if (!StringUtils.hasText(viewLine.getStockWarehouseCode())
+                    && StringUtils.hasText(q.getStockWarehouseCode())) {
+                viewLine.setStockWarehouseCode(q.getStockWarehouseCode());
+            }
+        }
+        return viewBill;
+    }
+
+    private static KingdeeReceiveBillLineVo findMatchingLine(List<KingdeeReceiveBillLineVo> lines,
+                                                             KingdeeReceiveBillLineVo target) {
+        if (lines == null || target == null) {
+            return null;
+        }
+        if (target.getLineNo() != null) {
+            for (KingdeeReceiveBillLineVo line : lines) {
+                if (line != null && target.getLineNo().equals(line.getLineNo())) {
+                    return line;
+                }
+            }
+        }
+        if (StringUtils.hasText(target.getMaterialCode())) {
+            String code = target.getMaterialCode().trim();
+            for (KingdeeReceiveBillLineVo line : lines) {
+                if (line != null && code.equalsIgnoreCase(
+                        line.getMaterialCode() != null ? line.getMaterialCode().trim() : "")) {
+                    return line;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 未审核工作流单据仅允许 A/B；已审源单下推仅允许 C；其它类型不限制（列表已按状态过滤） */
+    private boolean isAllowedDocumentStatus(NoticeBillType billType, KingdeeReceiveBillVo bill) {
+        if (billType == null || bill == null) {
+            return true;
+        }
+        String status = bill.getDocumentStatus();
+        if (!StringUtils.hasText(status)) {
+            // Query 明细 FieldKeys 不含状态时，依赖 FilterString 已限制
+            return true;
+        }
+        String s = status.trim().toUpperCase();
+        if (billType.isAuditedSourcePushBill()) {
+            return "C".equals(s);
+        }
+        if (!billType.isUnauditedWorkflowBill()) {
+            return true;
+        }
+        return "A".equals(s) || "B".equals(s);
+    }
+
+    /**
+     * 从单据二维码/条码中提取单号。支持：纯单号、JSON（billNo/FBillNo 等）、URL、前缀、混杂文本中的单号。
+     */
     public String parseBillNo(String barcode) {
         if (!StringUtils.hasText(barcode)) {
             return "";
         }
-        String raw = barcode.trim();
-        if (raw.matches("(?i)[A-Z]{2,6}\\d{6,}")) {
+        String raw = barcode.trim()
+                .replace("\uFEFF", "")
+                .replaceAll("[\\r\\n\\t]", "");
+        String fromJson = extractBillNoFromJson(raw);
+        if (StringUtils.hasText(fromJson)) {
+            return fromJson.trim().toUpperCase();
+        }
+        String fromUrl = extractBillNoFromUrl(raw);
+        if (StringUtils.hasText(fromUrl)) {
+            return fromUrl.trim().toUpperCase();
+        }
+        if (raw.regionMatches(true, 0, "SCT:", 0, 4)
+                || raw.regionMatches(true, 0, "SCL:", 0, 4)
+                || raw.regionMatches(true, 0, "SCR:", 0, 4)
+                || raw.regionMatches(true, 0, "STK:", 0, 4)
+                || raw.regionMatches(true, 0, "SCB:", 0, 4)
+                || raw.regionMatches(true, 0, "RETURN:", 0, 7)
+                || raw.regionMatches(true, 0, "BILL:", 0, 5)
+                || raw.regionMatches(true, 0, "PRD_INSTOCK:", 0, 12)
+                || raw.regionMatches(true, 0, "PRD_INSTOCK=", 0, 12)) {
+            return raw.replaceFirst("(?i)^(SCT|SCL|SCR|STK|SCB|RETURN|BILL|PRD_INSTOCK)[:：=]", "")
+                    .trim()
+                    .toUpperCase();
+        }
+        if (raw.matches("(?i)[A-Z]{2,8}\\d{6,}")) {
             return raw.toUpperCase();
         }
-        var matcher = java.util.regex.Pattern.compile("(?i)([A-Z]{2,6}\\d{6,})").matcher(raw);
+        var matcher = java.util.regex.Pattern.compile("(?i)([A-Z]{2,8}\\d{6,})").matcher(raw);
         if (matcher.find()) {
             return matcher.group(1).toUpperCase();
         }
         return raw;
+    }
+
+    private String extractBillNoFromJson(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        String text = raw.trim();
+        int brace = text.indexOf('{');
+        if (brace < 0) {
+            return null;
+        }
+        text = text.substring(brace);
+        try {
+            JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(text);
+            String found = findBillNoInJson(node);
+            if (StringUtils.hasText(found)) {
+                return found;
+            }
+        } catch (Exception ignored) {
+            // not json
+        }
+        return null;
+    }
+
+    private String findBillNoInJson(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isObject()) {
+            for (String key : new String[]{
+                    "billNo", "BillNo", "FBillNo", "billno", "bill_no",
+                    "orderNo", "OrderNo", "FNumber", "number", "Number",
+                    "BillNO", "FBILLNO"
+            }) {
+                if (node.has(key) && StringUtils.hasText(node.get(key).asText())) {
+                    return node.get(key).asText().trim();
+                }
+            }
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                var entry = fields.next();
+                String nested = findBillNoInJson(entry.getValue());
+                if (StringUtils.hasText(nested)) {
+                    return nested;
+                }
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                String nested = findBillNoInJson(child);
+                if (StringUtils.hasText(nested)) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String extractBillNoFromUrl(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        if (!raw.contains("=") && !raw.contains("?")) {
+            return null;
+        }
+        var matcher = java.util.regex.Pattern.compile(
+                "(?i)(?:billno|fbillno|orderno|number|bill_no)=([A-Za-z0-9_\\-]+)").matcher(raw);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return null;
     }
 
     private List<KingdeeReceiveBillVo> pageWithInspection(NoticeBillType billType, String keyword) {
@@ -164,32 +360,80 @@ public class KingdeeConfigurableNoticeBillService {
 
     private String resolveListFieldKeys(NoticeBillType billType) {
         if (billType == NoticeBillType.PRODUCTION_ISSUE) {
-            return properties.getPpBomLineCountFieldKeys();
-        }
-        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
-            return properties.getSubPpBomLineCountFieldKeys();
-        }
-        if (billType == NoticeBillType.PRODUCTION_RETURN) {
             return properties.getPickMtrlLineCountFieldKeys();
         }
-        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+        if (billType == NoticeBillType.PRODUCTION_FEED) {
+            return properties.getFeedMtrlLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.PRODUCTION_RETURN) {
+            return properties.getReturnMtrlLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.PRODUCTION_IN) {
+            return properties.getPrdMorptLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            return properties.getPrdRetStockLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
             return properties.getSubPickMtrlLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_FEED) {
+            return properties.getSubFeedMtrlLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+            return properties.getSubReturnMtrlLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.OTHER_IN || billType == NoticeBillType.OTHER_OUT) {
+            return properties.getMiscBillLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.SALES_DELIVERY) {
+            return properties.getSalesDeliveryLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.SALES_RETURN) {
+            return properties.getSalReturnNoticeLineCountFieldKeys();
+        }
+        if (billType == NoticeBillType.PURCHASE_RETURN) {
+            return properties.getPurMrbLineCountFieldKeys();
         }
         return properties.getReceiveBillLineCountFieldKeys();
     }
 
     private String resolveDetailFieldKeys(NoticeBillType billType) {
         if (billType == NoticeBillType.PRODUCTION_ISSUE) {
-            return properties.getPpBomDetailFieldKeys();
-        }
-        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
-            return properties.getSubPpBomDetailFieldKeys();
-        }
-        if (billType == NoticeBillType.PRODUCTION_RETURN) {
             return properties.getPickMtrlDetailFieldKeys();
         }
-        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+        if (billType == NoticeBillType.PRODUCTION_FEED) {
+            return properties.getFeedMtrlDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.PRODUCTION_RETURN) {
+            return properties.getReturnMtrlDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.PRODUCTION_IN) {
+            return properties.getPrdMorptDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            return properties.getPrdRetStockDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
             return properties.getSubPickMtrlDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_FEED) {
+            return properties.getSubFeedMtrlDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+            return properties.getSubReturnMtrlDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.OTHER_IN || billType == NoticeBillType.OTHER_OUT) {
+            return properties.getMiscBillDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.SALES_DELIVERY) {
+            return properties.getSalesDeliveryDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.SALES_RETURN) {
+            return properties.getSalReturnNoticeDetailFieldKeys();
+        }
+        if (billType == NoticeBillType.PURCHASE_RETURN) {
+            return properties.getPurMrbDetailFieldKeys();
         }
         return properties.getReceiveBillDetailFieldKeys();
     }
@@ -225,17 +469,28 @@ public class KingdeeConfigurableNoticeBillService {
                 "FBillNo",
                 0,
                 properties.getReceiveBillQueryLimit());
-        if (billType == NoticeBillType.PRODUCTION_ISSUE) {
-            return buildPpBomFromDetailRows(rows, billNo);
-        }
-        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
-            return buildSubPpBomFromDetailRows(rows, billNo);
-        }
-        if (billType == NoticeBillType.PRODUCTION_RETURN) {
+        if (billType == NoticeBillType.PRODUCTION_ISSUE
+                || billType == NoticeBillType.PRODUCTION_FEED) {
+            // 补料与领料分录字段布局一致（实发/申请）
             return buildPickMtrlFromDetailRows(rows, billNo);
         }
-        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+        if (billType == NoticeBillType.PRODUCTION_RETURN) {
+            return buildReturnMtrlFromDetailRows(rows, billNo);
+        }
+        if (billType == NoticeBillType.PRODUCTION_IN) {
+            // 扫已审核生产汇报单：合格 − 入库选单 = 可入量
+            return buildPrdMorptFromDetailRows(rows, billNo);
+        }
+        if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            // 入库/退库分录字段布局一致（应收/应退 FMustQty，实收/实退 FRealQty）
+            return buildPrdInStockFromDetailRows(rows, billNo);
+        }
+        if (billType == NoticeBillType.OUTSOURCE_ISSUE
+                || billType == NoticeBillType.OUTSOURCE_FEED) {
             return buildSubPickMtrlFromDetailRows(rows, billNo);
+        }
+        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+            return buildSubReturnMtrlFromDetailRows(rows, billNo);
         }
         Map<String, KingdeeReceiveBillVo> bills = buildBillFromDetailRows(rows);
         KingdeeReceiveBillVo bill = bills.get(billNo);
@@ -400,8 +655,8 @@ public class KingdeeConfigurableNoticeBillService {
     }
 
     /**
-     * 生产领料单 Query 回退（生产退料源单）：FieldKeys 见 pickMtrlDetailFieldKeys。
-     * 索引约定与用料清单类似，数量 10=实发 11=申请 12=基本实发。
+     * 生产领料单 Query 回退：FieldKeys 见 pickMtrlDetailFieldKeys。
+     * 索引约定：数量 10=实发 11=申请 12=基本实发。
      */
     private KingdeeReceiveBillVo buildPickMtrlFromDetailRows(List<List<String>> rows, String billNo) {
         if (rows == null || rows.isEmpty()) {
@@ -426,7 +681,6 @@ public class KingdeeConfigurableNoticeBillService {
                         .moBillNo(firstNonBlank(cell(row, 5), cell(row, 18)))
                         .parentMaterialCode(firstNonBlank(cell(row, 6), cell(row, 22)))
                         .warehouseCode(firstNonBlank(cell(row, 17), "CK004"))
-                        .documentStatus("C")
                         .lines(new ArrayList<>())
                         .build();
             }
@@ -436,7 +690,91 @@ public class KingdeeConfigurableNoticeBillService {
             }
             BigDecimal actualQty = parseDecimal(cell(row, 10));
             BigDecimal appQty = parseDecimal(cell(row, 11));
-            BigDecimal planQty = actualQty.compareTo(BigDecimal.ZERO) > 0 ? actualQty : appQty;
+            BigDecimal baseQty = parseDecimal(cell(row, 12));
+            // 申请优先；申请空时回退基本申请/实发，避免补料计划全 0
+            BigDecimal planQty = firstPositiveDecimal(appQty, baseQty, actualQty);
+            int seq = parseInt(cell(row, 13));
+            if (seq <= 0) {
+                seq = bill.getLines().size() + 1;
+            }
+            Long entryId = parseLong(cell(row, 14));
+            bill.getLines().add(KingdeeReceiveBillLineVo.builder()
+                    .lineNo(seq)
+                    .materialCode(materialCode.trim())
+                    .materialName(firstNonBlank(cell(row, 9), cell(row, 7)))
+                    .batchNo(cell(row, 15))
+                    .unitCode(cell(row, 16))
+                    .stockWarehouseCode(cell(row, 17))
+                    .entryId(entryId)
+                    .ppBomEntryId(parseLong(cell(row, 23)))
+                    .ppBomBillNo(cell(row, 24))
+                    .planQty(planQty)
+                    // 用实发数量对齐 WMS 已领进度（部分领料回写后可续盘）
+                    .inStockJoinBaseQty(actualQty)
+                    .moBillNo(firstNonBlank(cell(row, 18), bill.getMoBillNo()))
+                    .moId(parseLong(cell(row, 19)))
+                    .moEntryId(parseLong(cell(row, 20)))
+                    .moEntrySeq(parseInt(cell(row, 21)) > 0 ? parseInt(cell(row, 21)) : null)
+                    .parentMaterialCode(firstNonBlank(cell(row, 22), bill.getParentMaterialCode()))
+                    .receivedQty(BigDecimal.ZERO)
+                    .build());
+        }
+        if (bill != null) {
+            bill.setTotalLines(bill.getLines().size());
+        }
+        return bill != null && billNo.equalsIgnoreCase(bill.getBillNo()) ? bill : bill;
+    }
+
+    private static BigDecimal firstPositiveDecimal(BigDecimal... values) {
+        if (values == null) {
+            return BigDecimal.ZERO;
+        }
+        for (BigDecimal value : values) {
+            if (value != null && value.compareTo(BigDecimal.ZERO) > 0) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * 生产退料单 Query：FieldKeys 见 returnMtrlDetailFieldKeys。
+     * 数量 10=实退 FQty、11=申请 FAPPQty、12=基本数量；未审核单计划取申请数量。
+     */
+    private KingdeeReceiveBillVo buildReturnMtrlFromDetailRows(List<List<String>> rows, String billNo) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        KingdeeReceiveBillVo bill = null;
+        for (List<String> row : rows) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            String no = cell(row, 0);
+            if (!StringUtils.hasText(no)) {
+                continue;
+            }
+            if (bill == null) {
+                bill = KingdeeReceiveBillVo.builder()
+                        .billNo(no.trim())
+                        .billId(parseLong(cell(row, 1)))
+                        .billDate(parseDate(cell(row, 2)))
+                        .supplierCode(cell(row, 3))
+                        .supplierName(cell(row, 4))
+                        .moBillNo(firstNonBlank(cell(row, 5), cell(row, 18)))
+                        .parentMaterialCode(firstNonBlank(cell(row, 6), cell(row, 22)))
+                        .warehouseCode(firstNonBlank(cell(row, 17), "CK004"))
+                        .lines(new ArrayList<>())
+                        .build();
+            }
+            String materialCode = firstNonBlank(cell(row, 8), cell(row, 6));
+            if (!StringUtils.hasText(materialCode)) {
+                continue;
+            }
+            BigDecimal actualQty = parseDecimal(cell(row, 10));
+            BigDecimal appQty = parseDecimal(cell(row, 11));
+            // 默认计划=申请；金蝶已改小实退（0<实退<申请）时以实退为目标可处理量
+            BigDecimal planQty = resolveReturnPlanQty(appQty, actualQty);
             int seq = parseInt(cell(row, 13));
             if (seq <= 0) {
                 seq = bill.getLines().size() + 1;
@@ -468,8 +806,160 @@ public class KingdeeConfigurableNoticeBillService {
     }
 
     /**
-     * 委外领料单 Query 回退（委外退料源单）：FieldKeys 见 subPickMtrlDetailFieldKeys。
-     * 索引约定与生产领料单一致，数量 10=实发 11=申请；18-21 为委外订单字段。
+     * 生产汇报单 Query：FieldKeys 见 prdMorptDetailFieldKeys。
+     * 8=合格 FQuaQty、9=合格品入库选单 FStockInSelQty；计划=合格−选单（可入量，禁止叠计划）。
+     */
+    private KingdeeReceiveBillVo buildPrdMorptFromDetailRows(List<List<String>> rows, String billNo) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        KingdeeReceiveBillVo bill = null;
+        for (List<String> row : rows) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            String no = cell(row, 0);
+            if (!StringUtils.hasText(no)) {
+                continue;
+            }
+            if (bill == null) {
+                bill = KingdeeReceiveBillVo.builder()
+                        .billNo(no.trim())
+                        .billId(parseLong(cell(row, 1)))
+                        .billDate(parseDate(cell(row, 2)))
+                        .supplierCode(cell(row, 3))
+                        .supplierName(cell(row, 4))
+                        .moBillNo(firstNonBlank(cell(row, 5), cell(row, 16)))
+                        .warehouseCode(firstNonBlank(cell(row, 15), "CK004"))
+                        .documentStatus("C")
+                        .lines(new ArrayList<>())
+                        .build();
+            }
+            String materialCode = cell(row, 6);
+            if (!StringUtils.hasText(materialCode)) {
+                continue;
+            }
+            BigDecimal quaQty = parseDecimal(cell(row, 8));
+            BigDecimal stockInSelQty = parseDecimal(cell(row, 9));
+            BigDecimal baseQuaQty = parseDecimal(cell(row, 10));
+            if (quaQty.compareTo(BigDecimal.ZERO) <= 0 && baseQuaQty.compareTo(BigDecimal.ZERO) > 0) {
+                quaQty = baseQuaQty;
+            }
+            if (stockInSelQty.compareTo(BigDecimal.ZERO) < 0) {
+                stockInSelQty = BigDecimal.ZERO;
+            }
+            BigDecimal remain = quaQty.subtract(stockInSelQty);
+            if (remain.compareTo(BigDecimal.ZERO) < 0) {
+                remain = BigDecimal.ZERO;
+            }
+            // 无可入量的行跳过，避免列表噪音；仍允许 View 全量时本地会话已存在的行刷新
+            if (remain.compareTo(BigDecimal.ZERO) <= 0 && quaQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            int seq = parseInt(cell(row, 11));
+            if (seq <= 0) {
+                seq = bill.getLines().size() + 1;
+            }
+            Long entryId = parseLong(cell(row, 12));
+            BigDecimal plan = quaQty.compareTo(BigDecimal.ZERO) > 0 ? quaQty : remain;
+            bill.getLines().add(KingdeeReceiveBillLineVo.builder()
+                    .lineNo(seq)
+                    .materialCode(materialCode.trim())
+                    .materialName(cell(row, 7))
+                    .batchNo(cell(row, 13))
+                    .unitCode(cell(row, 14))
+                    .stockWarehouseCode(cell(row, 15))
+                    .entryId(entryId)
+                    // 计划固定为合格数量；已入选单量走 inStockJoin，由 PDA 算可入=计划−已处理
+                    .planQty(plan)
+                    .qualifiedQty(plan)
+                    .baseUnitQty(quaQty.compareTo(BigDecimal.ZERO) > 0 ? quaQty : baseQuaQty)
+                    .inStockJoinBaseQty(stockInSelQty)
+                    .remainInStockBaseQty(remain)
+                    .moBillNo(firstNonBlank(cell(row, 5), cell(row, 16), bill.getMoBillNo()))
+                    .moId(parseLong(cell(row, 17)))
+                    .moEntryId(parseLong(cell(row, 18)))
+                    .moEntrySeq(parseInt(cell(row, 19)) > 0 ? parseInt(cell(row, 19)) : null)
+                    .receivedQty(BigDecimal.ZERO)
+                    .build());
+        }
+        if (bill != null) {
+            bill.setTotalLines(bill.getLines().size());
+        }
+        return bill != null && billNo.equalsIgnoreCase(bill.getBillNo()) ? bill : bill;
+    }
+
+    /**
+     * 生产入库单 Query：FieldKeys 见 prdInStockDetailFieldKeys。
+     * 数量 8=实收 FRealQty、9=应收 FMustQty；未审核单计划取应收数量。
+     */
+    private KingdeeReceiveBillVo buildPrdInStockFromDetailRows(List<List<String>> rows, String billNo) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        KingdeeReceiveBillVo bill = null;
+        for (List<String> row : rows) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            String no = cell(row, 0);
+            if (!StringUtils.hasText(no)) {
+                continue;
+            }
+            if (bill == null) {
+                bill = KingdeeReceiveBillVo.builder()
+                        .billNo(no.trim())
+                        .billId(parseLong(cell(row, 1)))
+                        .billDate(parseDate(cell(row, 2)))
+                        .supplierCode(cell(row, 3))
+                        .supplierName(cell(row, 4))
+                        .moBillNo(firstNonBlank(cell(row, 5), cell(row, 16)))
+                        .warehouseCode(firstNonBlank(cell(row, 15), "CK004"))
+                        .lines(new ArrayList<>())
+                        .build();
+            }
+            String materialCode = cell(row, 6);
+            if (!StringUtils.hasText(materialCode)) {
+                continue;
+            }
+            BigDecimal realQty = parseDecimal(cell(row, 8));
+            BigDecimal mustQty = parseDecimal(cell(row, 9));
+            BigDecimal baseRealQty = parseDecimal(cell(row, 10));
+            // 未审核生产入库：优先应收；应收为 0 时回退实收/基本实收，避免计划全 0 无法扫码
+            BigDecimal planQty = mustQty.compareTo(BigDecimal.ZERO) > 0 ? mustQty : realQty;
+            if (planQty.compareTo(BigDecimal.ZERO) <= 0 && baseRealQty.compareTo(BigDecimal.ZERO) > 0) {
+                planQty = baseRealQty;
+            }
+            int seq = parseInt(cell(row, 11));
+            if (seq <= 0) {
+                seq = bill.getLines().size() + 1;
+            }
+            Long entryId = parseLong(cell(row, 12));
+            bill.getLines().add(KingdeeReceiveBillLineVo.builder()
+                    .lineNo(seq)
+                    .materialCode(materialCode.trim())
+                    .materialName(cell(row, 7))
+                    .batchNo(cell(row, 13))
+                    .unitCode(cell(row, 14))
+                    .stockWarehouseCode(cell(row, 15))
+                    .entryId(entryId)
+                    .planQty(planQty)
+                    .moBillNo(firstNonBlank(cell(row, 5), cell(row, 16), bill.getMoBillNo()))
+                    .moId(parseLong(cell(row, 17)))
+                    .moEntryId(parseLong(cell(row, 18)))
+                    .moEntrySeq(parseInt(cell(row, 19)) > 0 ? parseInt(cell(row, 19)) : null)
+                    .receivedQty(BigDecimal.ZERO)
+                    .build());
+        }
+        if (bill != null) {
+            bill.setTotalLines(bill.getLines().size());
+        }
+        return bill != null && billNo.equalsIgnoreCase(bill.getBillNo()) ? bill : bill;
+    }
+
+    /**
+     * 委外领料单 Query：FieldKeys 见 subPickMtrlDetailFieldKeys。
+     * 索引约定与生产领料单一致，数量 10=实发 11=申请；未审核单计划取申请数量。
      */
     private KingdeeReceiveBillVo buildSubPickMtrlFromDetailRows(List<List<String>> rows, String billNo) {
         if (rows == null || rows.isEmpty()) {
@@ -494,7 +984,6 @@ public class KingdeeConfigurableNoticeBillService {
                         .moBillNo(firstNonBlank(cell(row, 5), cell(row, 18)))
                         .parentMaterialCode(firstNonBlank(cell(row, 6), cell(row, 22)))
                         .warehouseCode(firstNonBlank(cell(row, 17), "CK004"))
-                        .documentStatus("C")
                         .lines(new ArrayList<>())
                         .build();
             }
@@ -504,7 +993,93 @@ public class KingdeeConfigurableNoticeBillService {
             }
             BigDecimal actualQty = parseDecimal(cell(row, 10));
             BigDecimal appQty = parseDecimal(cell(row, 11));
-            BigDecimal planQty = actualQty.compareTo(BigDecimal.ZERO) > 0 ? actualQty : appQty;
+            BigDecimal baseQty = parseDecimal(cell(row, 12));
+            BigDecimal planQty = firstPositiveDecimal(appQty, baseQty, actualQty);
+            int seq = parseInt(cell(row, 13));
+            if (seq <= 0) {
+                seq = bill.getLines().size() + 1;
+            }
+            Long entryId = parseLong(cell(row, 14));
+            bill.getLines().add(KingdeeReceiveBillLineVo.builder()
+                    .lineNo(seq)
+                    .materialCode(materialCode.trim())
+                    .materialName(firstNonBlank(cell(row, 9), cell(row, 7)))
+                    .batchNo(cell(row, 15))
+                    .unitCode(cell(row, 16))
+                    .stockWarehouseCode(cell(row, 17))
+                    .entryId(entryId)
+                    .ppBomEntryId(parseLong(cell(row, 23)))
+                    .ppBomBillNo(cell(row, 24))
+                    .planQty(planQty)
+                    .inStockJoinBaseQty(actualQty)
+                    .subReqBillNo(firstNonBlank(cell(row, 18), bill.getMoBillNo()))
+                    .subReqId(parseLong(cell(row, 19)))
+                    .subReqEntryId(parseLong(cell(row, 20)))
+                    .subReqEntrySeq(parseInt(cell(row, 21)) > 0 ? parseInt(cell(row, 21)) : null)
+                    .parentMaterialCode(firstNonBlank(cell(row, 22), bill.getParentMaterialCode()))
+                    .receivedQty(BigDecimal.ZERO)
+                    .build());
+        }
+        if (bill != null) {
+            bill.setTotalLines(bill.getLines().size());
+        }
+        return bill != null && billNo.equalsIgnoreCase(bill.getBillNo()) ? bill : bill;
+    }
+
+    /**
+     * 退料计划量：申请优先；若金蝶已将实退改小于申请，则以实退为目标（便于分批退满后审核）。
+     */
+    private static BigDecimal resolveReturnPlanQty(BigDecimal appQty, BigDecimal actualQty) {
+        BigDecimal app = appQty != null ? appQty : BigDecimal.ZERO;
+        BigDecimal actual = actualQty != null ? actualQty : BigDecimal.ZERO;
+        if (actual.compareTo(BigDecimal.ZERO) > 0
+                && app.compareTo(BigDecimal.ZERO) > 0
+                && actual.compareTo(app) < 0) {
+            return actual;
+        }
+        if (app.compareTo(BigDecimal.ZERO) > 0) {
+            return app;
+        }
+        return actual;
+    }
+
+    /**
+     * 委外退料单 Query：FieldKeys 见 subReturnMtrlDetailFieldKeys。
+     * 数量 10=实退 FQty、11=申请 FAPPQty；未审核单计划取申请数量。
+     */
+    private KingdeeReceiveBillVo buildSubReturnMtrlFromDetailRows(List<List<String>> rows, String billNo) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        KingdeeReceiveBillVo bill = null;
+        for (List<String> row : rows) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            String no = cell(row, 0);
+            if (!StringUtils.hasText(no)) {
+                continue;
+            }
+            if (bill == null) {
+                bill = KingdeeReceiveBillVo.builder()
+                        .billNo(no.trim())
+                        .billId(parseLong(cell(row, 1)))
+                        .billDate(parseDate(cell(row, 2)))
+                        .supplierCode(cell(row, 3))
+                        .supplierName(cell(row, 4))
+                        .moBillNo(firstNonBlank(cell(row, 5), cell(row, 18)))
+                        .parentMaterialCode(firstNonBlank(cell(row, 6), cell(row, 22)))
+                        .warehouseCode(firstNonBlank(cell(row, 17), "CK004"))
+                        .lines(new ArrayList<>())
+                        .build();
+            }
+            String materialCode = firstNonBlank(cell(row, 8), cell(row, 6));
+            if (!StringUtils.hasText(materialCode)) {
+                continue;
+            }
+            BigDecimal actualQty = parseDecimal(cell(row, 10));
+            BigDecimal appQty = parseDecimal(cell(row, 11));
+            BigDecimal planQty = resolveReturnPlanQty(appQty, actualQty);
             int seq = parseInt(cell(row, 13));
             if (seq <= 0) {
                 seq = bill.getLines().size() + 1;
@@ -643,31 +1218,50 @@ public class KingdeeConfigurableNoticeBillService {
     }
 
     private String buildFilter(NoticeBillType billType, String keyword) {
-        String filter = "FDocumentStatus='C'";
+        // 未审核工作流：创建/审核中；发货通知等扫已审核源单：仅已审核
+        String filter = billType.isUnauditedWorkflowBill()
+                ? "FDocumentStatus in ('A','B')"
+                : "FDocumentStatus='C'";
         if (StringUtils.hasText(billType.getExtraFilter())) {
             filter += " and " + billType.getExtraFilter();
         }
         if (StringUtils.hasText(keyword)) {
             String kw = escapeFilter(keyword);
-            if (billType == NoticeBillType.PRODUCTION_ISSUE) {
+            if (billType == NoticeBillType.PRODUCTION_ISSUE
+                    || billType == NoticeBillType.PRODUCTION_FEED
+                    || billType == NoticeBillType.PRODUCTION_RETURN
+                    || billType == NoticeBillType.PRODUCTION_IN
+                    || billType == NoticeBillType.PRODUCTION_RET_STOCK) {
                 filter += " and (FBillNo like '%" + kw + "%'"
                         + " or FWorkShopId.FName like '%" + kw + "%'"
                         + " or FWorkShopId.FNumber like '%" + kw + "%'"
-                        + " or FMOBillNO like '%" + kw + "%')";
+                        + " or FEntity_FMoBillNo like '%" + kw + "%')";
             } else if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
                 filter += " and (FBillNo like '%" + kw + "%'"
                         + " or FSupplierId.FName like '%" + kw + "%'"
                         + " or FSupplierId.FNumber like '%" + kw + "%'"
-                        + " or FSubReqBillNo like '%" + kw + "%')";
-            } else if (billType == NoticeBillType.PRODUCTION_RETURN) {
+                        + " or FEntity_FSubReqBillNo like '%" + kw + "%')";
+            } else if (billType == NoticeBillType.OUTSOURCE_FEED
+                    || billType == NoticeBillType.OUTSOURCE_RETURN) {
                 filter += " and (FBillNo like '%" + kw + "%'"
-                        + " or FWorkShopId.FName like '%" + kw + "%'"
-                        + " or FWorkShopId.FNumber like '%" + kw + "%')";
-            } else if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+                        + " or FSubSupplierId.FName like '%" + kw + "%'"
+                        + " or FSubSupplierId.FNumber like '%" + kw + "%'"
+                        + " or FEntity_FSubReqBillNo like '%" + kw + "%')";
+            } else if (billType == NoticeBillType.OTHER_IN
+                    || billType == NoticeBillType.OTHER_OUT) {
+                filter += " and FBillNo like '%" + kw + "%'";
+            } else if (billType == NoticeBillType.SALES_DELIVERY) {
+                filter += " and (FBillNo like '%" + kw + "%'"
+                        + " or FCustomerID.FName like '%" + kw + "%'"
+                        + " or FCustomerID.FNumber like '%" + kw + "%')";
+            } else if (billType == NoticeBillType.SALES_RETURN) {
+                filter += " and (FBillNo like '%" + kw + "%'"
+                        + " or FRetcustId.FName like '%" + kw + "%'"
+                        + " or FRetcustId.FNumber like '%" + kw + "%')";
+            } else if (billType == NoticeBillType.PURCHASE_RETURN) {
                 filter += " and (FBillNo like '%" + kw + "%'"
                         + " or FSupplierId.FName like '%" + kw + "%'"
-                        + " or FSupplierId.FNumber like '%" + kw + "%'"
-                        + " or FEntity_FSubReqBillNo like '%" + kw + "%')";
+                        + " or FSupplierId.FNumber like '%" + kw + "%')";
             } else {
                 filter += " and (FBillNo like '%" + kw + "%' or FSupplierId.FName like '%" + kw + "%')";
             }
@@ -678,6 +1272,42 @@ public class KingdeeConfigurableNoticeBillService {
     private String resolveFormId(NoticeBillType billType) {
         if (billType == NoticeBillType.PURCHASE_RECEIVE) {
             return properties.getReceiveBillFormId();
+        }
+        if (billType == NoticeBillType.PRODUCTION_ISSUE) {
+            return properties.getPickMtrlFormId();
+        }
+        if (billType == NoticeBillType.PRODUCTION_FEED) {
+            return properties.getFeedMtrlFormId();
+        }
+        if (billType == NoticeBillType.PRODUCTION_RETURN) {
+            return properties.getReturnMtrlFormId();
+        }
+        if (billType == NoticeBillType.PRODUCTION_IN) {
+            return properties.getPrdMorptFormId();
+        }
+        if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            return properties.getPrdRetStockFormId();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
+            return properties.getSubPickMtrlFormId();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_FEED) {
+            return properties.getSubFeedMtrlFormId();
+        }
+        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+            return properties.getSubReturnMtrlFormId();
+        }
+        if (billType == NoticeBillType.OTHER_IN) {
+            return properties.getMiscInStockFormId();
+        }
+        if (billType == NoticeBillType.OTHER_OUT) {
+            return properties.getMisDeliveryFormId();
+        }
+        if (billType == NoticeBillType.PURCHASE_RETURN) {
+            return properties.getPurMrbFormId();
+        }
+        if (billType == NoticeBillType.SALES_RETURN) {
+            return properties.getSalReturnNoticeFormId();
         }
         return billType.getDefaultFormId();
     }
@@ -695,24 +1325,41 @@ public class KingdeeConfigurableNoticeBillService {
         if (billType == NoticeBillType.PRODUCTION_ISSUE) {
             return List.of(productionIssueMockBill());
         }
+        if (billType == NoticeBillType.PRODUCTION_FEED) {
+            return List.of(productionFeedMockBill());
+        }
         if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
             return List.of(outsourceIssueMockBill());
         }
+        if (billType == NoticeBillType.OUTSOURCE_FEED) {
+            return List.of(outsourceFeedMockBill());
+        }
         if (billType == NoticeBillType.PRODUCTION_RETURN) {
             return List.of(productionReturnMockBill());
+        }
+        if (billType == NoticeBillType.PRODUCTION_IN) {
+            return List.of(productionInMockBill());
+        }
+        if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            return List.of(productionRetStockMockBill());
         }
         if (billType == NoticeBillType.OUTSOURCE_RETURN) {
             return List.of(outsourceReturnMockBill());
         }
         String prefix = switch (billType) {
             case PRODUCTION_IN -> "SCR";
+            case PRODUCTION_RET_STOCK -> "STK";
             case PRODUCTION_RETURN -> "SCT";
             case OUTSOURCE_RETURN -> "WWT";
             case OTHER_IN -> "QTR";
             case SALES_DELIVERY -> "XSF";
+            case SALES_RETURN -> "XST";
             case PRODUCTION_ISSUE -> "SCL";
+            case PRODUCTION_FEED -> "SCB";
             case OUTSOURCE_ISSUE -> "WWC";
+            case OUTSOURCE_FEED -> "WWB";
             case OTHER_OUT -> "QTC";
+            case PURCHASE_RETURN -> "CGT";
             default -> "SLD";
         };
         return List.of(
@@ -720,8 +1367,8 @@ public class KingdeeConfigurableNoticeBillService {
                         .billNo(prefix + "20260708001")
                         .billDate(LocalDate.now())
                         .supplierCode("SUP001")
-                        .supplierName(billType.getLabel() + "-模拟供应商")
-                        .documentStatus("C")
+                        .supplierName(billType.getLabel() + "-模拟客户/供应商")
+                        .documentStatus(billType.isUnauditedWorkflowBill() ? "A" : "C")
                         .warehouseCode("CK004")
                         .totalLines(2)
                         .lines(List.of(
@@ -730,36 +1377,105 @@ public class KingdeeConfigurableNoticeBillService {
                         .build());
     }
 
-    /** 生产退料源单联调：扫生产领料单 SCL20260715001 */
+    /** 生产退料联调：扫未审核生产退料单 SCT20260715001 */
     private KingdeeReceiveBillVo productionReturnMockBill() {
         return KingdeeReceiveBillVo.builder()
-                .billNo("SCL20260715001")
-                .billId(90016001L)
+                .billNo("SCT20260715001")
+                .billId(90017001L)
                 .billDate(LocalDate.now())
                 .supplierCode("WS01")
                 .supplierName("一车间")
                 .moBillNo("MO20260715001")
                 .parentMaterialCode("FG-TEST-001")
+                .documentStatus("A")
+                .warehouseCode("CK004")
+                .totalLines(2)
+                .lines(List.of(
+                        pickLine(1, 90017011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "100", "CK004"),
+                        pickLine(2, 90017012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "50", "CK004")))
+                .build();
+    }
+
+    /** 生产汇报入库联调：扫已审核生产汇报单 MORPT20260715001（合格−选单=可入） */
+    private KingdeeReceiveBillVo productionInMockBill() {
+        return KingdeeReceiveBillVo.builder()
+                .billNo("MORPT20260715001")
+                .billId(90019001L)
+                .billDate(LocalDate.now())
+                .supplierCode("WS01")
+                .supplierName("一车间")
+                .moBillNo("MO20260715001")
                 .documentStatus("C")
                 .warehouseCode("CK004")
                 .totalLines(2)
                 .lines(List.of(
-                        pickLine(1, 90016011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "100", "CK004"),
-                        pickLine(2, 90016012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "50", "CK004")))
+                        morptLine(1, 90019011L, "FG-TEST-001", "成品A", "规格A", "B20260715", "PCS",
+                                "100", "20", "CK004"),
+                        morptLine(2, 90019012L, "FG-TEST-002", "成品B", "规格B", "B20260715", "PCS",
+                                "50", "0", "CK004")))
                 .build();
     }
 
-    /** 委外退料源单联调：扫委外领料单 WWL20260715001 */
+    private KingdeeReceiveBillLineVo morptLine(int no, long entryId, String code, String name, String spec,
+                                               String batchNo, String unit, String quaQty, String stockInSelQty,
+                                               String stockCode) {
+        BigDecimal qua = new BigDecimal(quaQty);
+        BigDecimal joined = new BigDecimal(stockInSelQty);
+        BigDecimal remain = qua.subtract(joined);
+        if (remain.compareTo(BigDecimal.ZERO) < 0) {
+            remain = BigDecimal.ZERO;
+        }
+        return KingdeeReceiveBillLineVo.builder()
+                .lineNo(no)
+                .materialCode(code)
+                .materialName(name)
+                .specification(spec)
+                .batchNo(batchNo)
+                .planQty(qua)
+                .qualifiedQty(qua)
+                .baseUnitQty(qua)
+                .inStockJoinBaseQty(joined)
+                .remainInStockBaseQty(remain)
+                .unitCode(unit)
+                .stockWarehouseCode(stockCode)
+                .entryId(entryId)
+                .moBillNo("MO20260715001")
+                .moId(80015001L)
+                .moEntryId(80015011L)
+                .moEntrySeq(1)
+                .receivedQty(BigDecimal.ZERO)
+                .build();
+    }
+
+    /** 生产退库联调：扫未审核生产退库单 STK20260715001 */
+    private KingdeeReceiveBillVo productionRetStockMockBill() {
+        return KingdeeReceiveBillVo.builder()
+                .billNo("STK20260715001")
+                .billId(90020001L)
+                .billDate(LocalDate.now())
+                .supplierCode("WS01")
+                .supplierName("一车间")
+                .moBillNo("MO20260715001")
+                .documentStatus("A")
+                .warehouseCode("CK004")
+                .totalLines(2)
+                .lines(List.of(
+                        pickLine(1, 90020011L, "FG-TEST-001", "成品A", "规格A", "B20260715", "PCS", "20", "CK004"),
+                        pickLine(2, 90020012L, "FG-TEST-002", "成品B", "规格B", "B20260715", "PCS", "10", "CK004")))
+                .build();
+    }
+
+    /** 委外退料联调：扫未审核委外退料单 WWT20260715001 */
     private KingdeeReceiveBillVo outsourceReturnMockBill() {
         return KingdeeReceiveBillVo.builder()
-                .billNo("WWL20260715001")
+                .billNo("WWT20260715001")
                 .billId(90018001L)
                 .billDate(LocalDate.now())
                 .supplierCode("SUP001")
                 .supplierName("模拟委外供应商")
                 .moBillNo("WWDD20260715001")
                 .parentMaterialCode("FG-TEST-001")
-                .documentStatus("C")
+                .documentStatus("A")
                 .warehouseCode("CK004")
                 .totalLines(2)
                 .lines(List.of(
@@ -814,41 +1530,79 @@ public class KingdeeConfigurableNoticeBillService {
                 .build();
     }
 
-    /** 生产用料清单联调数据：单号 YLD20260715001，扫码示例见物料批号条码 */
+    /** 生产领料联调：未审核领料单 SCL20260715001 */
     private KingdeeReceiveBillVo productionIssueMockBill() {
         return KingdeeReceiveBillVo.builder()
-                .billNo("YLD20260715001")
-                .billId(90015001L)
+                .billNo("SCL20260715001")
+                .billId(90016001L)
                 .billDate(LocalDate.now())
                 .supplierCode("WS01")
                 .supplierName("一车间")
                 .moBillNo("MO20260715001")
                 .parentMaterialCode("FG-TEST-001")
-                .documentStatus("C")
+                .documentStatus("A")
                 .warehouseCode("CK004")
                 .totalLines(2)
                 .lines(List.of(
-                        ppBomLine(1, 90015011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "100", "CK004"),
-                        ppBomLine(2, 90015012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "50", "CK004")))
+                        pickLine(1, 90016011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "100", "CK004"),
+                        pickLine(2, 90016012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "50", "CK004")))
                 .build();
     }
 
-    /** 委外用料清单联调：单号 YWW20260715001 */
+    /** 生产补料联调：未审核补料单 SCB20260715001 */
+    private KingdeeReceiveBillVo productionFeedMockBill() {
+        return KingdeeReceiveBillVo.builder()
+                .billNo("SCB20260715001")
+                .billId(90019001L)
+                .billDate(LocalDate.now())
+                .supplierCode("WS01")
+                .supplierName("一车间")
+                .moBillNo("MO20260715001")
+                .parentMaterialCode("FG-TEST-001")
+                .documentStatus("A")
+                .warehouseCode("CK004")
+                .totalLines(2)
+                .lines(List.of(
+                        pickLine(1, 90019011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "30", "CK004"),
+                        pickLine(2, 90019012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "20", "CK004")))
+                .build();
+    }
+
+    /** 委外领料联调：未审核领料单 WWL20260715001 */
     private KingdeeReceiveBillVo outsourceIssueMockBill() {
         return KingdeeReceiveBillVo.builder()
-                .billNo("YWW20260715001")
+                .billNo("WWL20260715001")
                 .billId(90017001L)
                 .billDate(LocalDate.now())
                 .supplierCode("SUP001")
                 .supplierName("模拟委外供应商")
                 .moBillNo("WWDD20260715001")
                 .parentMaterialCode("FG-TEST-001")
-                .documentStatus("C")
+                .documentStatus("A")
                 .warehouseCode("CK004")
                 .totalLines(2)
                 .lines(List.of(
-                        subPpBomLine(1, 90017011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "100", "CK004"),
-                        subPpBomLine(2, 90017012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "50", "CK004")))
+                        subPickLine(1, 90017011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "100", "CK004"),
+                        subPickLine(2, 90017012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "50", "CK004")))
+                .build();
+    }
+
+    /** 委外补料联调：未审核补料单 WWB20260715001 */
+    private KingdeeReceiveBillVo outsourceFeedMockBill() {
+        return KingdeeReceiveBillVo.builder()
+                .billNo("WWB20260715001")
+                .billId(90020001L)
+                .billDate(LocalDate.now())
+                .supplierCode("SUP001")
+                .supplierName("模拟委外供应商")
+                .moBillNo("WWDD20260715001")
+                .parentMaterialCode("FG-TEST-001")
+                .documentStatus("A")
+                .warehouseCode("CK004")
+                .totalLines(2)
+                .lines(List.of(
+                        subPickLine(1, 90020011L, "PITEST-001", "螺栓 M8", "M8×20", "B20260715", "PCS", "30", "CK004"),
+                        subPickLine(2, 90020012L, "PITEST-002", "垫片 Φ8", "Φ8×1.5", "B20260715", "PCS", "20", "CK004")))
                 .build();
     }
 

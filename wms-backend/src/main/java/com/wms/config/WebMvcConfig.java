@@ -9,6 +9,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
-        configurer.addPathPrefix("/api/v1", c -> c.getPackageName().startsWith("com.wms"));
+        // API 统一加 /api/v1；com.wms.web 用于托管前端 SPA，不加前缀
+        configurer.addPathPrefix("/api/v1", c -> {
+            String pkg = c.getPackageName();
+            return pkg.startsWith("com.wms") && !pkg.startsWith("com.wms.web");
+        });
     }
 }

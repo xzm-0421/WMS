@@ -25,4 +25,7 @@ public class ReceiveNoticeListItemVo {
     private Integer submittedLines;
     private Integer pendingLines;
     private Boolean inProgress;
+    /** 当前占用操作人（未过期） */
+    private String lockUserName;
+    private Boolean locked;
 }

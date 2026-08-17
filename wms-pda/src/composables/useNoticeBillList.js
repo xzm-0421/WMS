@@ -3,6 +3,7 @@ import { listNoticeBills, resolveNoticeBarcode } from '@/api/noticeBill.js'
 import { getNoticeBillType } from '@/constants/noticeBillTypes.js'
 import { parseNoticePage, PAGE_SIZE, LIST_CACHE_TTL_MS, SHOW_THROTTLE_MS } from '@/utils/noticeListPaging.js'
 import { cacheGet, cacheSet, cacheDelByPrefix } from '@/utils/ttlCache.js'
+import { consumeClearListKeyword } from '@/utils/listKeywordReset.js'
 
 export function useNoticeBillList(billTypeRef) {
   const loading = ref(false)
@@ -48,8 +49,12 @@ export function useNoticeBillList(billTypeRef) {
     }
   }
 
-  /** onShow：短时间内重复进入不发请求 */
+  /** onShow：短时间内重复进入不发请求；提交返回则清空单号并刷新全量列表 */
   async function loadListOnShow() {
+    if (consumeClearListKeyword()) {
+      invalidateListCache()
+      return loadList('', { force: true })
+    }
     const now = Date.now()
     if (now - lastShowAt < SHOW_THROTTLE_MS && notices.value.length) {
       return notices.value
@@ -80,18 +85,17 @@ export function useNoticeBillList(billTypeRef) {
   function statusLabel(item) {
     const s = item.scanStatus || item.status
     const inbound = typeConfig.value.direction === 'INBOUND'
-    if (s === 'COMPLETED') return inbound ? '已完成' : '已出完'
-    if (s === 'PARTIAL_SUBMITTED') return inbound ? '部分入库' : '部分出库'
+    if (s === 'COMPLETED' || s === 'PARTIAL_SUBMITTED') return inbound ? '已完成' : '已出完'
     if (s === 'SCANNING') return '扫码中'
+    if (s === 'NEW' || !s) return inbound ? '待收料' : '待出库'
     if (item.inProgress) return '进行中'
-    if (s === 'NEW' || !s) return inbound ? '未扫码' : '待出库'
     return inbound ? '待收料' : '待出库'
   }
 
   function statusClass(item) {
     const s = item.scanStatus
-    if (s === 'COMPLETED') return 'done'
-    if (s === 'PARTIAL_SUBMITTED' || s === 'SCANNING') return 'progress'
+    if (s === 'COMPLETED' || s === 'PARTIAL_SUBMITTED') return 'done'
+    if (s === 'SCANNING') return 'progress'
     return 'new'
   }
 

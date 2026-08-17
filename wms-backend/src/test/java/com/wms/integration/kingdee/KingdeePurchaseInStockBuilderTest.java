@@ -65,6 +65,13 @@ class KingdeePurchaseInStockBuilderTest {
         assertEquals("20260710", entry.path("FLot").path("FNumber").asText());
         assertEquals("CK004", entry.path("FStockId").path("FNumber").asText());
         assertEquals("CGSL240801721", entry.path("FSRCBillNo").asText());
+        assertEquals("CGSL240801721",
+                entry.path(KingdeePurchaseInStockBuilder.SEND_BILL_NO_FIELD).asText());
+        assertTrue(objectMapper.readTree(json).path("Model")
+                .path(KingdeePurchaseInStockBuilder.SEND_BILL_NO_FIELD).isMissingNode());
+        assertEquals("RKD01_SYS", objectMapper.readTree(json).path("Model").path("FBillTypeID").path("FNumber").asText());
+        assertEquals("CG", objectMapper.readTree(json).path("Model").path("FBusinessType").asText());
+        assertEquals("true", objectMapper.readTree(json).path("IsAutoAdjustField").asText());
         assertEquals(4, entry.path("F_YVZR_Integer_83g").asInt());
         assertTrue(entry.path("FCheckInComing").asBoolean());
 
@@ -120,6 +127,7 @@ class KingdeePurchaseInStockBuilderTest {
                         .sourceLineNo(1)
                         .sourceBillId(114066L)
                         .sourceEntryId(124933L)
+                        .sendBillNo("DN-20260713-01")
                         .poOrderNo("PWW2604000007")
                         .poOrderEntryId(241297L)
                         .build()))
@@ -129,6 +137,8 @@ class KingdeePurchaseInStockBuilderTest {
         JsonNode entry = objectMapper.readTree(json).path("Model").path("FInStockEntry").get(0);
 
         assertEquals("20260713", entry.path("FLot").path("FNumber").asText());
+        assertEquals("DN-20260713-01",
+                entry.path(KingdeePurchaseInStockBuilder.SEND_BILL_NO_FIELD).asText());
         assertEquals("PWW2604000007", entry.path("FPOOrderNo").asText());
         assertEquals(241297L, entry.path("FPOORDERENTRYID").asLong());
     }

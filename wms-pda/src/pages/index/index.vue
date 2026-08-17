@@ -53,11 +53,6 @@
               <text>盘点</text>
               <text v-if="getCount('stockcheck') > 0" class="badge">{{ getCount('stockcheck') }}</text>
             </view>
-            <view class="menu-item" @click="goTaskList('qc')">
-              <text class="menu-icon">✅</text>
-              <text>质检</text>
-              <text v-if="getCount('qc') > 0" class="badge">{{ getCount('qc') }}</text>
-            </view>
             <view class="menu-item" @click="goPage('/pages/panel/panel')">
               <text class="menu-icon">🏷️</text>
               <text>条码校验</text>
@@ -89,6 +84,22 @@
             <view class="menu-item" @click="goPage('/pages/picking/production-return')">
               <text class="menu-icon">📥</text>
               <text>生产退料</text>
+            </view>
+            <view class="menu-item" @click="goPage('/pages/picking/production-feed')">
+              <text class="menu-icon">➕</text>
+              <text>生产补料</text>
+            </view>
+            <view class="menu-item" @click="goPage('/pages/picking/outsource-feed')">
+              <text class="menu-icon">➕</text>
+              <text>委外补料</text>
+            </view>
+            <view class="menu-item" @click="goPage('/pages/notice/list?billType=PRODUCTION_RET_STOCK&direction=OUTBOUND')">
+              <text class="menu-icon">📤</text>
+              <text>生产退库</text>
+            </view>
+            <view class="menu-item" @click="goPage('/pages/notice/list?billType=SALES_RETURN&direction=INBOUND')">
+              <text class="menu-icon">🛍️</text>
+              <text>销售退货</text>
             </view>
             <view class="menu-item" @click="goPage('/pages/picking/outsource-return')">
               <text class="menu-icon">🔁</text>
@@ -200,7 +211,6 @@ const overviewModules = [
   { key: 'inbound', label: '待入库', color: 'blue' },
   { key: 'outbound', label: '待出库', color: 'orange' },
   { key: 'stockcheck', label: '待盘点', color: 'green' },
-  { key: 'qc', label: '待质检', color: 'purple' },
 ]
 
 const taskTabModules = []
@@ -238,7 +248,6 @@ const taskListCache = reactive({
   inbound: [],
   outbound: [],
   stockcheck: [],
-  qc: [],
 })
 
 const todayStr = computed(() => {
@@ -269,23 +278,26 @@ function normalizeTask(item, key) {
     }
   }
   if (key === 'stockcheck') {
+    const billNo = item.billNo || item.taskNo
+    const statusText = item.status === 'COUNTING' ? '盘点中' : '待盘点'
     return {
       ...item,
-      _key: item.taskNo,
-      _title: item.taskNo,
-      _meta: `${item.warehouseCode || '-'} · ${item.status || '-'}`,
+      billNo,
+      _key: billNo,
+      _title: billNo,
+      _meta: `仓库 ${item.warehouseCode || '-'} · ${statusText}`,
     }
   }
   return {
     ...item,
-    _key: item.qcNo,
-    _title: item.qcNo,
-    _meta: `${item.materialCode || '-'} · ${item.status || '-'}`,
+    _key: item.taskNo,
+    _title: item.taskNo,
+    _meta: `${item.warehouseCode || '-'} · ${item.status || '-'}`,
   }
 }
 
 function rebuildTaskCache() {
-  ;['inbound', 'outbound', 'stockcheck', 'qc'].forEach((key) => {
+  ;['inbound', 'outbound', 'stockcheck'].forEach((key) => {
     const raw = tasks.value[key]?.tasks || []
     taskListCache[key] = raw.map((item) => normalizeTask(item, key))
   })
@@ -360,11 +372,6 @@ function onOverviewClick(key) {
   if (key === 'inbound') goInbound()
   else if (key === 'outbound') goOutbound()
   else if (key === 'stockcheck') goStockCount()
-  else goTaskList(key)
-}
-
-function goTaskList(type) {
-  uni.navigateTo({ url: `/pages/tasklist/tasklist?type=${type}` })
 }
 
 function goStockCount() {

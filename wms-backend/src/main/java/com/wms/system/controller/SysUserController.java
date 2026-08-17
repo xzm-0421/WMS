@@ -2,12 +2,15 @@ package com.wms.system.controller;
 
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
+import com.wms.integration.kingdee.dto.KingdeeSecUserVo;
 import com.wms.system.dto.*;
 import com.wms.system.service.SysUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Tag(name = "系统管理-用户")
 @RestController
@@ -26,6 +29,13 @@ public class SysUserController {
             @RequestParam(defaultValue = "1") long current,
             @RequestParam(defaultValue = "20") long size) {
         return ApiResult.ok(userService.page(username, realName, status, current, size));
+    }
+
+    @Operation(summary = "金蝶用户列表（SEC_User，供绑定选择）")
+    @GetMapping("/kingdee-users")
+    public ApiResult<List<KingdeeSecUserVo>> kingdeeUsers(
+            @RequestParam(required = false) String keyword) {
+        return ApiResult.ok(userService.listKingdeeUsers(keyword));
     }
 
     @Operation(summary = "用户详情")

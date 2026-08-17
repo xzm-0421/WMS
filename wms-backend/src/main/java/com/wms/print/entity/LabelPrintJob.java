@@ -18,13 +18,22 @@ public class LabelPrintJob {
     /** KINGDEE / MANUAL */
     private String sourceType;
     private String sourceBillNo;
+    /** 期初库存打印关联仓库 */
+    private String warehouseCode;
+    private String warehouseName;
+    /** 业务组织编码/名称 */
+    private String orgCode;
+    private String orgName;
     private String materialCode;
     private String materialName;
     private String specification;
     private String batchNo;
     private String productionDate;
     private BigDecimal quantity;
+    /** 入库单位（库存单位） */
     private String unitCode;
+    /** 计价单位 */
+    private String priceUnitCode;
     private String barcodeContent;
     /** QR / CODE128 */
     private String barcodeType;

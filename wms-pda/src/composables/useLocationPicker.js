@@ -7,10 +7,15 @@ const STRATEGY_LABEL = {
   EMPTY: '空库位',
   DEFAULT: '默认库位',
   MANUAL: '自选库位',
+  WAREHOUSE_ONLY: '仅仓库，无库位',
 }
 
+/**
+ * 入库库位选择：不选库位（仅仓库）/ 自动分配 / 自选库位（均可为空）。
+ */
 export function useLocationPicker(props, emit) {
-  const mode = ref('auto')
+  /** none | auto | manual */
+  const mode = ref('none')
   const loading = ref(false)
   const manualCode = ref('')
   const manualLabel = ref('')
@@ -23,7 +28,19 @@ export function useLocationPicker(props, emit) {
   })
 
   async function fetchAllocate() {
-    if (!props.warehouseCode) return null
+    if (mode.value === 'none') {
+      recommended.locationCode = ''
+      recommended.message = '仅仓库入库，不指定库位'
+      recommended.strategy = 'NONE'
+      emitChange()
+      return null
+    }
+    if (!props.warehouseCode) {
+      recommended.locationCode = ''
+      recommended.message = '请先选择仓库'
+      emitChange()
+      return null
+    }
     loading.value = true
     try {
       const data = await allocateLocation({
@@ -31,16 +48,19 @@ export function useLocationPicker(props, emit) {
         materialCode: props.materialCode || undefined,
         batchNo: props.batchNo || undefined,
         autoAllocate: mode.value === 'auto',
-        manualLocationCode: mode.value === 'manual' ? manualCode.value : undefined,
+        manualLocationCode: mode.value === 'manual' ? manualCode.value || undefined : undefined,
       })
       recommended.locationCode = data.locationCode || ''
       recommended.message = data.message || STRATEGY_LABEL[data.strategy] || ''
       recommended.strategy = data.strategy || ''
+      if (mode.value === 'manual' && !manualCode.value && recommended.locationCode) {
+        // 自选但未填时，服务端可能仍返回推荐，展示即可，不强制采用
+      }
       emitChange()
       return data
     } catch {
       recommended.locationCode = ''
-      recommended.message = '仅仓库维度'
+      recommended.message = mode.value === 'auto' ? '未分配到库位，可仅按仓库入库' : '库位校验失败'
       emitChange()
       return null
     } finally {
@@ -49,7 +69,10 @@ export function useLocationPicker(props, emit) {
   }
 
   async function loadLocationList() {
-    if (!props.warehouseCode) return
+    if (!props.warehouseCode) {
+      locationOptions.value = []
+      return
+    }
     try {
       const list = await listLocations(props.warehouseCode)
       locationOptions.value = (list || []).map((loc) => ({
@@ -63,8 +86,21 @@ export function useLocationPicker(props, emit) {
 
   function setMode(m) {
     mode.value = m
+    if (m === 'none') {
+      manualCode.value = ''
+      manualLabel.value = ''
+      recommended.locationCode = ''
+      recommended.message = '仅仓库入库，不指定库位'
+      recommended.strategy = 'NONE'
+      emitChange()
+      return
+    }
+    if (m === 'auto') {
+      fetchAllocate()
+      return
+    }
     emitChange()
-    if (m === 'auto') fetchAllocate()
+    loadLocationList()
   }
 
   function onPickerChange(e) {
@@ -73,14 +109,33 @@ export function useLocationPicker(props, emit) {
     if (picked) {
       manualCode.value = picked.code
       manualLabel.value = picked.label
-      fetchAllocate()
+      recommended.locationCode = picked.code
+      recommended.message = STRATEGY_LABEL.MANUAL
+      recommended.strategy = 'MANUAL'
+      emitChange()
     }
+  }
+
+  function clearManual() {
+    manualCode.value = ''
+    manualLabel.value = ''
+    recommended.locationCode = ''
+    recommended.message = '未选库位，仅按仓库入库'
+    recommended.strategy = 'MANUAL_EMPTY'
+    emitChange()
   }
 
   function onManualInput() {
     manualLabel.value = manualCode.value
-    if (manualCode.value) fetchAllocate()
-    else emitChange()
+    const code = (manualCode.value || '').trim()
+    if (!code) {
+      clearManual()
+      return
+    }
+    recommended.locationCode = code
+    recommended.message = STRATEGY_LABEL.MANUAL
+    recommended.strategy = 'MANUAL'
+    emitChange()
   }
 
   function scanLocation() {
@@ -92,7 +147,10 @@ export function useLocationPicker(props, emit) {
           manualCode.value = code
           manualLabel.value = code
           mode.value = 'manual'
-          fetchAllocate()
+          recommended.locationCode = code
+          recommended.message = STRATEGY_LABEL.MANUAL
+          recommended.strategy = 'MANUAL'
+          emitChange()
         }
       },
       fail: () => uni.showToast({ title: '扫码取消', icon: 'none' }),
@@ -100,34 +158,44 @@ export function useLocationPicker(props, emit) {
   }
 
   function emitChange() {
-    emit('change', {
-      mode: mode.value,
-      autoAllocate: mode.value === 'auto',
-      locationCode: mode.value === 'manual' ? (manualCode.value || '').trim() : '',
-      recommendedLocation: recommended.locationCode,
-      strategy: recommended.strategy,
-    })
+    emit('change', getPayload())
   }
 
   function getPayload() {
+    if (mode.value === 'none') {
+      return {
+        autoAllocateLocation: false,
+        locationCode: undefined,
+        targetLocation: undefined,
+      }
+    }
+    if (mode.value === 'auto') {
+      const code = (recommended.locationCode || '').trim()
+      return {
+        autoAllocateLocation: true,
+        locationCode: code || undefined,
+        targetLocation: code || undefined,
+      }
+    }
+    const code = (manualCode.value || recommended.locationCode || '').trim()
     return {
-      autoAllocateLocation: mode.value === 'auto',
-      targetLocation: mode.value === 'manual' ? (recommended.locationCode || manualCode.value || '').trim() : undefined,
-      locationCode: mode.value === 'manual' ? (recommended.locationCode || manualCode.value || '').trim() : undefined,
+      autoAllocateLocation: false,
+      locationCode: code || undefined,
+      targetLocation: code || undefined,
     }
   }
 
   watch(
     () => [props.warehouseCode, props.materialCode, props.batchNo],
     () => {
-      if (mode.value === 'auto') fetchAllocate()
       loadLocationList()
+      if (mode.value === 'auto') fetchAllocate()
     },
   )
 
   onMounted(() => {
-    fetchAllocate()
     loadLocationList()
+    if (mode.value === 'auto') fetchAllocate()
   })
 
   return {
@@ -142,6 +210,7 @@ export function useLocationPicker(props, emit) {
     fetchAllocate,
     onPickerChange,
     onManualInput,
+    clearManual,
     scanLocation,
     getPayload,
   }

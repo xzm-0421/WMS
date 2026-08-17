@@ -34,6 +34,7 @@
             明细 {{ item.totalLines || 0 }} 行
             <text v-if="item.countedLines"> · 已盘 {{ item.countedLines }}</text>
             <text v-if="item.billDate"> · {{ item.billDate }}</text>
+            <text v-if="item.locked && item.lockUserName" class="bill-lock"> · {{ item.lockUserName }}操作中</text>
           </text>
         </view>
         <view class="row-side">
@@ -43,8 +44,8 @@
       </view>
 
       <view v-if="!bills.length && !loading" class="empty">
-        <text class="empty-text">暂无已审核的盘点作业单</text>
-        <text class="empty-hint">请确认金蝶盘点作业已审核，或下拉刷新</text>
+        <text class="empty-text">暂无未审核的盘点作业单</text>
+        <text class="empty-hint">请确认金蝶盘点方案已生成作业且未审核，或下拉刷新</text>
       </view>
       <view v-if="loading && !bills.length" class="loading-tip">加载中...</view>
 
@@ -92,9 +93,21 @@ async function onScan(barcode) {
   refocusScanInput(scanInputRef, 300)
 }
 
-function onSearch(val) {
-  keyword.value = val || keyword.value
-  loadList(keyword.value, { force: true })
+async function onSearch(val) {
+  if (!alive.value) return
+  const raw = (val || keyword.value || '').trim()
+  keyword.value = raw
+  // 输入/扫到单号时优先打开明细，与领料等未审核单据流程一致
+  if (raw) {
+    const result = await searchByBarcode(raw)
+    if (result?.action === 'open' && result.billNo) {
+      openBill({ billNo: result.billNo })
+      refocusScanInput(scanInputRef, 300)
+      return
+    }
+  }
+  await loadList(keyword.value, { force: true })
+  refocusScanInput(scanInputRef, 300)
 }
 
 function openBill(item) {

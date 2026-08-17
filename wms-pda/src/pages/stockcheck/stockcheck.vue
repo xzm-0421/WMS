@@ -56,7 +56,7 @@
           <input
             v-model="scanForm.actualQty"
             class="input qty-input"
-            type="digit"
+            type="text" inputmode="decimal"
             placeholder="输入实盘数"
             @confirm="submitScanForm"
           />
@@ -76,7 +76,7 @@
           <text class="meta">库位 {{ line.locationCode }} · 批次 {{ line.batchNo || '-' }}</text>
           <text class="meta">账面 {{ formatQty(line.bookQty) }} · {{ lineStatusLabel(line.lineStatus) }}</text>
           <view class="row">
-            <input v-model="line._actual" class="qty-input" type="digit" placeholder="实盘数量" />
+            <input v-model="line._actual" class="qty-input" type="text" inputmode="decimal" placeholder="实盘数量" />
             <button size="mini" type="primary" :disabled="busy" @click="submitLine(line)">提交</button>
           </view>
         </view>
@@ -88,7 +88,7 @@
         <input v-model="gainForm.locationCode" class="input" placeholder="库位" />
         <input v-model="gainForm.materialCode" class="input" placeholder="物料编码" />
         <input v-model="gainForm.batchNo" class="input" placeholder="批次号" />
-        <input v-model="gainForm.actualQty" class="input" type="digit" placeholder="盘盈数量" />
+        <input v-model="gainForm.actualQty" class="input" type="text" inputmode="decimal" placeholder="盘盈数量" />
         <input v-model="gainForm.remark" class="input" placeholder="备注" />
         <button class="primary-btn" type="primary" :loading="busy" @click="submitGain">提交盘盈</button>
       </view>

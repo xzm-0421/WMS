@@ -30,24 +30,11 @@ export const MENU_PERMISSIONS: Record<string, string> = {
 
   '/inbound/pda-records': 'inbound:record:list',
 
-  '/outbound/orders': 'outbound:list',
-
   '/outbound/pda-records': 'outbound:record:list',
-
 
   '/inventory/list': 'inventory:list',
 
-  '/inventory/other-inbound': 'inventory:other-in:list',
-
-  '/inventory/other-outbound': 'inventory:other-out:list',
-
-  '/inventory/transfers': 'inventory:transfer:list',
-
   '/inventory/sample-plans': 'inventory:sample:list',
-
-  '/stocktake/tasks': 'stocktake:list',
-
-  '/qc/tasks': 'qc:list',
 
   '/barcode/rules': 'barcode:list',
 

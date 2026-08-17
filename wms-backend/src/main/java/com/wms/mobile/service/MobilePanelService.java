@@ -186,15 +186,13 @@ public class MobilePanelService {
         String batchNo = StringUtils.hasText(recognized.getBatchNo())
                 ? recognized.getBatchNo().trim() : null;
 
+        // 物料+批次同时识别到时，必须双字段命中；禁止回退为「仅物料唯一」以免错批通过
         if (StringUtils.hasText(materialCode) && StringUtils.hasText(batchNo)) {
-            LabelPrintJob byBoth = jobs.stream()
+            return jobs.stream()
                     .filter(j -> materialCode.equalsIgnoreCase(j.getMaterialCode())
                             && batchNo.equalsIgnoreCase(nullToEmpty(j.getBatchNo())))
                     .findFirst()
                     .orElse(null);
-            if (byBoth != null) {
-                return byBoth;
-            }
         }
 
         if (StringUtils.hasText(materialCode)) {
@@ -204,22 +202,14 @@ public class MobilePanelService {
             if (byMat.size() == 1) {
                 return byMat.get(0);
             }
-            if (StringUtils.hasText(batchNo)) {
-                return byMat.stream()
-                        .filter(j -> batchNo.equalsIgnoreCase(nullToEmpty(j.getBatchNo())))
-                        .findFirst()
-                        .orElse(null);
-            }
+            return null;
         }
 
-        if (!StringUtils.hasText(materialCode)) {
-            return jobs.stream()
-                    .filter(j -> StringUtils.hasText(j.getBarcodeContent())
-                            && raw.contains(j.getMaterialCode()))
-                    .min(Comparator.comparing(LabelPrintJob::getMaterialCode))
-                    .orElse(null);
-        }
-        return null;
+        return jobs.stream()
+                .filter(j -> StringUtils.hasText(j.getMaterialCode())
+                        && raw.contains(j.getMaterialCode()))
+                .min(Comparator.comparing(LabelPrintJob::getMaterialCode))
+                .orElse(null);
     }
 
     private String buildNoMatchMessage(String billNo, BarcodeRecognizeResult recognized) {

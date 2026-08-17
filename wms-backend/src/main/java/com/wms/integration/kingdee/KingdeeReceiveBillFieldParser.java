@@ -11,7 +11,7 @@ public final class KingdeeReceiveBillFieldParser {
     }
 
     /**
-     * 来料检验标识 FCheckInComing：1/true=来料检验（显示），0/false=非来料检验（不显示）。
+     * 来料检验标识 FCheckInComing：1/true=来料检验（走检验规则）；0/false=免检（直接可入库显示）。
      */
     public static boolean parseCheckIncoming(String raw) {
         if (!StringUtils.hasText(raw)) {

@@ -103,6 +103,30 @@ public interface ReportMapper {
     List<Map<String, Object>> outboundDailyStatistics(@Param("startDate") String startDate,
                                                          @Param("endDate") String endDate);
 
+    /** PDA 入库记录：近 7 天按创建日统计条数（不含已冲销） */
+    @Select("""
+            SELECT CONVERT(VARCHAR(10), create_time, 120) AS dayLabel, COUNT(*) AS cnt
+            FROM pda_inbound_record
+            WHERE deleted = 0
+              AND ISNULL(status, '') <> 'REVERSED'
+              AND create_time >= DATEADD(DAY, -6, CAST(GETDATE() AS DATE))
+            GROUP BY CONVERT(VARCHAR(10), create_time, 120)
+            ORDER BY dayLabel
+            """)
+    List<Map<String, Object>> pdaInboundDailyStatistics();
+
+    /** PDA 出库记录：近 7 天按提交日统计批次条数 */
+    @Select("""
+            SELECT CONVERT(VARCHAR(10), submit_time, 120) AS dayLabel, COUNT(*) AS cnt
+            FROM pda_receive_submit_batch
+            WHERE direction = 'OUTBOUND'
+              AND submit_time IS NOT NULL
+              AND submit_time >= DATEADD(DAY, -6, CAST(GETDATE() AS DATE))
+            GROUP BY CONVERT(VARCHAR(10), submit_time, 120)
+            ORDER BY dayLabel
+            """)
+    List<Map<String, Object>> pdaOutboundDailyStatistics();
+
     @Select("""
             SELECT w.warehouse_code AS warehouseCode, w.warehouse_name AS warehouseName,
                    ISNULL(SUM(i.stock_qty), 0) AS totalQty

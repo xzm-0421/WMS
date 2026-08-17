@@ -1,18 +1,26 @@
 import request from '@/utils/request'
 import type { PageQuery, PageResult } from './types'
+import { downloadFile, uploadFile } from '@/utils/download'
 
 export interface LabelPrintJob {
   id?: number
   jobId: string
   sourceType?: string
   sourceBillNo?: string
+  warehouseCode?: string
+  warehouseName?: string
+  orgCode?: string
+  orgName?: string
   materialCode: string
   materialName?: string
   specification?: string
   batchNo?: string
   productionDate?: string
   quantity?: number
+  /** 入库单位 */
   unitCode?: string
+  /** 计价单位 */
+  priceUnitCode?: string
   barcodeContent?: string
   barcodeType?: string
   labelWidthMm?: number
@@ -29,10 +37,18 @@ export interface LabelPrintJob {
 }
 
 export interface LabelPrintCreateRequest {
+  warehouseCode?: string
+  warehouseName?: string
+  orgCode?: string
+  orgName?: string
   materialCode: string
   batchNo?: string
   productionDate?: string
   quantity?: number
+  /** 入库单位 */
+  unitCode?: string
+  /** 计价单位 */
+  priceUnitCode?: string
   barcodeContent?: string
   barcodeType?: string
   labelWidthMm?: number
@@ -47,7 +63,12 @@ export interface LabelPrintSettings {
   barcodeType?: string
 }
 
-export function listLabelPrintJobs(params: PageQuery & { keyword?: string; status?: string }) {
+export function listLabelPrintJobs(params: PageQuery & {
+  warehouseCode?: string
+  warehouseName?: string
+  materialKeyword?: string
+  keyword?: string
+}) {
   return request.get<any, PageResult<LabelPrintJob>>('/print/label-jobs', { params })
 }
 
@@ -76,4 +97,25 @@ export function markLabelJobPrinted(jobId: string, errorMessage?: string) {
     `/print/label-jobs/${encodeURIComponent(jobId)}/printed`,
     errorMessage ? { errorMessage } : {},
   )
+}
+
+export function downloadOpeningStockTemplate() {
+  return downloadFile('/print/label-jobs/import/template', '期初库存导入模板.xlsx')
+}
+
+export function exportOpeningStockExcel(params: {
+  warehouseCode?: string
+  warehouseName?: string
+  materialKeyword?: string
+}) {
+  return downloadFile('/print/label-jobs/export', '期初库存.xlsx', params)
+}
+
+export function importOpeningStockExcel(file: File) {
+  return uploadFile<number>('/print/label-jobs/import', file)
+}
+
+/** 批量删除期初库存（按主键 id） */
+export function deleteOpeningStockJobs(ids: number[]) {
+  return request.delete<any, number>('/print/label-jobs/opening', { data: ids })
 }

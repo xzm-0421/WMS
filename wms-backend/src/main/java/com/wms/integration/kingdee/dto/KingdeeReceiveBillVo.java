@@ -18,6 +18,12 @@ public class KingdeeReceiveBillVo {
     private String warehouseCode;
     /** 金蝶单据内码 FID */
     private Long billId;
+    /** 业务类型：CG 标准采购 / WW 委外 */
+    private String businessType;
+    /** 单据类型编码 FBillTypeID.FNumber */
+    private String billTypeNumber;
+    /** 送货单号 F_QVHU_Text_qtr（表头；分录未填时回退） */
+    private String sendBillNo;
     /** 生产订单号（用料清单头等） */
     private String moBillNo;
     /** 产品编码（用料清单产品） */

@@ -66,18 +66,26 @@ public class AuthService {
     }
 
     public LoginResponse refresh(RefreshTokenRequest request) {
-        var claims = jwtTokenProvider.parseToken(request.getRefreshToken());
-        if (!"refresh".equals(claims.get("type"))) {
+        try {
+            var claims = jwtTokenProvider.parseToken(request.getRefreshToken());
+            if (!"refresh".equals(claims.get("type"))) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "Token无效", "TOKEN_INVALID");
+            }
+            Long userId = claims.get("userId", Long.class);
+            String username = claims.getSubject();
+            return LoginResponse.builder()
+                    .accessToken(jwtTokenProvider.createAccessToken(userId, username))
+                    .refreshToken(jwtTokenProvider.createRefreshToken(userId, username))
+                    .tokenType("Bearer")
+                    .expiresIn(jwtTokenProvider.getAccessTokenExpire())
+                    .build();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "登录已过期，请重新登录", "TOKEN_EXPIRED");
+        } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "Token无效", "TOKEN_INVALID");
         }
-        Long userId = claims.get("userId", Long.class);
-        String username = claims.getSubject();
-        return LoginResponse.builder()
-                .accessToken(jwtTokenProvider.createAccessToken(userId, username))
-                .refreshToken(jwtTokenProvider.createRefreshToken(userId, username))
-                .tokenType("Bearer")
-                .expiresIn(jwtTokenProvider.getAccessTokenExpire())
-                .build();
     }
 
     public Map<String, Object> getUserInfo() {

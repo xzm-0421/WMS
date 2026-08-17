@@ -4,13 +4,20 @@ import type { PageQuery, PageResult } from './types'
 export interface InventoryItem {
   id: number
   warehouseCode: string
-  locationCode: string
+  locationCode?: string
   materialCode: string
-  batchNo: string
+  /** 标签号（批次号） */
+  labelNo?: string
+  batchNo?: string
+  materialName?: string
+  specification?: string
+  unitCode?: string
   stockQty: number
   availableQty: number
   frozenQty?: number
-  stockStatus: string
+  stockStatus?: string
+  productionDate?: string
+  createTime?: string
 }
 
 export interface InventoryTransaction {

@@ -9,8 +9,18 @@ export interface SysUser {
   email?: string
   deptId?: number
   status?: number
+  /** 金蝶用户名称 FName */
+  kdUserNumber?: string | null
+  /** 金蝶用户 Id FUserID */
+  kdUserId?: number | null
   roleIds?: number[]
   password?: string
+}
+
+export interface KingdeeSecUser {
+  userId: number
+  userName?: string
+  phone?: string
 }
 
 export function getUsers(params: PageQuery) {
@@ -19,6 +29,12 @@ export function getUsers(params: PageQuery) {
 
 export function getUser(userId: number) {
   return request.get<any, SysUser>(`/system/users/${userId}`)
+}
+
+export function getKingdeeUsers(keyword?: string) {
+  return request.get<any, KingdeeSecUser[]>('/system/users/kingdee-users', {
+    params: { keyword },
+  })
 }
 
 export function createUser(data: SysUser) {
@@ -34,7 +50,7 @@ export function deleteUser(userId: number) {
 }
 
 export function resetPassword(userId: number, password: string) {
-  return request.put(`/system/users/${userId}/reset-password`, { password })
+  return request.put(`/system/users/${userId}/reset-password`, { newPassword: password })
 }
 
 export function updateUserStatus(userId: number, status: number) {

@@ -31,6 +31,13 @@ public final class KingdeeReceiveBillDetailRowParser {
     private static final int IDX_LOT = 14;
     private static final int IDX_UNIT = 15;
     private static final int IDX_STOCK = 16;
+    private static final int IDX_STOCK_UNIT = 17;
+    private static final int IDX_PRICE_UNIT = 18;
+    private static final int IDX_PRICE_QTY = 19;
+    /** 送货单号 F_QVHU_Text_qtr */
+    private static final int IDX_SEND_BILL_NO = 20;
+    /** 兼容旧 FieldKeys 多一列时的回退下标 */
+    private static final int IDX_SEND_BILL_NO_FALLBACK = 21;
 
     private KingdeeReceiveBillDetailRowParser() {
     }
@@ -59,21 +66,38 @@ public final class KingdeeReceiveBillDetailRowParser {
         return cell(row, IDX_STOCK);
     }
 
+    /** 送货单号：收料通知单字段 {@code F_QVHU_Text_qtr} */
+    public static String sendBillNo(List<String> row) {
+        String byKey = cell(row, IDX_SEND_BILL_NO);
+        if (StringUtils.hasText(byKey)) {
+            return byKey.trim();
+        }
+        String fallback = cell(row, IDX_SEND_BILL_NO_FALLBACK);
+        return StringUtils.hasText(fallback) ? fallback.trim() : "";
+    }
+
     public static KingdeeReceiveBillLineVo mapLine(List<String> row, int fallbackSeq) {
         BigDecimal receiveBase = parseDecimal(cell(row, IDX_RECEIVE_BASE));
         BigDecimal stockBase = parseDecimal(cell(row, IDX_STOCK_BASE));
         BigDecimal inStockJoinBase = parseDecimal(cell(row, IDX_IN_STOCK_JOIN));
-        BigDecimal baseUnit = parseDecimal(cell(row, IDX_BASE_UNIT));
+        BigDecimal baseUnitQtyVal = parseDecimal(cell(row, IDX_BASE_UNIT));
         BigDecimal actReceive = parseDecimal(cell(row, IDX_ACT_RECEIVE));
         BigDecimal receiveBaseQty = receiveBase.compareTo(BigDecimal.ZERO) > 0 ? receiveBase : stockBase;
         if (receiveBaseQty.compareTo(BigDecimal.ZERO) <= 0) {
-            receiveBaseQty = baseUnit.compareTo(BigDecimal.ZERO) > 0 ? baseUnit : actReceive;
+            receiveBaseQty = baseUnitQtyVal.compareTo(BigDecimal.ZERO) > 0 ? baseUnitQtyVal : actReceive;
         }
         BigDecimal remain = receiveBaseQty.subtract(inStockJoinBase);
         if (remain.compareTo(BigDecimal.ZERO) < 0) {
             remain = BigDecimal.ZERO;
         }
         int seq = parseInt(cell(row, IDX_SEQ), fallbackSeq);
+        String stockUnit = cell(row, IDX_STOCK_UNIT);
+        String baseUnitCode = cell(row, IDX_UNIT);
+        String unitCode = StringUtils.hasText(stockUnit) ? stockUnit
+                : (StringUtils.hasText(baseUnitCode) ? baseUnitCode : "PCS");
+        String priceUnit = cell(row, IDX_PRICE_UNIT);
+        BigDecimal priceQty = parseDecimal(cell(row, IDX_PRICE_QTY));
+        String sendBillNo = sendBillNo(row);
         return KingdeeReceiveBillLineVo.builder()
                 .lineNo(seq > 0 ? seq : fallbackSeq)
                 .materialCode(cell(row, IDX_MATERIAL_CODE))
@@ -81,13 +105,16 @@ public final class KingdeeReceiveBillDetailRowParser {
                 .planQty(actReceive)
                 .qualifiedQty(receiveBase)
                 .stockBaseQty(stockBase)
-                .baseUnitQty(baseUnit.compareTo(BigDecimal.ZERO) > 0 ? baseUnit : receiveBaseQty)
+                .baseUnitQty(baseUnitQtyVal.compareTo(BigDecimal.ZERO) > 0 ? baseUnitQtyVal : receiveBaseQty)
                 .inStockJoinBaseQty(inStockJoinBase)
                 .remainInStockBaseQty(remain)
                 .batchNo(BatchNoNormalizer.normalize(cell(row, IDX_LOT)))
-                .unitCode(StringUtils.hasText(cell(row, IDX_UNIT)) ? cell(row, IDX_UNIT) : "PCS")
+                .unitCode(unitCode)
+                .priceUnitCode(StringUtils.hasText(priceUnit) ? priceUnit : null)
+                .priceUnitQty(priceQty.compareTo(BigDecimal.ZERO) > 0 ? priceQty : null)
                 .stockWarehouseCode(cell(row, IDX_STOCK))
                 .entryId(parseLong(cell(row, IDX_ENTRY_ID)))
+                .sendBillNo(StringUtils.hasText(sendBillNo) ? sendBillNo : null)
                 .receivedQty(BigDecimal.ZERO)
                 .build();
     }

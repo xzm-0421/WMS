@@ -29,6 +29,7 @@
           <text class="bill-meta">
             <text v-if="formatMaterialLineCount(item)" class="bill-lines">{{ formatMaterialLineCount(item) }}</text>
             <text v-if="item.inProgress"> · 已勾 {{ item.checkedLines || 0 }}</text>
+            <text v-if="item.locked && item.lockUserName" class="bill-lock"> · {{ item.lockUserName }}操作中</text>
             <text v-if="item.erpBillNo" class="bill-erp"> · 入库 {{ item.erpBillNo }}</text>
           </text>
         </view>
@@ -159,6 +160,7 @@ onMounted(() => refocusScanInput(scanInputRef, 500))
   color: #94a3b8;
   margin-top: 4rpx;
 }
+.bill-lock { color: #dc2626; font-weight: 600; }
 .bill-lines {
   color: #2563eb;
   font-weight: 600;

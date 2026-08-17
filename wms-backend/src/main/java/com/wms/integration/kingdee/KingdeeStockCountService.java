@@ -25,8 +25,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 金蝶云星空 - 物料盘点作业（STK_StockCountInput）。
- * 列表与明细仅拉取已审核单据（FDocumentStatus='C'）。
+ * 金蝶云星空 - 物料盘点作业（STK_StockCountInput，由盘点方案生成）。
+ * 列表拉取未审核单据（FDocumentStatus in ('A','B')），PDA 实盘后回写并提交审核。
  */
 @Slf4j
 @Service
@@ -104,7 +104,7 @@ public class KingdeeStockCountService {
         }
         if (all == null) {
             long t0 = System.currentTimeMillis();
-            all = queryApprovedBills(keyword);
+            all = queryUnauditedBills(keyword);
             log.info("Kingdee stock count list: bills={} costMs={}",
                     all.size(), System.currentTimeMillis() - t0);
             if (pdaProperties.getShortCacheTtlSeconds() > 0) {
@@ -118,11 +118,11 @@ public class KingdeeStockCountService {
         return PageResult.of(slice, all.size(), current, size);
     }
 
-    private List<KingdeeStockCountBillVo> queryApprovedBills(String keyword) {
+    private List<KingdeeStockCountBillVo> queryUnauditedBills(String keyword) {
         List<List<String>> detailRows = kingdeeCloudService.executeBillQuery(
                 properties.getStockCountFormId(),
                 properties.getStockCountDetailFieldKeys(),
-                buildApprovedFilter(keyword),
+                buildUnauditedFilter(keyword),
                 "FDate desc, FBillNo desc",
                 0,
                 resolveQueryLimit());
@@ -136,7 +136,7 @@ public class KingdeeStockCountService {
         List<List<String>> headerRows = kingdeeCloudService.executeBillQuery(
                 properties.getStockCountFormId(),
                 properties.getStockCountListFieldKeys(),
-                buildApprovedFilter(keyword),
+                buildUnauditedFilter(keyword),
                 "FDate desc, FBillNo desc",
                 0,
                 resolveQueryLimit());
@@ -164,7 +164,8 @@ public class KingdeeStockCountService {
     }
 
     private KingdeeStockCountBillVo getFromKingdee(String billNo) {
-        String filter = buildApprovedFilter(null) + " and FBillNo='" + escapeFilter(billNo) + "'";
+        // 按单号精确查，不限状态；业务层再校验是否允许盘点
+        String filter = "FBillNo='" + escapeFilter(billNo) + "'";
         List<List<String>> rows = kingdeeCloudService.executeBillQuery(
                 properties.getStockCountFormId(),
                 properties.getStockCountDetailFieldKeys(),
@@ -182,7 +183,7 @@ public class KingdeeStockCountService {
                 .findFirst()
                 .orElse(null);
         if (bill == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到已审核的盘点作业单: " + billNo);
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到盘点作业单: " + billNo);
         }
         return bill;
     }
@@ -199,9 +200,6 @@ public class KingdeeStockCountService {
             }
             String no = billNo.trim();
             String status = defaultStatus(cell(row, 2));
-            if (!"C".equalsIgnoreCase(status)) {
-                continue;
-            }
             KingdeeStockCountBillVo bill = bills.computeIfAbsent(no, k -> KingdeeStockCountBillVo.builder()
                     .billNo(no)
                     .billId(parseLong(cell(row, 1)))
@@ -241,10 +239,10 @@ public class KingdeeStockCountService {
     }
 
     /**
-     * 仅已审核：FDocumentStatus='C'
+     * 未审核：创建(A) / 审核中(B)
      */
-    private String buildApprovedFilter(String keyword) {
-        StringBuilder filter = new StringBuilder("FDocumentStatus='C'");
+    private String buildUnauditedFilter(String keyword) {
+        StringBuilder filter = new StringBuilder("FDocumentStatus in ('A','B')");
         if (properties.getStockCountListDays() > 0) {
             LocalDate from = LocalDate.now().minusDays(properties.getStockCountListDays());
             filter.append(" and FDate>='").append(from).append("'");
@@ -330,7 +328,7 @@ public class KingdeeStockCountService {
                         .billNo("PD202507210001")
                         .billId(90001L)
                         .billDate(LocalDate.now().minusDays(1))
-                        .documentStatus("C")
+                        .documentStatus("A")
                         .stockOrgCode("100")
                         .warehouseCode("CK001")
                         .remark("一号仓月度盘点")
@@ -341,7 +339,7 @@ public class KingdeeStockCountService {
                         .billNo("PD202507200002")
                         .billId(90002L)
                         .billDate(LocalDate.now().minusDays(2))
-                        .documentStatus("C")
+                        .documentStatus("B")
                         .stockOrgCode("100")
                         .warehouseCode("CK002")
                         .remark("成品仓抽盘")
@@ -360,7 +358,7 @@ public class KingdeeStockCountService {
     }
 
     private static String defaultStatus(String status) {
-        return StringUtils.hasText(status) ? status.trim() : "C";
+        return StringUtils.hasText(status) ? status.trim() : "A";
     }
 
     private static String escapeFilter(String value) {

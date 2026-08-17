@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { listReceiveNotices, resolveReceiveBarcode } from '@/api/receiveNotice.js'
 import { parseNoticePage, PAGE_SIZE, SHOW_THROTTLE_MS, mergeNoticeRecords } from '@/utils/noticeListPaging.js'
 import { cacheGet, cacheSet, cacheDel } from '@/utils/ttlCache.js'
+import { consumeClearListKeyword } from '@/utils/listKeywordReset.js'
 
 const RECEIVE_LIST_CACHE_TTL_MS = 120000
 
@@ -107,6 +108,11 @@ export function useReceiveNoticeList() {
   }
 
   async function loadListOnShow() {
+    if (consumeClearListKeyword()) {
+      cacheDel(cacheKey(keyword.value))
+      cacheDel(cacheKey(''))
+      return loadList('', { force: true })
+    }
     const key = cacheKey(keyword.value)
     const cached = cacheGet(key)
     if (cached?.records?.length) {
@@ -143,17 +149,17 @@ export function useReceiveNoticeList() {
 
   function statusLabel(item) {
     const s = item.scanStatus || item.status
-    if (s === 'COMPLETED') return '已完成'
-    if (s === 'PARTIAL_SUBMITTED') return '部分入库'
+    if (s === 'COMPLETED' || s === 'PARTIAL_SUBMITTED') return '已完成'
     if (s === 'SCANNING') return '扫码中'
+    if (s === 'NEW' || !s) return '待收料'
     if (item.inProgress) return '进行中'
     return '待收料'
   }
 
   function statusClass(item) {
     const s = item.scanStatus
-    if (s === 'COMPLETED') return 'done'
-    if (s === 'PARTIAL_SUBMITTED' || s === 'SCANNING') return 'progress'
+    if (s === 'COMPLETED' || s === 'PARTIAL_SUBMITTED') return 'done'
+    if (s === 'SCANNING') return 'progress'
     return 'new'
   }
 

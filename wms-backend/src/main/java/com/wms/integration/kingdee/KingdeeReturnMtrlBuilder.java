@@ -17,7 +17,7 @@ import java.util.List;
  */
 public final class KingdeeReturnMtrlBuilder {
 
-    private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String SRC_BILL_TYPE = "PRD_PickMtrl";
 
     private KingdeeReturnMtrlBuilder() {
@@ -52,9 +52,9 @@ public final class KingdeeReturnMtrlBuilder {
             model.put("FOwnerTypeId0", props.getStockInOwnerTypeHead());
             putNumberRef(model, "FOwnerId0", props.getStockInOrgNumber());
             putNumberRef(model, "FCurrId", props.getStockInSettleCurrNumber());
-            model.put("FIsCrossTrade", "false");
-            model.put("FVmiBusiness", "false");
-            model.put("FIsOwnerTInclOrg", "false");
+            model.put("FIsCrossTrade", false);
+            model.put("FVmiBusiness", false);
+            model.put("FIsOwnerTInclOrg", false);
 
             String workShop = firstNonBlank(req.getWorkShopCode(), props.getReturnMtrlWorkShopNumber());
             if (StringUtils.hasText(workShop)) {
@@ -104,10 +104,19 @@ public final class KingdeeReturnMtrlBuilder {
         entry.put("FStockAppQty", qty);
         entry.put("FStockQty", qty);
         entry.put("FBASESTOCKQTY", qty);
-        entry.put("FEntryVmiBusiness", "false");
-        entry.put("FIsUpdateQty", "false");
-        entry.put("FIsOverLegalOrg", "false");
-        entry.put("FCheckReturnMtrl", "false");
+        entry.put("FEntryVmiBusiness", false);
+        entry.put("FIsUpdateQty", false);
+        entry.put("FIsOverLegalOrg", false);
+        entry.put("FCheckReturnMtrl", false);
+        entry.put("FConsome", "0");
+        entry.put("FReserveType", "1");
+        entry.put("FOptQueue", "0");
+        entry.put("FOptPlanBillId", 0);
+        entry.put("FOptDetailId", 0);
+        entry.put("FOperId", 10);
+        entry.put("FSelRePickedQty", 0.0);
+        entry.put("FBaseSelRePickedQty", 0.0);
+        entry.put("FSecStockQty", 0.0);
 
         entry.put("FReturnType", props.getReturnMtrlReturnType());
         if (StringUtils.hasText(props.getReturnMtrlReturnReasonNumber())) {
@@ -202,7 +211,7 @@ public final class KingdeeReturnMtrlBuilder {
 
     private static String formatBillDate(LocalDate date) {
         LocalDate d = date != null ? date : LocalDate.now();
-        return d.format(DATE_ONLY);
+        return d.atStartOfDay().format(DATE_TIME);
     }
 
     private static String defaultUnit(String unitCode, KingdeeCloudProperties props) {

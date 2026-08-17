@@ -121,7 +121,7 @@ onMounted(loadData)
       <el-form-item v-if="form.materialName" label="物料名称">
         <span>{{ form.materialName }}</span>
       </el-form-item>
-      <el-form-item label="数量"><el-input-number v-model="form.transferQty" :min="1" /></el-form-item>
+      <el-form-item label="数量"><el-input-number v-model="form.transferQty" :min="0.001" :precision="4" :step="0.001" /></el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>

@@ -11,6 +11,7 @@ import com.wms.common.result.PageResult;
 import com.wms.inventory.constant.StockStatus;
 import com.wms.inventory.dto.InventoryChangeCommand;
 import com.wms.inventory.dto.InventoryChangeResult;
+import com.wms.inventory.dto.InventoryListVo;
 import com.wms.inventory.dto.InventorySummaryDto;
 import com.wms.inventory.dto.InventoryWarningDto;
 import com.wms.inventory.entity.Inventory;
@@ -30,9 +31,13 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -45,6 +50,72 @@ public class InventoryService {
     private final InventoryQueryMapper inventoryQueryMapper;
     private final SafetyStockMapper safetyStockMapper;
     private final BaseMaterialMapper materialMapper;
+
+    /**
+     * 实时库存分页（附物料名称、规格、单位）。
+     */
+    public PageResult<InventoryListVo> pageList(String warehouseCode, String locationCode,
+                                                String materialCode, String batchNo,
+                                                long current, long size) {
+        LambdaQueryWrapper<Inventory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StringUtils.hasText(warehouseCode), Inventory::getWarehouseCode, warehouseCode)
+                .eq(StringUtils.hasText(locationCode), Inventory::getLocationCode, locationCode)
+                .eq(StringUtils.hasText(materialCode), Inventory::getMaterialCode, materialCode)
+                .eq(StringUtils.hasText(batchNo), Inventory::getBatchNo, batchNo)
+                .gt(Inventory::getStockQty, 0)
+                .orderByDesc(Inventory::getUpdateTime);
+        Page<Inventory> page = inventoryMapper.selectPage(new Page<>(current, size), wrapper);
+        List<InventoryListVo> records = toListVos(page.getRecords());
+        return PageResult.of(records, page.getTotal(), page.getCurrent(), page.getSize());
+    }
+
+    private List<InventoryListVo> toListVos(List<Inventory> inventories) {
+        if (inventories == null || inventories.isEmpty()) {
+            return List.of();
+        }
+        Set<String> codes = new HashSet<>();
+        for (Inventory inv : inventories) {
+            if (StringUtils.hasText(inv.getMaterialCode())) {
+                codes.add(inv.getMaterialCode().trim());
+            }
+        }
+        Map<String, BaseMaterial> materialMap = Map.of();
+        if (!codes.isEmpty()) {
+            List<BaseMaterial> materials = materialMapper.selectList(new LambdaQueryWrapper<BaseMaterial>()
+                    .in(BaseMaterial::getMaterialCode, codes));
+            materialMap = materials.stream()
+                    .filter(m -> StringUtils.hasText(m.getMaterialCode()))
+                    .collect(Collectors.toMap(
+                            m -> m.getMaterialCode().trim(),
+                            Function.identity(),
+                            (a, b) -> a));
+        }
+        List<InventoryListVo> result = new ArrayList<>(inventories.size());
+        for (Inventory inv : inventories) {
+            InventoryListVo vo = new InventoryListVo();
+            vo.setId(inv.getId());
+            vo.setMaterialCode(inv.getMaterialCode());
+            vo.setLabelNo(inv.getBatchNo());
+            vo.setBatchNo(inv.getBatchNo());
+            vo.setAvailableQty(inv.getAvailableQty());
+            vo.setWarehouseCode(inv.getWarehouseCode());
+            vo.setProductionDate(inv.getProductionDate());
+            vo.setCreateTime(inv.getCreateTime());
+            vo.setStockQty(inv.getStockQty());
+            vo.setLocationCode(inv.getLocationCode());
+            vo.setFrozenQty(inv.getFrozenQty());
+            vo.setStockStatus(inv.getStockStatus());
+            BaseMaterial material = materialMap.get(
+                    StringUtils.hasText(inv.getMaterialCode()) ? inv.getMaterialCode().trim() : "");
+            if (material != null) {
+                vo.setMaterialName(material.getMaterialName());
+                vo.setSpecification(material.getSpecification());
+                vo.setUnitCode(material.getUnitCode());
+            }
+            result.add(vo);
+        }
+        return result;
+    }
 
     @Transactional(rollbackFor = Exception.class)
     public Inventory increase(InventoryChangeCommand cmd) {

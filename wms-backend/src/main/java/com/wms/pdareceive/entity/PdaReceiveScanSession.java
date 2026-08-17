@@ -23,7 +23,7 @@ public class PdaReceiveScanSession {
     private String supplierName;
     private LocalDate billDate;
     private String warehouseCode;
-    /** SCANNING / PARTIAL_SUBMITTED / COMPLETED */
+    /** NEW / SCANNING / COMPLETED（部分或全部提交、可处理余量全 0 均为已完成，列表不展示） */
     private String status;
     private Integer totalLines;
     private Integer checkedLines;

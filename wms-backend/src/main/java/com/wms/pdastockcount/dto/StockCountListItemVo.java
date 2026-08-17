@@ -19,4 +19,7 @@ public class StockCountListItemVo {
     /** COUNTING / COMPLETED / NEW */
     private String scanStatus;
     private boolean inProgress;
+    /** 当前占用操作人（未过期） */
+    private String lockUserName;
+    private Boolean locked;
 }

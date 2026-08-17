@@ -20,7 +20,6 @@ import com.wms.barcode.service.BarcodeTraceLinkService;
 import com.wms.inventory.dto.InventoryChangeCommand;
 import com.wms.inventory.dto.InventoryChangeResult;
 import com.wms.inventory.service.InventoryService;
-import com.wms.quality.service.QualityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -44,7 +43,6 @@ public class InboundService {
     private final InboundOrderMapper orderMapper;
     private final InboundOrderDetailMapper detailMapper;
     private final InventoryService inventoryService;
-    private final QualityService qualityService;
     private final BarcodeTraceLinkService barcodeTraceLinkService;
 
     public PageResult<InboundOrder> page(String orderNo, String orderType, String warehouseCode,
@@ -298,11 +296,8 @@ public class InboundService {
         detail.setBatchNo(req.getBatchNo());
         detail.setTargetLocation(req.getTargetLocation());
         detail.setLineStatus(newReceived.compareTo(detail.getOrderQty()) >= 0 ? "COMPLETED" : "PARTIAL");
-        if (qualityService.requiresInspection(detail.getMaterialCode())) {
-            detail.setQcStatus("PENDING");
-            qualityService.createFromInboundReceive(orderNo, detail.getLineNo(), detail.getMaterialCode(),
-                    req.getBatchNo(), req.getQuantity());
-        } else if (detail.getQcStatus() == null) {
+        // 质检功能已下线：收货行默认通过
+        if (detail.getQcStatus() == null) {
             detail.setQcStatus("PASS");
         }
         detailMapper.updateById(detail);

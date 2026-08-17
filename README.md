@@ -53,24 +53,44 @@ scripts\init-wms-db.bat
 
 脚本按配置创建库与应用登录。随后启动后端，**Flyway 自动建表**。配置变更后请同步 `application-dev.yml` / 环境变量中的数据源账号。
 
-### 1. 后端 API
+### 1. 一键启动（前端 + 后端，同端口 9980）
 
 ```bash
+# 仓库根目录双击 start.bat
+# 或：
 cd wms-backend
-# 方式一：双击 start.bat（已预设 JAVA_HOME）
-# 方式二：命令行
-set JAVA_HOME=D:\java\jdk-17
-mvn spring-boot:run
+# 双击 start.bat（会把 wms-web 打进后端 static，再启动 Spring Boot）
 ```
 
+- **管理后台**: http://localhost:9980/  
+- **API**: http://localhost:9980/api/v1  
+- **Swagger**: http://localhost:9980/doc.html  
 - 开发环境使用 **SQL Server**（本地库名 `wms`）
 - 默认连接：`localhost:1433`，账号 `wms_app` / `Wms@123456`（见 `application-dev.yml`）
-- API 地址: http://localhost:9980/api/v1
-- Swagger 文档: http://localhost:9980/doc.html
 
 **默认账号**: `admin` / `123456`
 
-### 2. Web 管理后台
+> Vite 与后端不能同时占用 9980，因此日常启动是「前端打包进后端、只起 9980」。  
+> 改过前端后若未自动重建：设 `FORCE_WEB_BUILD=1` 再运行 `start.bat`，或执行 `scripts\sync-web-to-backend.bat`。  
+> 需要前端热更新时：另开 `wms-web\start.bat`（5173），并保证后端已在 9980。
+
+### 2. Web 管理后台（可选）
+
+**方式 A：只同步静态资源（不启服务）**
+
+```bat
+scripts\sync-web-to-backend.bat
+```
+
+或：
+
+```bash
+cd wms-web
+npm install
+npm run build:backend
+```
+
+**方式 B：前端热更新（5173）**
 
 ```bash
 cd wms-web

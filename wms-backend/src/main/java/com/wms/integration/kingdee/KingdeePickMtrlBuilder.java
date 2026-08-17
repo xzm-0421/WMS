@@ -17,7 +17,7 @@ import java.util.List;
  */
 public final class KingdeePickMtrlBuilder {
 
-    private static final DateTimeFormatter DATE_ONLY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String SRC_BILL_TYPE = "PRD_PPBOM";
 
     private KingdeePickMtrlBuilder() {
@@ -62,9 +62,10 @@ public final class KingdeePickMtrlBuilder {
             model.put("FOwnerTypeId0", props.getStockInOwnerTypeHead());
             putNumberRef(model, "FOwnerId0", props.getStockInOrgNumber());
             putNumberRef(model, "FCurrId", props.getStockInSettleCurrNumber());
-            model.put("FIsCrossTrade", "false");
-            model.put("FVmiBusiness", "false");
-            model.put("FIsOwnerTInclOrg", "false");
+            model.put("FIsCrossTrade", false);
+            model.put("FVmiBusiness", false);
+            model.put("FIsOwnerTInclOrg", false);
+            model.put("F_PrintTimes", 0);
 
             String note = firstNonBlank(req.getNote(), buildDefaultNote(req));
             if (StringUtils.hasText(note)) {
@@ -105,10 +106,23 @@ public final class KingdeePickMtrlBuilder {
         entry.put("FStockAppQty", qty);
         entry.put("FStockActualQty", qty);
         entry.put("FBaseStockActualQty", qty);
-        entry.put("FEntryVmiBusiness", "false");
-        entry.put("FCheckReturnMtrl", "false");
-        entry.put("FIsOverLegalOrg", "false");
-        entry.put("FPickingStatus", 0);
+        entry.put("FEntryVmiBusiness", false);
+        entry.put("FCheckReturnMtrl", false);
+        entry.put("FIsOverLegalOrg", false);
+        entry.put("FConsome", "0");
+        entry.put("FReserveType", "1");
+        entry.put("FOptQueue", "0");
+        entry.put("FOptPlanBillId", 0);
+        entry.put("FOptDetailId", 0);
+        entry.put("FOperId", 10);
+        entry.put("FPickingStatus", 4);
+        entry.put("FAllowOverQty", 0.0);
+        entry.put("FBaseAllowOverQty", 0.0);
+        entry.put("FStockAllowOverQty", 0.0);
+        entry.put("FSecActualQty", 0.0);
+        entry.put("FSecAllowOverQty", 0.0);
+        entry.put("FPrice", 0.0);
+        entry.put("FAmount", 0.0);
 
         putNumberRef(entry, "FStockId", stock);
         if (props.isPickMtrlSendStockLoc() && StringUtils.hasText(line.getLocationCode())) {
@@ -197,7 +211,7 @@ public final class KingdeePickMtrlBuilder {
 
     private static String formatBillDate(LocalDate date) {
         LocalDate d = date != null ? date : LocalDate.now();
-        return d.format(DATE_ONLY);
+        return d.atStartOfDay().format(DATE_TIME);
     }
 
     private static String defaultUnit(String unitCode, KingdeeCloudProperties props) {

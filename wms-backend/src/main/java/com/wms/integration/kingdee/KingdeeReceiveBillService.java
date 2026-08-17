@@ -116,13 +116,17 @@ public class KingdeeReceiveBillService {
         List<KingdeeReceiveBillVo> all = null;
         if (pdaProperties.getShortCacheTtlSeconds() > 0) {
             all = pdaShortCache.get(cacheKey, new TypeReference<List<KingdeeReceiveBillVo>>() {});
+            if (all != null && all.isEmpty()) {
+                all = null;
+                pdaShortCache.evict(cacheKey);
+            }
         }
         if (all == null) {
             long t0 = System.currentTimeMillis();
             all = pageFromKingdeeWithInspection(keyword);
             log.info("Kingdee receive bill list: distinctBills={} costMs={}",
                     all.size(), System.currentTimeMillis() - t0);
-            if (pdaProperties.getShortCacheTtlSeconds() > 0) {
+            if (pdaProperties.getShortCacheTtlSeconds() > 0 && !all.isEmpty()) {
                 pdaShortCache.put(cacheKey, all,
                         Duration.ofSeconds(Math.max(60, pdaProperties.getShortCacheTtlSeconds())));
             }
@@ -135,13 +139,54 @@ public class KingdeeReceiveBillService {
 
     private List<KingdeeReceiveBillVo> pageFromKingdeeWithInspection(String keyword) {
         int limit = resolveListQueryLimit();
-        List<List<String>> rows = kingdeeCloudService.executeBillQuery(
-                properties.getReceiveBillFormId(),
-                properties.getReceiveBillInspectionListFieldKeys(),
-                buildApprovedFilter(keyword),
-                "FDate desc, FBillNo desc",
-                0,
-                limit);
+        String fullKeys = properties.getReceiveBillInspectionListFieldKeys();
+        String noRemainKeys = properties.getReceiveBillInspectionListFieldKeysNoRemain();
+
+        InspectionQueryResult full = queryInspectionEligible(keyword, fullKeys, limit);
+        if (full.isFailed()) {
+            log.warn("Kingdee receive bill inspection query/parse failed with remain fields, retry without remain keys");
+            InspectionQueryResult retry = queryInspectionEligible(keyword, noRemainKeys, limit);
+            if (!retry.isFailed()) {
+                return retry.bills();
+            }
+            log.error("Kingdee receive bill inspection list failed after retry; return empty to avoid unfiltered approved dump");
+            return List.of();
+        }
+
+        // 带余量字段「成功但 0 行」：可能是字段非法被金蝶空返回，探测无余量 FieldKeys
+        if (full.rawRowCount() == 0) {
+            InspectionQueryResult probe = queryInspectionEligible(keyword, noRemainKeys, limit);
+            if (!probe.isFailed() && probe.rawRowCount() > 0) {
+                log.warn("Kingdee inspection full-keys empty but no-remain keys returned rawRows={}, use probe result",
+                        probe.rawRowCount());
+                return probe.bills();
+            }
+            log.info("Kingdee receive bill list truly empty after probe, keyword={}", keyword);
+        }
+        return full.bills();
+    }
+
+    /**
+     * @return isFailed=true 表示查询/解析失败需换 FieldKeys；否则 bills 非 null（可为 empty）
+     */
+    private InspectionQueryResult queryInspectionEligible(String keyword, String fieldKeys, int limit) {
+        List<List<String>> rows;
+        try {
+            rows = kingdeeCloudService.executeBillQuery(
+                    properties.getReceiveBillFormId(),
+                    fieldKeys,
+                    buildApprovedFilter(keyword),
+                    "FDate desc, FBillNo desc",
+                    0,
+                    limit);
+        } catch (Exception e) {
+            log.warn("Kingdee inspection ExecuteBillQuery failed fieldKeysLen={}",
+                    fieldKeys != null ? fieldKeys.length() : 0, e);
+            return InspectionQueryResult.failure();
+        }
+        if (rows == null) {
+            rows = List.of();
+        }
         List<KingdeeReceiveBillInspectionLine> inspectionRows = new ArrayList<>();
         for (List<String> row : rows) {
             KingdeeReceiveBillInspectionLine line = mapInspectionRow(row);
@@ -149,16 +194,11 @@ public class KingdeeReceiveBillService {
                 inspectionRows.add(line);
             }
         }
-        if (inspectionRows.isEmpty()) {
-            if (!rows.isEmpty()) {
-                List<String> sample = rows.get(0);
-                log.warn("Kingdee inspection row parse failed, first rawRow cols={} data={}",
-                        sample.size(), sample);
-            }
-            // 解析失败：轻量列表，不再二次拉检验字段大包
-            List<KingdeeReceiveBillVo> fallback = pageApprovedSimple(keyword);
-            log.info("Kingdee receive bill fallback simple list, bills={}", fallback.size());
-            return fallback;
+        if (!rows.isEmpty() && inspectionRows.isEmpty()) {
+            List<String> sample = rows.get(0);
+            log.warn("Kingdee inspection row parse failed, first rawRow cols={} data={}",
+                    sample.size(), sample);
+            return InspectionQueryResult.failure();
         }
         Map<String, Integer> lineCounts = countLinesPerBill(inspectionRows);
         List<KingdeeReceiveBillVo> eligible = KingdeeReceiveBillInspectionFilter.filterEligibleBills(inspectionRows).stream()
@@ -167,87 +207,21 @@ public class KingdeeReceiveBillService {
                 .collect(Collectors.toList());
         log.info("Kingdee receive bill list: rawRows={}, parsedLines={}, afterInspectionFilter={}, limit={}",
                 rows.size(), inspectionRows.size(), eligible.size(), limit);
-        if (eligible.isEmpty()) {
-            // 检验过滤后为空时：用已拉到的行做「按单去重」轻量展示，避免再打一枪 2000 行
-            Map<String, KingdeeReceiveBillVo> fromRaw = new LinkedHashMap<>();
-            for (KingdeeReceiveBillInspectionLine line : inspectionRows) {
-                if (line == null || !StringUtils.hasText(line.getBillNo())) {
-                    continue;
-                }
-                fromRaw.putIfAbsent(line.getBillNo().trim(), toListBillFromInspection(
-                        line, resolveMaterialLineCount(line, lineCounts)));
-            }
-            if (!fromRaw.isEmpty()) {
-                log.warn("Kingdee inspection filter empty, use raw distinct bills={}", fromRaw.size());
-                return new ArrayList<>(fromRaw.values()).stream().sorted(billNewestFirst()).collect(Collectors.toList());
-            }
-            return pageApprovedSimple(keyword);
-        }
-        return eligible;
+        return InspectionQueryResult.ok(eligible, rows.size(), inspectionRows.size());
     }
 
-    /** 已审核单据列表（检验过滤无结果或解析失败时回退，仍统计物料行数） */
-    private List<KingdeeReceiveBillVo> pageApprovedSimple(String keyword) {
-        List<KingdeeReceiveBillVo> bills = queryApprovedBillsWithLineCount(keyword);
-        if (!bills.isEmpty()) {
-            return bills;
+    private record InspectionQueryResult(List<KingdeeReceiveBillVo> bills, int rawRowCount, int parsedLineCount) {
+        static InspectionQueryResult failure() {
+            return new InspectionQueryResult(null, -1, -1);
         }
-        log.warn("Kingdee line-count query empty, fallback to header-only approved list");
-        return queryApprovedBillsHeaderOnly(keyword);
-    }
 
-    private List<KingdeeReceiveBillVo> queryApprovedBillsWithLineCount(String keyword) {
-        List<List<String>> rows = kingdeeCloudService.executeBillQuery(
-                properties.getReceiveBillFormId(),
-                properties.getReceiveBillLineCountFieldKeys(),
-                buildApprovedFilter(keyword),
-                "FDate desc, FBillNo desc",
-                0,
-                resolveListQueryLimit());
-        return buildApprovedBillsFromRows(rows, true);
-    }
-
-    private List<KingdeeReceiveBillVo> queryApprovedBillsHeaderOnly(String keyword) {
-        List<List<String>> rows = kingdeeCloudService.executeBillQuery(
-                properties.getReceiveBillFormId(),
-                properties.getReceiveBillListFieldKeys(),
-                buildApprovedFilter(keyword),
-                "FDate desc, FBillNo desc",
-                0,
-                resolveListQueryLimit());
-        return buildApprovedBillsFromRows(rows, false);
-    }
-
-    private List<KingdeeReceiveBillVo> buildApprovedBillsFromRows(List<List<String>> rows, boolean countLines) {
-        Map<String, KingdeeReceiveBillVo> bills = new LinkedHashMap<>();
-        Map<String, Integer> lineCounts = new LinkedHashMap<>();
-        for (List<String> row : rows) {
-            if (row == null || row.isEmpty()) {
-                continue;
-            }
-            String billNo = cell(row, 0);
-            if (!StringUtils.hasText(billNo)) {
-                continue;
-            }
-            String no = billNo.trim();
-            if (countLines) {
-                lineCounts.merge(no, 1, Integer::sum);
-            }
-            bills.putIfAbsent(no, KingdeeReceiveBillVo.builder()
-                    .billNo(no)
-                    .supplierCode(cell(row, 1))
-                    .supplierName(cell(row, 2))
-                    .documentStatus(StringUtils.hasText(cell(row, 3)) ? cell(row, 3).trim() : "C")
-                    .billDate(parseDate(cell(row, 4)))
-                    .warehouseCode("WH01")
-                    .build());
+        static InspectionQueryResult ok(List<KingdeeReceiveBillVo> bills, int rawRowCount, int parsedLineCount) {
+            return new InspectionQueryResult(bills == null ? List.of() : bills, rawRowCount, parsedLineCount);
         }
-        if (countLines) {
-            for (Map.Entry<String, KingdeeReceiveBillVo> entry : bills.entrySet()) {
-                entry.getValue().setTotalLines(lineCounts.getOrDefault(entry.getKey(), 0));
-            }
+
+        boolean isFailed() {
+            return bills == null;
         }
-        return bills.values().stream().sorted(billNewestFirst()).collect(Collectors.toList());
     }
 
     private Map<String, Integer> countLinesPerBill(List<KingdeeReceiveBillInspectionLine> rows) {
@@ -303,6 +277,8 @@ public class KingdeeReceiveBillService {
                 .concessionQty(parseDecimal(cell(row, 11)))    // FDetailEntity.FCsnReceiveBaseQty
                 .procScrapQty(parseDecimal(cell(row, 12)))    // FDetailEntity.FProcScrapBaseQty
                 .mtrlScrapQty(parseDecimal(cell(row, 13)))    // FDetailEntity.FMtrlScrapBaseQty
+                .inStockJoinBaseQty(parseDecimal(cell(row, 14)))
+                .remainInStockBaseQty(parseDecimal(cell(row, 15)))
                 .build();
     }
 
@@ -444,15 +420,26 @@ public class KingdeeReceiveBillService {
                     .supplierName(KingdeeReceiveBillDetailRowParser.supplierName(row))
                     .warehouseCode(StringUtils.hasText(KingdeeReceiveBillDetailRowParser.warehouseCode(row))
                             ? KingdeeReceiveBillDetailRowParser.warehouseCode(row) : "WH01")
+                    .sendBillNo(blankToNull(KingdeeReceiveBillDetailRowParser.sendBillNo(row)))
                     .lines(new ArrayList<>())
                     .build());
             if (bill.getBillId() == null) {
                 bill.setBillId(KingdeeReceiveBillDetailRowParser.billId(row));
             }
+            if (!StringUtils.hasText(bill.getSendBillNo())) {
+                bill.setSendBillNo(blankToNull(KingdeeReceiveBillDetailRowParser.sendBillNo(row)));
+            }
             bill.getLines().add(KingdeeReceiveBillDetailRowParser.mapLine(row, bill.getLines().size() + 1));
         }
         for (KingdeeReceiveBillVo bill : bills.values()) {
             bill.setTotalLines(bill.getLines().size());
+            if (StringUtils.hasText(bill.getSendBillNo()) && bill.getLines() != null) {
+                for (KingdeeReceiveBillLineVo line : bill.getLines()) {
+                    if (line != null && !StringUtils.hasText(line.getSendBillNo())) {
+                        line.setSendBillNo(bill.getSendBillNo());
+                    }
+                }
+            }
         }
         return bills;
     }
@@ -579,6 +566,10 @@ public class KingdeeReceiveBillService {
         } catch (Exception e) {
             return BigDecimal.ZERO;
         }
+    }
+
+    private static String blankToNull(String s) {
+        return StringUtils.hasText(s) ? s.trim() : null;
     }
 
     private int parseInt(String s) {

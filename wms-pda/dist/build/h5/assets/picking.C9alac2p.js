@@ -1,1 +1,0 @@
-import{r}from"./_plugin-vue_export-helper.D9dTxKoS.js";function e(e,i){return r({url:"/mobile/picking/pickup/confirm",method:"POST",data:{issueNo:e,receiverName:i}})}function i(e){return r({url:`/mobile/picking/issues/${e}`})}function o(e){return r({url:"/mobile/picking/workshop-return",method:"POST",data:e})}export{e as c,i as g,o as s};

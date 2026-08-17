@@ -131,6 +131,8 @@
   color: #94a3b8;
   margin-top: 0.125rem;
 }
+.bill-lock[data-v-2d7ea4ce] { color: #dc2626; font-weight: 600;
+}
 .bill-lines[data-v-2d7ea4ce] {
   color: #2563eb;
   font-weight: 600;

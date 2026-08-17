@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * 解析金蝶 View(PUR_ReceiveBill) 返回的 Result 节点。
- * 明细分录支持 FDetailEntity / PUR_ReceiveEntry 等。
+ * 明细分录支持 FDetailEntity / PUR_ReceiveEntry / FPURMRBENTRY 等。
  */
 public final class KingdeeReceiveBillViewParser {
 
@@ -32,14 +32,19 @@ public final class KingdeeReceiveBillViewParser {
                 .billNo(billNo.trim())
                 .billDate(parseDate(firstText(billNode, "FDate", "Date")))
                 .supplierCode(firstNonBlank(
-                        refNumber(billNode, "FWorkShopId", "WorkShopId", "FSupplierId", "SupplierId", "FSubSupplierId"),
+                        refNumber(billNode, "FWorkShopId", "WorkShopId", "FSupplierId", "SupplierId", "FSubSupplierId",
+                                "FRetcustId", "FCustomerID", "FCustomerId"),
                         refNumber(billNode, "F_YVZR_Base_qtr")))
                 .supplierName(firstNonBlank(
-                        refName(billNode, "FWorkShopId", "WorkShopId", "FSupplierId", "SupplierId", "FSubSupplierId"),
+                        refName(billNode, "FWorkShopId", "WorkShopId", "FSupplierId", "SupplierId", "FSubSupplierId",
+                                "FRetcustId", "FCustomerID", "FCustomerId"),
                         refName(billNode, "F_YVZR_Base_qtr")))
                 .documentStatus(firstText(billNode, "FDocumentStatus", "DocumentStatus"))
                 .warehouseCode(refNumber(billNode, "FStockId0", "FStockOrgId", "StockOrgId", "FStockId", "StockId"))
                 .billId(parseLong(firstText(billNode, "FID", "Id")))
+                .businessType(firstText(billNode, "FBusinessType", "BusinessType"))
+                .billTypeNumber(refNumber(billNode, "FBillTypeID", "BillTypeID", "FBillType", "BillType"))
+                .sendBillNo(firstText(billNode, "F_QVHU_Text_qtr", "FSendBillNo", "SendBillNo"))
                 .moBillNo(firstNonBlank(
                         firstText(billNode, "FMOBillNO", "FMoBillNo", "MoBillNo"),
                         firstText(billNode, "FSubReqBillNo", "SubReqBillNo")))
@@ -47,6 +52,9 @@ public final class KingdeeReceiveBillViewParser {
                 .build();
         List<KingdeeReceiveBillLineVo> lines = parseMaterialLines(billNode);
         for (KingdeeReceiveBillLineVo line : lines) {
+            if (!StringUtils.hasText(line.getSendBillNo()) && StringUtils.hasText(bill.getSendBillNo())) {
+                line.setSendBillNo(bill.getSendBillNo());
+            }
             if (!StringUtils.hasText(line.getPpBomBillNo())) {
                 line.setPpBomBillNo(bill.getBillNo());
             }
@@ -94,35 +102,66 @@ public final class KingdeeReceiveBillViewParser {
 
     private static KingdeeReceiveBillLineVo mapEntryLine(JsonNode entry, int fallbackSeq) {
         String materialCode = refNumber(entry,
-                "FMaterialId", "FMaterialID", "MaterialId", "MaterialID");
+                "FMaterialId", "FMaterialID", "FMATERIALID", "MaterialId", "MaterialID");
         if (!StringUtils.hasText(materialCode)) {
             return null;
         }
-        String materialName = refName(entry, "FMaterialId", "FMaterialID", "MaterialId", "MaterialID");
+        String materialName = refName(entry, "FMaterialId", "FMaterialID", "FMATERIALID", "MaterialId", "MaterialID");
         String materialDesc = resolveMaterialDesc(entry);
         if (!StringUtils.hasText(materialDesc)) {
             materialDesc = materialName;
         }
         String specification = resolveSpecification(entry);
-        int seq = parseInt(firstText(entry, "FSeq", "Seq", "FDetailEntity_FSeq"), fallbackSeq);
+        int seq = parseInt(firstText(entry, "FSeq", "Seq", "FDetailEntity_FSeq", "FPURMRBENTRY_FSeq"), fallbackSeq);
         String batchNo = firstNonBlank(
                 text(entry, "FLot_Text", "Lot_Text"),
                 refNumber(entry, "FLot", "Lot", "FLotId", "LotId"));
         String stockUnit = firstNonBlank(
                 refNumber(entry, "FUnitId", "UnitId", "FUnitID", "UnitID"),
                 refNumber(entry, "FBaseUnitId", "BaseUnitId", "FBaseUnitID", "BaseUnitID"));
+        String priceUnit = refNumber(entry,
+                "FPriceUnitId", "FPriceUnitID", "FPRICEUNITID", "PriceUnitId", "PriceUnitID");
         String stockWarehouse = refNumber(entry, "FStockId", "StockId", "FStockID", "StockID");
         BigDecimal actReceiveQty = parseDecimal(firstText(entry,
+                // 采购退料实退数量
+                "FRMREALQTY", "FRMRealQty", "FRmRealQty",
                 "FActReceiveQty", "ActReceiveQty",
                 "FActlandQty", "ActlandQty",
                 "FActLandQty", "ActLandQty",
                 "FNoPickedQty", "NoPickedQty",
                 "FMustQty", "MustQty",
-                "FAppQty", "AppQty"));
-        BigDecimal mustQty = parseDecimal(firstText(entry, "FMustQty", "MustQty"));
-        BigDecimal pickedQty = parseDecimal(firstText(entry, "FPickedQty", "PickedQty", "FActualQty", "ActualQty"));
+                // 生产入库：应收 FMustQty / 实收 FRealQty；退料：申请 FAPPQty / 实退 FQty
+                // 领料/补料：申请 FAppQty 优先于实发 FActualQty（计划=申请，勿用剩余量）
+                // 生产汇报：合格 FQuaQty
+                "FQuaQty", "QuaQty",
+                "FMustQty", "MustQty",
+                "FRealQty", "RealQty",
+                "FAPPQty", "FAppQty", "AppQty",
+                "FActualQty", "ActualQty",
+                "FQty", "Qty"));
+        BigDecimal priceUnitQty = parseDecimal(firstText(entry,
+                "FPriceUnitQty", "FPRICEUNITQTY", "PriceUnitQty", "FPriceBaseQty", "FPRICEBASEQTY"));
+        BigDecimal mustQty = parseDecimal(firstText(entry,
+                "FQuaQty", "QuaQty",
+                "FMustQty", "MustQty", "FAPPQty", "FAppQty", "AppQty", "FRMREALQTY", "FRMRealQty"));
+        BigDecimal pickedQty = parseDecimal(firstText(entry,
+                "FStockInSelQty", "StockInSelQty", "FStockInSelBaseQty",
+                "FPickedQty", "PickedQty", "FActualQty", "ActualQty",
+                "FRealQty", "RealQty", "FRMREALQTY", "FRMRealQty", "FQty", "Qty"));
         BigDecimal noPickedQty = parseDecimal(firstText(entry, "FNoPickedQty", "NoPickedQty"));
-        if (noPickedQty.compareTo(BigDecimal.ZERO) > 0) {
+        BigDecimal stockInSelQty = parseDecimal(firstText(entry,
+                "FStockInSelQty", "StockInSelQty", "FStockInSelBaseQty"));
+        // 领料/补料：有申请数量时计划固定为申请，避免「申请-实发」把计划压成剩余或 0
+        boolean hasAppQty = mustQty.compareTo(BigDecimal.ZERO) > 0
+                && StringUtils.hasText(firstText(entry, "FAPPQty", "FAppQty", "AppQty"));
+        boolean hasQuaQty = mustQty.compareTo(BigDecimal.ZERO) > 0
+                && StringUtils.hasText(firstText(entry, "FQuaQty", "QuaQty"));
+        if (hasQuaQty) {
+            // 汇报：计划=合格；已入选单单独写入 inStockJoin
+            actReceiveQty = mustQty;
+        } else if (hasAppQty) {
+            actReceiveQty = mustQty;
+        } else if (noPickedQty.compareTo(BigDecimal.ZERO) > 0) {
             actReceiveQty = noPickedQty;
         } else if (mustQty.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal remain = mustQty.subtract(pickedQty);
@@ -134,17 +173,28 @@ public final class KingdeeReceiveBillViewParser {
         }
         BigDecimal qualifiedQty = parseDecimal(firstText(entry,
                 "FReceiveBaseQty", "ReceiveBaseQty"));
+        if (hasQuaQty && actReceiveQty.compareTo(BigDecimal.ZERO) > 0) {
+            // 生产汇报：合格量走 FQuaQty（已写入 actReceiveQty），勿只用收料单的 FReceiveBaseQty
+            qualifiedQty = actReceiveQty;
+        }
         BigDecimal stockBaseQty = parseDecimal(firstText(entry,
                 "FStockBaseQty", "StockBaseQty"));
         BigDecimal baseUnitQty = parseDecimal(firstText(entry,
-                "FBaseUnitQty", "BaseUnitQty", "FBaseMustQty", "BaseMustQty"));
+                "FBaseUnitQty", "BaseUnitQty", "FBaseMustQty", "BaseMustQty",
+                "FBaseQuaQty", "BaseQuaQty"));
         BigDecimal inStockJoinBaseQty = parseDecimal(firstText(entry,
                 "FInStockJoinBaseQty", "InStockJoinBaseQty", "INSTOCKJOINBASEQTY"));
+        if (hasQuaQty && stockInSelQty.compareTo(BigDecimal.ZERO) >= 0) {
+            inStockJoinBaseQty = stockInSelQty;
+        }
         BigDecimal receiveBase = qualifiedQty.compareTo(BigDecimal.ZERO) > 0 ? qualifiedQty : stockBaseQty;
         if (receiveBase.compareTo(BigDecimal.ZERO) <= 0) {
             receiveBase = baseUnitQty.compareTo(BigDecimal.ZERO) > 0 ? baseUnitQty : actReceiveQty;
         }
         BigDecimal remainInStockBaseQty = receiveBase.subtract(inStockJoinBaseQty);
+        if (hasQuaQty) {
+            remainInStockBaseQty = actReceiveQty.subtract(inStockJoinBaseQty);
+        }
         if (remainInStockBaseQty.compareTo(BigDecimal.ZERO) < 0) {
             remainInStockBaseQty = BigDecimal.ZERO;
         }
@@ -163,6 +213,8 @@ public final class KingdeeReceiveBillViewParser {
                 .specification(specification)
                 .batchNo(batchNo)
                 .unitCode(stockUnit)
+                .priceUnitCode(StringUtils.hasText(priceUnit) ? priceUnit : null)
+                .priceUnitQty(priceUnitQty.compareTo(BigDecimal.ZERO) > 0 ? priceUnitQty : null)
                 .stockWarehouseCode(stockWarehouse)
                 .entryId(entryId)
                 .planQty(actReceiveQty)
@@ -171,6 +223,7 @@ public final class KingdeeReceiveBillViewParser {
                 .baseUnitQty(baseUnitQty.compareTo(BigDecimal.ZERO) > 0 ? baseUnitQty : receiveBase)
                 .inStockJoinBaseQty(inStockJoinBaseQty)
                 .remainInStockBaseQty(remainInStockBaseQty)
+                .sendBillNo(firstText(entry, "F_QVHU_Text_qtr", "FSendBillNo", "SendBillNo"))
                 .poOrderNo(poOrderNo)
                 .poOrderEntryId(poOrderEntryId)
                 .moBillNo(firstText(entry, "FMoBillNo", "MoBillNo", "FMOBillNO"))
@@ -243,6 +296,8 @@ public final class KingdeeReceiveBillViewParser {
 
     private static JsonNode findEntries(JsonNode billNode) {
         String[] names = {
+                // 采购退料 PUR_MRB
+                "FPURMRBENTRY", "PUR_MRBENTRY", "PURMRBENTRY",
                 "PUR_ReceiveEntry", "FDetailEntity", "DetailEntity",
                 "FReceiveEntry", "ReceiveEntry", "FReceiveBillEntry", "ReceiveBillEntry",
                 "FEntity", "Entity"
@@ -253,12 +308,15 @@ public final class KingdeeReceiveBillViewParser {
                 return node;
             }
         }
+        // 兼容大小写不一致的分录节点名
         Iterator<String> it = billNode.fieldNames();
         while (it.hasNext()) {
             String field = it.next();
-            if (field.toLowerCase().contains("receiveentry")
-                    || field.toLowerCase().contains("entry")
-                    || field.toLowerCase().contains("entity")) {
+            String lower = field.toLowerCase();
+            if (lower.contains("purmrb")
+                    || lower.contains("receiveentry")
+                    || lower.contains("entry")
+                    || lower.contains("entity")) {
                 JsonNode node = billNode.get(field);
                 if (node != null && node.isArray() && !node.isEmpty()) {
                     return node;

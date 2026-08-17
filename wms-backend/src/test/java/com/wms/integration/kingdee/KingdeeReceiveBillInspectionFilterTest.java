@@ -12,60 +12,68 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class KingdeeReceiveBillInspectionFilterTest {
 
     @Test
-    void acceptsWhenIncomingInspectionAndPartiallyAccounted() {
+    void acceptsWhenNotIncomingInspectionAndHasRemain() {
         assertTrue(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
-                true, "100", "100", "0", "80", "0", "0", "0", "0")));
+                false, "100", "0", "0", "0", "0", "0", "0", "0", "0", null)));
     }
 
     @Test
-    void rejectsWhenNotIncomingInspection() {
+    void rejectsWhenRemainIsZero() {
         assertFalse(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
-                false, "100", "100", "0", "80", "0", "0", "0", "0")));
+                false, "100", "0", "0", "100", "0", "0", "0", "0", "100", BigDecimal.ZERO)));
     }
 
     @Test
-    void rejectsWhenCheckNotEqualsReceive() {
+    void rejectsWhenJoinEqualsQualified() {
         assertFalse(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
-                true, "100", "90", "0", "90", "0", "0", "0", "0")));
+                true, "100", "100", "0", "100", "0", "0", "0", "0", "100", null)));
+    }
+
+    @Test
+    void acceptsWhenIncomingInspectionAndHasRemain() {
+        assertTrue(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
+                true, "100", "100", "0", "100", "0", "0", "0", "0", "40", null)));
     }
 
     @Test
     void rejectsWhenCheckEqualsRefuse() {
         assertFalse(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
-                true, "100", "100", "100", "0", "0", "0", "0", "0")));
+                true, "100", "100", "100", "0", "0", "0", "0", "0", "0", null)));
     }
 
     @Test
-    void rejectsWhenDispositionSumEqualsCheckQty() {
-        assertFalse(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
-                true, "100", "100", "20", "80", "0", "0", "0", "0")));
+    void rejectsWhenReceiveAndQualifiedAreZero() {
+        assertFalse(KingdeeReceiveBillInspectionFilter.isEligibleLine(
+                KingdeeReceiveBillInspectionLine.builder()
+                        .billNo("B001")
+                        .checkIncoming(false)
+                        .receiveQty(BigDecimal.ZERO)
+                        .qualifiedQty(BigDecimal.ZERO)
+                        .build()));
     }
 
     @Test
-    void rejectsWhenFullyQualifiedAndSumEqualsCheck() {
-        assertFalse(KingdeeReceiveBillInspectionFilter.isEligibleLine(line(
-                true, "100", "100", "0", "100", "0", "0", "0", "0")));
-    }
-
-    @Test
-    void keepsBillWhenAtLeastOneLineEligibleAndCountsMaterialLines() {
+    void countsOnlyEligibleLinesAsMaterialLineCount() {
         List<KingdeeReceiveBillInspectionLine> rows = List.of(
-                line("B001", true, "100", "100", "100", "0", "0", "0", "0", "0"),
-                line("B001", true, "100", "100", "0", "80", "0", "0", "0", "0"));
+                line("B001", true, "100", "100", "0", "100", "0", "0", "0", "0", "100", BigDecimal.ZERO),
+                line("B001", true, "100", "100", "0", "100", "0", "0", "0", "0", "20", null));
         List<KingdeeReceiveBillInspectionLine> bills = KingdeeReceiveBillInspectionFilter.filterEligibleBills(rows);
         assertEquals(1, bills.size());
-        assertEquals(2, bills.get(0).getMaterialLineCount());
+        assertEquals(1, bills.get(0).getMaterialLineCount());
     }
 
     private static KingdeeReceiveBillInspectionLine line(boolean checkIncoming, String receive, String check,
                                                          String refuse, String qualified, String sample,
-                                                         String concession, String proc, String mtrl) {
-        return line("B001", checkIncoming, receive, check, refuse, qualified, sample, concession, proc, mtrl);
+                                                         String concession, String proc, String mtrl,
+                                                         String joined, BigDecimal remain) {
+        return line("B001", checkIncoming, receive, check, refuse, qualified, sample, concession, proc, mtrl,
+                joined, remain);
     }
 
     private static KingdeeReceiveBillInspectionLine line(String billNo, boolean checkIncoming, String receive,
                                                          String check, String refuse, String qualified, String sample,
-                                                         String concession, String proc, String mtrl) {
+                                                         String concession, String proc, String mtrl,
+                                                         String joined, BigDecimal remain) {
         return KingdeeReceiveBillInspectionLine.builder()
                 .billNo(billNo)
                 .supplierName("供应商A")
@@ -79,6 +87,8 @@ class KingdeeReceiveBillInspectionFilterTest {
                 .concessionQty(new BigDecimal(concession))
                 .procScrapQty(new BigDecimal(proc))
                 .mtrlScrapQty(new BigDecimal(mtrl))
+                .inStockJoinBaseQty(joined == null ? null : new BigDecimal(joined))
+                .remainInStockBaseQty(remain)
                 .build();
     }
 }

@@ -31,14 +31,33 @@ import { listNoticeBillTypes } from '@/constants/noticeBillTypes.js'
 const types = ref(listNoticeBillTypes('OUTBOUND'))
 
 function hubDesc(item) {
-  if (item.code === 'PRODUCTION_ISSUE') return '扫用料清单 · 核对物料 · 同步领料单'
-  if (item.code === 'OUTSOURCE_ISSUE') return '扫委外用料清单 · 同步委外领料单'
-  return '扫码 · 勾选 · 分批出库'
+  if (item.code === 'PRODUCTION_ISSUE') return '扫未审核领料单 · 核对物料 · 提交审核'
+  if (item.code === 'PRODUCTION_FEED') return '扫未审核补料单 · 核对物料 · 工作流审批'
+  if (item.code === 'OUTSOURCE_FEED') return '扫未审核委外补料单 · 核对物料 · 工作流审批'
+  if (item.code === 'PRODUCTION_RET_STOCK') return '扫未审核退库单 · 核对物料 · 提交审核'
+  if (item.code === 'OUTSOURCE_ISSUE') return '扫未审核委外领料单 · 核对物料 · 提交审核'
+  if (item.code === 'OTHER_OUT' || item.code === 'SALES_DELIVERY') {
+    return item.code === 'SALES_DELIVERY'
+      ? '扫已审核发货通知 · 确认后下推销售出库并审核'
+      : '扫未审核其他出库单 · 核对物料 · 提交审核'
+  }
+  if (item.code === 'PURCHASE_RETURN') {
+    return '扫未审核采购退料单 · 核对物料 · 提交审核'
+  }
+  return '扫码 · 勾选 · 提交审核'
 }
 
 function openType(item) {
   if (item.code === 'PRODUCTION_ISSUE') {
     uni.navigateTo({ url: '/pages/picking/production-issue' })
+    return
+  }
+  if (item.code === 'PRODUCTION_FEED') {
+    uni.navigateTo({ url: '/pages/picking/production-feed' })
+    return
+  }
+  if (item.code === 'OUTSOURCE_FEED') {
+    uni.navigateTo({ url: '/pages/picking/outsource-feed' })
     return
   }
   if (item.code === 'OUTSOURCE_ISSUE') {

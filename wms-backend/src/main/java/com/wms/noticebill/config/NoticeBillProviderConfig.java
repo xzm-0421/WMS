@@ -42,9 +42,27 @@ public class NoticeBillProviderConfig {
     }
 
     @Bean
+    public NoticeBillProvider salesReturnNoticeProvider(KingdeeConfigurableNoticeBillService service,
+                                                        KingdeeCloudService cloudService) {
+        return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.SALES_RETURN);
+    }
+
+    @Bean
     public NoticeBillProvider productionIssueNoticeProvider(KingdeeConfigurableNoticeBillService service,
                                                             KingdeeCloudService cloudService) {
         return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.PRODUCTION_ISSUE);
+    }
+
+    @Bean
+    public NoticeBillProvider productionFeedNoticeProvider(KingdeeConfigurableNoticeBillService service,
+                                                           KingdeeCloudService cloudService) {
+        return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.PRODUCTION_FEED);
+    }
+
+    @Bean
+    public NoticeBillProvider productionRetStockNoticeProvider(KingdeeConfigurableNoticeBillService service,
+                                                               KingdeeCloudService cloudService) {
+        return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.PRODUCTION_RET_STOCK);
     }
 
     @Bean
@@ -57,5 +75,17 @@ public class NoticeBillProviderConfig {
     public NoticeBillProvider otherOutNoticeProvider(KingdeeConfigurableNoticeBillService service,
                                                      KingdeeCloudService cloudService) {
         return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.OTHER_OUT);
+    }
+
+    @Bean
+    public NoticeBillProvider outsourceFeedNoticeProvider(KingdeeConfigurableNoticeBillService service,
+                                                           KingdeeCloudService cloudService) {
+        return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.OUTSOURCE_FEED);
+    }
+
+    @Bean
+    public NoticeBillProvider purchaseReturnNoticeProvider(KingdeeConfigurableNoticeBillService service,
+                                                            KingdeeCloudService cloudService) {
+        return new ConfigurableNoticeBillProvider(service, cloudService, NoticeBillType.PURCHASE_RETURN);
     }
 }

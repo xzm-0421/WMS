@@ -31,9 +31,16 @@ import { listNoticeBillTypes } from '@/constants/noticeBillTypes.js'
 const types = ref(listNoticeBillTypes('INBOUND'))
 
 function returnDesc(code) {
-  if (code === 'PRODUCTION_RETURN') return '扫领料单 · 核对物料 · 同步退料单'
-  if (code === 'OUTSOURCE_RETURN') return '扫委外领料单 · 核对物料 · 同步退料单'
-  return '扫码 · 勾选 · 分批入库'
+  if (code === 'PRODUCTION_IN') {
+    return '扫已审核生产汇报单 · 严格控量 · 生成入库并反写审核'
+  }
+  if (code === 'PRODUCTION_RETURN') return '扫未审核退料单 · 核对物料 · 提交审核'
+  if (code === 'OUTSOURCE_RETURN') return '扫未审核委外退料单 · 核对物料 · 提交审核'
+  if (code === 'SALES_RETURN') return '扫已审核退货通知 · 核对物料 · 生成退货并审核'
+  if (code === 'OTHER_IN') {
+    return '扫未审核单据 · 核对物料 · 提交审核'
+  }
+  return '扫码 · 勾选 · 提交审核'
 }
 
 function openType(item) {

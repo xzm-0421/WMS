@@ -33,8 +33,7 @@ const loaded = ref(false)
 
 const moduleConfig = computed(() => {
   const map = {
-    stockcheck: { label: '盘点', title: '盘点任务', icon: '📋' },
-    qc: { label: '质检', title: '质检任务', icon: '✅' },
+    stockcheck: { label: '盘点', title: '盘点作业', icon: '📋' },
   }
   return map[moduleType.value] || map.stockcheck
 })
@@ -42,30 +41,35 @@ const moduleConfig = computed(() => {
 const taskList = computed(() => {
   const raw = tasks.value[moduleType.value]?.tasks || []
   return raw.map((item) => {
-    if (moduleType.value === 'stockcheck') {
-      return {
-        ...item,
-        _key: item.taskNo,
-        _title: item.taskNo,
-        _meta: `${item.warehouseCode || '-'} · ${item.status || '-'}`,
-      }
-    }
+    const billNo = item.billNo || item.taskNo
+    const counted = item.countedLines != null ? ` · 已盘 ${item.countedLines}` : ''
+    const statusText = item.status === 'COUNTING' ? '盘点中' : '待盘点'
     return {
       ...item,
-      _key: item.qcNo,
-      _title: item.qcNo,
-      _meta: `${item.materialCode || '-'} · ${item.status || '-'}`,
+      billNo,
+      _key: billNo,
+      _title: billNo,
+      _meta: `仓库 ${item.warehouseCode || '-'} · ${statusText}${counted}`,
     }
   })
 })
 
 onLoad((options) => {
   moduleType.value = options?.type || 'stockcheck'
+  // 盘点统一走金蝶作业列表页
+  if (moduleType.value === 'stockcheck') {
+    uni.redirectTo({ url: '/pages/stockcheck/stockcheck-list' })
+    return
+  }
   uni.setNavigationBarTitle({ title: moduleConfig.value.title })
   loadData()
 })
 
-onShow(loadData)
+onShow(() => {
+  if (moduleType.value !== 'stockcheck') {
+    loadData()
+  }
+})
 
 onPullDownRefresh(async () => {
   await loadData()
@@ -83,11 +87,11 @@ async function loadData() {
 }
 
 function handleClick(item) {
-  if (moduleType.value === 'stockcheck') {
-    uni.navigateTo({ url: `/pages/stockcheck/stockcheck?taskNo=${item.taskNo}` })
-  } else {
-    uni.navigateTo({ url: `/pages/qc/qc?qcNo=${item.qcNo}` })
-  }
+  const billNo = item.billNo || item.taskNo
+  if (!billNo) return
+  uni.navigateTo({
+    url: `/pages/stockcheck/stockcheck-scan?billNo=${encodeURIComponent(billNo)}`,
+  })
 }
 </script>
 

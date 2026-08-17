@@ -5,9 +5,20 @@ import {
   toggleNoticeLine,
   updateNoticeLineQty,
   submitNoticeBill,
+  heartbeatNoticeBillLock,
+  releaseNoticeBillLock,
 } from '@/api/noticeBill.js'
 import { getNoticeBillType } from '@/constants/noticeBillTypes.js'
 import { isNoticeBillCompleted } from '@/utils/noticeBill.js'
+import { isLabelScanned } from '@/utils/labelScanGate.js'
+import { useBillExclusiveLock, isBillLockedError } from '@/composables/useBillExclusiveLock.js'
+import { formatQty as formatQtyByUnit } from '@/utils/formatQty.js'
+import {
+  handleErpSubmitResult,
+  formatErpSubmitError,
+  alertErpSubmitFailed,
+} from '@/utils/erpSyncFeedback.js'
+import { navigateBackAfterSubmit } from '@/utils/listKeywordReset.js'
 
 export function useNoticeBillScan(billTypeRef, billNoRef) {
   const loading = ref(false)
@@ -16,13 +27,34 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
   const lines = ref([])
   const lastHighlightLineNo = ref(null)
 
+  const billLock = useBillExclusiveLock({
+    heartbeat: () => heartbeatNoticeBillLock(billTypeRef.value, billNoRef.value),
+    release: () => releaseNoticeBillLock(billTypeRef.value, billNoRef.value),
+  })
+
   const typeConfig = computed(() => getNoticeBillType(billTypeRef.value))
   const isInbound = computed(() => typeConfig.value.direction === 'INBOUND')
 
-  const checkedCount = computed(() => lines.value.filter((l) => l.checked).length)
-  const submitableCount = computed(() =>
-    lines.value.filter((l) => l.checked && (Number(l.pendingSubmitQty) || 0) > 0).length,
+  /** 已勾选且库存/计价任一侧有待提交数量 */
+  function hasPendingSubmit(line) {
+    if (!line?.checked) return false
+    if ((Number(line.pendingSubmitQty) || 0) > 0) return true
+    return (Number(line.pendingSubmitAuxQty) || 0) > 0
+  }
+
+  const checkedCount = computed(() =>
+    lines.value.filter((l) => l.checked).length,
   )
+  const submitableCount = computed(() =>
+    lines.value.filter((l) => hasPendingSubmit(l)).length,
+  )
+
+  function handleLockDenied(e) {
+    billLock.stop()
+    const msg = e?.message || '单据正被其他人操作'
+    uni.showToast({ title: msg, icon: 'none', duration: 2500 })
+    setTimeout(() => uni.navigateBack({ fail: () => {} }), 400)
+  }
 
   async function loadDetail() {
     if (!billTypeRef.value || !billNoRef.value) return null
@@ -31,8 +63,13 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
       const data = await getNoticeBillDetail(billTypeRef.value, billNoRef.value)
       detail.value = data
       lines.value = (data.lines || []).map(normalizeLine)
+      billLock.start()
       return data
     } catch (e) {
+      if (isBillLockedError(e)) {
+        handleLockDenied(e)
+        return null
+      }
       uni.showToast({ title: e?.message || '加载明细失败', icon: 'none' })
       return null
     } finally {
@@ -46,10 +83,11 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
       ...line,
       checked: line.checked === true || line.checked === 1,
       pendingSubmitQty: line.pendingSubmitQty ?? 0,
+      pendingSubmitAuxQty: line.pendingSubmitAuxQty ?? 0,
     }
   }
 
-  function formatScanError(e) {
+function formatScanError(e) {
     const type = e?.data?.errorType || e?.errorType
     const msg = e?.message || e?.data?.message
     if (type === 'BARCODE_EMPTY' || type === 'BARCODE_PARSE_FAILED') {
@@ -57,6 +95,12 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
     }
     if (type === 'MATERIAL_NOT_ON_BILL') {
       return msg || '该物料不在本单据中'
+    }
+    if (type === 'LINE_ALREADY_FULL') {
+      return msg || '该物料已收满'
+    }
+    if (type === 'BILL_LINE_NOT_SYNCED' || type === 'BILL_LINES_NOT_READY') {
+      return msg || '单据明细未就绪，请返回后重新进入'
     }
     if (type === 'NO_STOCK') {
       return msg || '未找到可出库库存'
@@ -76,14 +120,31 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
   }
 
   async function handleScan(barcode) {
-    if (!barcode?.trim() || submitting.value) return null
+    if (!barcode?.trim()) return null
+    if (submitting.value) {
+      uni.showToast({ title: '正在提交，请稍候', icon: 'none' })
+      return null
+    }
+    if (loading.value) {
+      uni.showToast({ title: '单据加载中，请稍后再扫', icon: 'none' })
+      return null
+    }
     try {
       const updated = await scanNoticeLine(billTypeRef.value, billNoRef.value, barcode.trim())
       lastHighlightLineNo.value = updated.lineNo
       mergeLine(updated)
+      if (detail.value) {
+        detail.value.scanStatus = detail.value.scanStatus === 'COMPLETED'
+          ? detail.value.scanStatus
+          : 'SCANNING'
+      }
       uni.showToast({ title: '扫描成功', icon: 'success', duration: 800 })
       return updated
     } catch (e) {
+      if (isBillLockedError(e)) {
+        handleLockDenied(e)
+        return null
+      }
       uni.showToast({ title: formatScanError(e), icon: 'none', duration: 2500 })
       return null
     }
@@ -98,9 +159,9 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
     }
   }
 
-  async function updateQty(lineNo, qty) {
+  async function updateQty(lineNo, qty, auxQty) {
     try {
-      const updated = await updateNoticeLineQty(billTypeRef.value, billNoRef.value, lineNo, qty)
+      const updated = await updateNoticeLineQty(billTypeRef.value, billNoRef.value, lineNo, qty, auxQty)
       mergeLine(updated)
       return true
     } catch (e) {
@@ -109,17 +170,12 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
     }
   }
 
-  function formatSubmitError(e) {
-    const type = e?.data?.errorType || e?.errorType
-    const msg = e?.message || e?.data?.message
-    if (type === 'ERP_SYNC_FAILED' || type === 'ERP_IN_STOCK_QTY_EXCEEDED') {
-      return msg || '金蝶同步失败，数量未变更'
-    }
-    return msg || '提交失败'
-  }
-
   async function submit(getWarehousePayload) {
-    if (submitting.value || !submitableCount.value) return null
+    if (submitting.value) return null
+    if (!submitableCount.value) {
+      uni.showToast({ title: '请先扫码或手动填写数量后再提交', icon: 'none' })
+      return null
+    }
     submitting.value = true
     try {
       const wh = typeof getWarehousePayload === 'function' ? getWarehousePayload() : {}
@@ -132,36 +188,51 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
         erpWarehouseCode: manual
           ? (wh?.erpWarehouseCode || wh?.warehouseCode)
           : detail.value?.erpWarehouseCode,
+        autoAllocateLocation: isInbound.value ? !!wh?.autoAllocateLocation : undefined,
+        locationCode: isInbound.value
+          ? (wh?.locationCode || wh?.targetLocation || undefined)
+          : undefined,
       })
-      if (result?.erpSyncStatus && result.erpSyncStatus !== 'SUCCESS' && result.erpSyncStatus !== 'PENDING') {
-        uni.showToast({
-          title: result.erpSyncMessage || '金蝶同步失败，数量未变更',
-          icon: 'none',
-          duration: 3500,
-        })
+      const feedback = await handleErpSubmitResult(result)
+      // 失败或金蝶仍后台同步中：留在单据页并刷新
+      if (!feedback.ok) {
+        await loadDetail()
         return null
       }
-      uni.showToast({
-        title: result?.message || (isInbound.value ? '提交入库成功' : '提交出库成功'),
-        icon: 'success',
-      })
+      // 未审核工作流：金蝶成功后单据离开列表，再退回
+      const auditExistingTypes = new Set([
+        'PRODUCTION_RET_STOCK',
+        'OTHER_IN',
+        'OTHER_OUT',
+        'SALES_DELIVERY',
+        'PURCHASE_RETURN',
+      ])
+      if (auditExistingTypes.has(billTypeRef.value)) {
+        await billLock.releaseLock()
+        navigateBackAfterSubmit(400)
+        return result
+      }
       await loadDetail()
       if (isNoticeBillCompleted(detail.value)) {
-        setTimeout(() => uni.navigateBack(), 600)
+        await billLock.releaseLock()
+        navigateBackAfterSubmit(400)
       }
       return result
     } catch (e) {
-      uni.showToast({ title: formatSubmitError(e), icon: 'none', duration: 3500 })
+      if (isBillLockedError(e)) {
+        handleLockDenied(e)
+        return null
+      }
+      await alertErpSubmitFailed(formatErpSubmitError(e))
+      await loadDetail()
       return null
     } finally {
       submitting.value = false
     }
   }
 
-  function formatQty(v) {
-    const n = Number(v)
-    if (Number.isNaN(n)) return '0'
-    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '')
+  function formatQty(v, unitCode) {
+    return formatQtyByUnit(v, unitCode)
   }
 
   function rowClass(line) {
@@ -192,6 +263,7 @@ export function useNoticeBillScan(billTypeRef, billNoRef) {
     submit,
     rowClass,
     lastHighlightLineNo,
+    isLabelScanned,
   }
 }
 

@@ -15,7 +15,14 @@ import java.util.regex.Pattern;
  */
 final class BarcodeQuantityParser {
 
-    private static final Pattern QTY_SUFFIX = Pattern.compile("^(.+?)[*#@xX](\\d+(?:\\.\\d+)?)$");
+    /** 后缀数量：MAT*1.25 / MAT#0.5kg */
+    private static final Pattern QTY_SUFFIX =
+            Pattern.compile("^(.+?)[*#@xX](\\d+(?:\\.\\d+)?)\\s*(?:kg|g|t|吨|千克|公斤|pcs|pc|ea)?$",
+                    Pattern.CASE_INSENSITIVE);
+    /** 数量段（可带重量单位）：1.25 / 1.25kg */
+    private static final Pattern QTY_TOKEN =
+            Pattern.compile("^(\\d+(?:\\.\\d+)?)\\s*(?:kg|g|t|吨|千克|公斤|pcs|pc|ea)?$",
+                    Pattern.CASE_INSENSITIVE);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private BarcodeQuantityParser() {
@@ -112,7 +119,8 @@ final class BarcodeQuantityParser {
             return null;
         }
         try {
-            BigDecimal qty = new BigDecimal(token.trim());
+            String normalized = normalizeQtyToken(token.trim());
+            BigDecimal qty = new BigDecimal(normalized);
             if (qty.compareTo(BigDecimal.ZERO) <= 0) {
                 if (strict) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -120,8 +128,9 @@ final class BarcodeQuantityParser {
                 }
                 return null;
             }
-            return qty;
-        } catch (NumberFormatException e) {
+            // 保留有效小数（kg 等），去掉多余尾零
+            return qty.stripTrailingZeros().scale() < 0 ? qty.setScale(0) : qty.stripTrailingZeros();
+        } catch (NumberFormatException | ArithmeticException e) {
             if (strict) {
                 throw qtyInvalid(token);
             }
@@ -129,11 +138,20 @@ final class BarcodeQuantityParser {
         }
     }
 
+    /** 去掉 kg/g 等单位后缀，保留数值（含小数） */
+    private static String normalizeQtyToken(String token) {
+        Matcher matcher = QTY_TOKEN.matcher(token.trim());
+        if (matcher.matches()) {
+            return matcher.group(1);
+        }
+        return token.trim();
+    }
+
     private static boolean looksLikeQuantity(String token) {
         if (!StringUtils.hasText(token)) {
             return false;
         }
-        return token.trim().matches("\\d+(?:\\.\\d+)?");
+        return QTY_TOKEN.matcher(token.trim()).matches();
     }
 
     private static boolean looksLikeBatch(String token) {

@@ -8,6 +8,7 @@
     "dev:print": "npm run dev --prefix print-designer",
     "build:print": "npm run build --prefix print-designer",
     "build": "npm run build:print && vue-tsc -b && vite build",
+    "build:backend": "npm run build && node ../scripts/sync-web-to-backend.mjs --skip-build",
     "preview": "vite preview"
   },
   "dependencies": {

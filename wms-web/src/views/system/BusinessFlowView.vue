@@ -73,7 +73,7 @@ function statusTag(status: string, options?: { openLabel?: string; pendingLabel?
         <el-table
           :data="[
             { endpoint: 'Web', duty: '主数据、单据创建/审批、查询、打印、看板' },
-            { endpoint: 'PDA', duty: '扫码入出库、盘点、质检、快速入库' },
+            { endpoint: 'PDA', duty: '扫码入出库、盘点、快速入库' },
           ]"
           border
           class="端分工-table"

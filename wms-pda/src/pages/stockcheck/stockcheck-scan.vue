@@ -15,7 +15,7 @@
     <view v-if="detail" class="order-bar">
       <view class="order-info">
         <text class="order-no">{{ detail.billNo }}</text>
-        <text class="order-sub">仓库 {{ detail.warehouseCode || '-' }} · {{ detail.remark || '已审核盘点' }}</text>
+        <text class="order-sub">仓库 {{ detail.warehouseCode || '-' }} · {{ detail.remark || '未审核盘点' }}</text>
       </view>
       <text class="order-stat">已盘 {{ countedCount }}/{{ lines.length }}</text>
     </view>
@@ -31,7 +31,8 @@
         <input
           v-model="actualQtyInput"
           class="qty-input"
-          type="digit"
+          type="text"
+          inputmode="decimal"
           placeholder="输入实盘数"
           :disabled="busy"
           @confirm="submitMatched"
@@ -44,7 +45,11 @@
     <view v-else-if="matchFailTip" class="match-card warn">
       <text class="match-title">未匹配到盘点明细</text>
       <text class="match-row">{{ matchFailTip }}</text>
-      <text class="match-row">请核对条码或从下方列表手动选择</text>
+      <text class="match-row">请核对条码后重新扫描物料标签</text>
+    </view>
+    <view v-else class="match-card idle">
+      <text class="match-title">扫码或点选明细</text>
+      <text class="match-row">可扫码匹配，也可点选下方明细手动录入实盘数量</text>
     </view>
 
     <scroll-view class="list-scroll" scroll-y :show-scrollbar="false">
@@ -80,7 +85,8 @@
           <input
             v-model="line._actual"
             class="line-qty"
-            type="digit"
+            type="text"
+            inputmode="decimal"
             placeholder="实盘"
             :disabled="busy"
           />
@@ -94,7 +100,7 @@
 
     <view class="footer">
       <button class="refresh-btn" :disabled="busy || loading" @click="reload(true)">刷新</button>
-      <button class="complete-btn" type="warn" :loading="busy" @click="onComplete">完成盘点</button>
+      <button class="complete-btn" type="warn" :loading="busy" @click="onComplete">提交审核</button>
     </view>
   </view>
 </template>
@@ -104,13 +110,17 @@ import { ref, computed, nextTick } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import ScanSearchBar from '@/components/ScanSearchBar.vue'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { useBillExclusiveLock, isBillLockedError } from '@/composables/useBillExclusiveLock.js'
 import {
   getStockCountDetail,
   matchStockCountLine,
   scanStockCountLine,
   updateStockCountLineQty,
   completeStockCount,
+  heartbeatStockCountLock,
+  releaseStockCountLock,
 } from '@/api/stockCount.js'
+import { navigateBackAfterSubmit } from '@/utils/listKeywordReset.js'
 
 const billNo = ref('')
 const detail = ref(null)
@@ -123,9 +133,33 @@ const matchedLine = ref(null)
 const matchFailTip = ref('')
 const actualQtyInput = ref('')
 const highlightLineNo = ref(null)
+/** 本会话已扫过标签的行号 */
+const scannedLineNos = ref(new Set())
 const { alive, refocusScanInput } = usePageAlive()
+const billLock = useBillExclusiveLock({
+  heartbeat: () => heartbeatStockCountLock(billNo.value),
+  release: () => releaseStockCountLock(billNo.value),
+})
 
 const countedCount = computed(() => lines.value.filter((l) => l.counted).length)
+
+function handleLockDenied(e) {
+  billLock.stop()
+  toast(e?.message || '单据正被其他人操作')
+  setTimeout(() => uni.navigateBack({ fail: () => {} }), 400)
+}
+
+function isLineLabelScanned(line) {
+  if (!line) return false
+  return scannedLineNos.value.has(line.lineNo) || line.labelScanned === true
+}
+
+function markLineScanned(lineNo) {
+  if (lineNo == null) return
+  const next = new Set(scannedLineNos.value)
+  next.add(lineNo)
+  scannedLineNos.value = next
+}
 
 function formatQty(val) {
   if (val == null || val === '') return '0'
@@ -158,7 +192,12 @@ async function reload(force = false) {
   try {
     const data = await getStockCountDetail(billNo.value, force)
     applyDetail(data)
+    billLock.start()
   } catch (e) {
+    if (isBillLockedError(e)) {
+      handleLockDenied(e)
+      return
+    }
     toast(e?.message || '加载失败，请检查网络后重试')
   } finally {
     loading.value = false
@@ -182,6 +221,8 @@ async function onScan(barcode) {
   matchFailTip.value = ''
   try {
     const matched = await matchStockCountLine(billNo.value, { barcodeContent: raw })
+    markLineScanned(matched.lineNo)
+    matched.labelScanned = true
     matchedLine.value = matched
     actualQtyInput.value =
       matched.actualQty != null && matched.actualQty !== ''
@@ -203,7 +244,7 @@ async function onScan(barcode) {
 
 async function submitMatched() {
   if (!matchedLine.value) {
-    toast('请先扫描或选择物料')
+    toast('请先扫码或点选明细')
     return
   }
   const qty = Number(actualQtyInput.value)
@@ -217,6 +258,7 @@ async function submitMatched() {
       lineNo: matchedLine.value.lineNo,
       actualQty: qty,
     })
+    markLineScanned(updated.lineNo)
     patchLine(updated)
     matchedLine.value = updated
     actualQtyInput.value = updated.actualQty != null ? String(updated.actualQty) : String(qty)
@@ -238,6 +280,7 @@ async function submitLine(line) {
   busy.value = true
   try {
     const updated = await updateStockCountLineQty(billNo.value, line.lineNo, qty)
+    markLineScanned(line.lineNo)
     patchLine(updated)
     toast('数量已修正', 'success')
   } catch (e) {
@@ -270,17 +313,22 @@ function onComplete() {
     return
   }
   uni.showModal({
-    title: '完成盘点',
-    content: '确认完成本次盘点？',
+    title: '提交审核',
+    content: '确认回写实盘数量并对该盘点单提交审核？',
     success: async (res) => {
       if (!res.confirm) return
       busy.value = true
       try {
         await completeStockCount(billNo.value)
-        toast('盘点完成', 'success')
-        setTimeout(() => uni.navigateBack(), 600)
+        await billLock.releaseLock()
+        toast('已提交审核', 'success')
+        navigateBackAfterSubmit(600)
       } catch (e) {
-        toast(e?.message || '完成失败')
+        if (isBillLockedError(e)) {
+          handleLockDenied(e)
+          return
+        }
+        toast(e?.message || '提交失败')
       } finally {
         busy.value = false
       }
@@ -347,6 +395,10 @@ onShow(() => {
   background: #ecfdf5;
   border: 2rpx solid #6ee7b7;
   border-radius: 14rpx;
+}
+.match-card.idle {
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 .match-card.warn {
   background: #fff7ed;
@@ -465,6 +517,12 @@ onShow(() => {
   align-items: stretch;
   gap: 8rpx;
   width: 140rpx;
+}
+.need-scan {
+  font-size: 22rpx;
+  color: #94a3b8;
+  text-align: center;
+  padding: 16rpx 0;
 }
 .line-qty {
   height: 56rpx;

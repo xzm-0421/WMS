@@ -98,7 +98,7 @@
 
               <text class="qty-label">计划</text>
 
-              <text class="qty-value">{{ formatQty(line.planQty) }}</text>
+              <text class="qty-value">{{ formatQty(inputPlanQty(line), line.inputUnitCode || line.unitCode) }}</text>
 
             </view>
 
@@ -106,7 +106,7 @@
 
               <text class="qty-label">已领</text>
 
-              <text class="qty-value submitted">{{ formatQty(line.submittedQty) }}</text>
+              <text class="qty-value submitted">{{ formatQty(inputSubmittedQty(line), line.inputUnitCode || line.unitCode) }}</text>
 
             </view>
 
@@ -114,7 +114,7 @@
 
               <text class="qty-label">可领</text>
 
-              <text class="qty-value remain">{{ formatQty(line.remainQty) }}</text>
+              <text class="qty-value remain">{{ formatQty(inputRemainQty(line), line.inputUnitCode || line.unitCode) }}</text>
 
             </view>
 
@@ -122,21 +122,29 @@
 
               <text class="qty-label">单位</text>
 
-              <text class="qty-value unit">{{ line.unitCode || 'PCS' }}</text>
+              <text class="qty-value unit">{{ line.inputUnitCode || line.unitCode || 'PCS' }}</text>
 
             </view>
 
           </view>
 
-          <view v-if="!isDoneLine(line)" class="qty-edit">
+          <view v-if="line.multiUnit" class="qty-grid aux-grid">
+            <view class="qty-cell"><text class="qty-label">计划({{ line.autoUnitCode || line.auxUnitCode }})</text><text class="qty-value">{{ formatQty(autoPlanQty(line), line.autoUnitCode || line.auxUnitCode) }}</text></view>
+            <view class="qty-cell"><text class="qty-label">已领</text><text class="qty-value submitted">{{ formatQty(autoSubmittedQty(line), line.autoUnitCode || line.auxUnitCode) }}</text></view>
+            <view class="qty-cell"><text class="qty-label">可领</text><text class="qty-value remain">{{ formatQty(autoRemainQty(line), line.autoUnitCode || line.auxUnitCode) }}</text></view>
+            <view class="qty-cell"><text class="qty-label">单位</text><text class="qty-value unit">{{ line.autoUnitCode || line.auxUnitCode }}</text></view>
+          </view>
 
-            <text class="qty-edit-label">本次领取</text>
+          <view v-if="canEditLine(line)" class="qty-edit">
+
+            <text class="qty-edit-label">本次({{ line.inputUnitCode || line.unitCode || 'PCS' }})</text>
 
             <input
 
               class="qty-input"
 
-              type="digit"
+              type="text"
+              inputmode="decimal"
 
               :value="getQtyDraft(line)"
 
@@ -152,11 +160,27 @@
 
             />
 
-            <text class="qty-edit-unit">{{ line.unitCode || 'PCS' }}</text>
+            <text class="qty-edit-unit">{{ line.inputUnitCode || line.unitCode || 'PCS' }}</text>
 
           </view>
 
-          <view v-else class="qty-done-tip">已全部领取</view>
+          <view v-if="canEditLine(line) && line.multiUnit" class="qty-edit">
+            <text class="qty-edit-label">换算({{ line.autoUnitCode || line.auxUnitCode }})</text>
+            <input
+              class="qty-input"
+              type="text"
+              inputmode="decimal"
+              :value="getAuxQtyDraft(line)"
+              :disabled="updatingLineNo === line.lineNo"
+              placeholder="0"
+              @input="onAuxQtyInput(line, $event)"
+              @blur="onAuxQtyBlur(line)"
+              @confirm="onAuxQtyBlur(line)"
+            />
+            <text class="qty-edit-unit">{{ line.autoUnitCode || line.auxUnitCode }}</text>
+          </view>
+
+          <view v-if="isDoneLine(line)" class="qty-done-tip">已全部领取</view>
 
         </view>
 
@@ -175,6 +199,14 @@
           ref="warehousePickerRef"
           :suggest-code="suggestWarehouseCode"
           @change="onWarehouseChange"
+        />
+        <LocationPicker
+          ref="locationPickerRef"
+          :warehouse-code="resolvedWarehouseCode"
+          :material-code="suggestMaterialCode"
+          :batch-no="suggestBatchNo"
+          theme="light"
+          @change="onLocationChange"
         />
       </view>
 
@@ -220,9 +252,12 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 
 import CompactScanBox from '@/components/CompactScanBox.vue'
 import WarehousePicker from '@/components/WarehousePicker.vue'
+import LocationPicker from '@/components/LocationPicker.vue'
 import useReceiveNoticeScan from '@/composables/useReceiveNoticeScan.js'
 
 import usePageAlive from '@/composables/usePageAlive.js'
+import { sanitizeDecimalInput } from '@/utils/decimalInput.js'
+import { qtyDecimalScale, formatQtyInput } from '@/utils/formatQty.js'
 
 
 
@@ -230,8 +265,11 @@ const billNo = ref('')
 
 const scanInputRef = ref(null)
 const warehousePickerRef = ref(null)
+const locationPickerRef = ref(null)
 const warehousePayload = ref({ autoAssignWarehouse: true })
+const locationPayload = ref({ autoAllocateLocation: false })
 const qtyDrafts = reactive({})
+const auxQtyDrafts = reactive({})
 
 const updatingLineNo = ref(null)
 
@@ -267,6 +305,8 @@ const {
 
   rowClass,
 
+isLabelScanned,
+
 } = useReceiveNoticeScan(billNo)
 
 
@@ -283,106 +323,209 @@ const suggestWarehouseCode = computed(() => {
   return detail.value?.erpWarehouseCode || detail.value?.warehouseCode || ''
 })
 
+const resolvedWarehouseCode = computed(() => {
+  const wh = warehousePayload.value
+  if (wh?.autoAssignWarehouse === false && wh?.warehouseCode) {
+    return wh.warehouseCode
+  }
+  return suggestWarehouseCode.value || ''
+})
+
+const suggestMaterialCode = computed(() => {
+  const pending = lines.value.find((l) => l.checked && (Number(l.pendingSubmitQty) || 0) > 0)
+  return pending?.materialCode || lines.value[0]?.materialCode || ''
+})
+
+const suggestBatchNo = computed(() => {
+  const pending = lines.value.find((l) => l.checked && (Number(l.pendingSubmitQty) || 0) > 0)
+  return pending?.batchNo || ''
+})
+
 function onWarehouseChange(payload) {
   warehousePayload.value = payload || { autoAssignWarehouse: true }
+}
+
+function onLocationChange(payload) {
+  locationPayload.value = payload || { autoAllocateLocation: false }
 }
 
 
 
 function isDoneLine(line) {
+  // 扫码中仍有待提交数量时，一定视为未完成、可继续改
+  const pending = Number(line.pendingSubmitQty) || 0
+  const pendingAux = Number(line.pendingSubmitAuxQty) || 0
+  if (pending > 0 || pendingAux > 0) return false
 
   const submitted = Number(line.submittedQty) || 0
-
   const plan = Number(line.planQty) || 0
-
-  return plan > 0 && submitted >= plan
-
+  if (plan > 0 && submitted >= plan) return true
+  if (inputMapsToAux(line)) {
+    const auxPlan = Number(line.planAuxQty) || 0
+    const auxSubmitted = Number(line.submittedAuxQty) || 0
+    if (plan <= 0 && auxPlan > 0 && auxSubmitted >= auxPlan) return true
+  }
+  return false
 }
-
-
 
 function isPartialLine(line) {
-
   const submitted = Number(line.submittedQty) || 0
-
   const plan = Number(line.planQty) || 0
-
-  return submitted > 0 && submitted < plan
-
+  if (submitted > 0 && plan > 0 && submitted < plan) return true
+  if (inputMapsToAux(line)) {
+    const auxSubmitted = Number(line.submittedAuxQty) || 0
+    const auxPlan = Number(line.planAuxQty) || 0
+    return auxSubmitted > 0 && auxPlan > 0 && auxSubmitted < auxPlan
+  }
+  return false
 }
 
-
-
+/** 仅可处理>0 或仍有待提交时可录入 */
+function canEditLine(line) {
+  const remain = Number(inputRemainQty(line)) || 0
+  const pending = Number(inputPendingQty(line)) || 0
+  return remain > 0 || pending > 0
+}
+function inputMapsToAux(line) {
+  return !!(line?.multiUnit && line?.inputMapsToAux)
+}
+function inputPendingQty(line) {
+  return inputMapsToAux(line) ? (line.pendingSubmitAuxQty || 0) : (line.pendingSubmitQty || 0)
+}
+function inputPlanQty(line) {
+  return inputMapsToAux(line) ? line.planAuxQty : line.planQty
+}
+function inputSubmittedQty(line) {
+  return inputMapsToAux(line) ? line.submittedAuxQty : line.submittedQty
+}
+function inputRemainQty(line) {
+  return inputMapsToAux(line) ? line.remainAuxQty : line.remainQty
+}
+function autoPendingQty(line) {
+  return inputMapsToAux(line) ? (line.pendingSubmitQty || 0) : (line.pendingSubmitAuxQty || 0)
+}
+function autoPlanQty(line) {
+  return inputMapsToAux(line) ? line.planQty : line.planAuxQty
+}
+function autoSubmittedQty(line) {
+  return inputMapsToAux(line) ? line.submittedQty : line.submittedAuxQty
+}
+function autoRemainQty(line) {
+  return inputMapsToAux(line) ? line.remainQty : line.remainAuxQty
+}
+function convertByPlanRate(qty, fromPlan, toPlan) {
+  const q = Number(qty) || 0
+  const from = Number(fromPlan) || 0
+  const to = Number(toPlan) || 0
+  if (q <= 0) return 0
+  if (from <= 0 || to <= 0) return q
+  const n = (q * to) / from
+  return Number.isInteger(n) ? n : Number(n.toFixed(6))
+}
+function pcsToKg(line, pcs) {
+  if (inputMapsToAux(line)) return convertByPlanRate(pcs, line.planAuxQty, line.planQty)
+  return convertByPlanRate(pcs, line.planQty, line.planAuxQty)
+}
+function kgToPcs(line, kg) {
+  if (inputMapsToAux(line)) return convertByPlanRate(kg, line.planQty, line.planAuxQty)
+  return convertByPlanRate(kg, line.planAuxQty, line.planQty)
+}
+function inputUnitOf(line) {
+  return line.inputUnitCode || line.unitCode
+}
+function autoUnitOf(line) {
+  return line.autoUnitCode || line.auxUnitCode
+}
 function syncQtyDrafts() {
-
   lines.value.forEach((line) => {
-
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
-
+    qtyDrafts[line.lineNo] = formatQtyInput(inputPendingQty(line), inputUnitOf(line))
+    if (line.multiUnit) auxQtyDrafts[line.lineNo] = formatQtyInput(autoPendingQty(line), autoUnitOf(line))
   })
-
 }
-
-
-
 function getQtyDraft(line) {
-
-  if (qtyDrafts[line.lineNo] == null) {
-
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
-
+  const key = line.lineNo
+  if (qtyDrafts[key] === undefined || qtyDrafts[key] === null) {
+    return formatQtyInput(inputPendingQty(line), inputUnitOf(line))
   }
-
-  return qtyDrafts[line.lineNo]
-
+  return qtyDrafts[key]
 }
-
-
-
-function onQtyInput(line, e) {
-
-  qtyDrafts[line.lineNo] = e.detail.value
-
+function getAuxQtyDraft(line) {
+  const key = line.lineNo
+  if (auxQtyDrafts[key] === undefined || auxQtyDrafts[key] === null) {
+    return formatQtyInput(autoPendingQty(line), autoUnitOf(line))
+  }
+  return auxQtyDrafts[key]
 }
-
-
-
-async function onQtyBlur(line) {
-
-  const raw = qtyDrafts[line.lineNo]
-
-  const num = raw === '' || raw == null ? 0 : Number(raw)
-
-  if (Number.isNaN(num) || num < 0) {
-
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
-
+function onAuxQtyInput(line, e) {
+  auxQtyDrafts[line.lineNo] = sanitizeDecimalInput(e.detail.value, qtyDecimalScale(autoUnitOf(line)))
+}
+async function onAuxQtyBlur(line) {
+  const kg = Number(auxQtyDrafts[line.lineNo] || 0)
+  if (Number.isNaN(kg) || kg < 0) {
+    auxQtyDrafts[line.lineNo] = formatQtyInput(autoPendingQty(line), autoUnitOf(line))
     return
-
   }
-
-  const current = Number(line.pendingSubmitQty) || 0
-
-  if (num === current) return
-
+  const pcs = kgToPcs(line, kg)
+  qtyDrafts[line.lineNo] = formatQtyInput(pcs, inputUnitOf(line))
+  let stockQty = pcs
+  let auxQty = kg
+  if (inputMapsToAux(line)) {
+    stockQty = kg
+    auxQty = pcs
+  }
   updatingLineNo.value = line.lineNo
-
-  const ok = await updateQty(line.lineNo, num)
-
+  const ok = await updateQty(line.lineNo, stockQty, auxQty)
   updatingLineNo.value = null
-
-  if (ok) {
-
-    const updated = lines.value.find((l) => l.lineNo === line.lineNo)
-
-    if (updated) qtyDrafts[line.lineNo] = formatQty(updated.pendingSubmitQty || 0)
-
-  } else {
-
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
-
+  if (ok) syncQtyDrafts()
+  else {
+    qtyDrafts[line.lineNo] = formatQtyInput(inputPendingQty(line), inputUnitOf(line))
+    auxQtyDrafts[line.lineNo] = formatQtyInput(autoPendingQty(line), autoUnitOf(line))
   }
-
+}
+function onQtyInput(line, e) {
+  const raw = sanitizeDecimalInput(e.detail.value, qtyDecimalScale(inputUnitOf(line)))
+  qtyDrafts[line.lineNo] = raw
+  if (line.multiUnit) {
+    const pcs = Number(raw || 0)
+    auxQtyDrafts[line.lineNo] = formatQtyInput(
+      Number.isNaN(pcs) || pcs < 0 ? 0 : pcsToKg(line, pcs),
+      autoUnitOf(line),
+    )
+  }
+}
+async function onQtyBlur(line) {
+  const raw = qtyDrafts[line.lineNo]
+  const pcs = raw === '' || raw == null ? 0 : Number(raw)
+  if (Number.isNaN(pcs) || pcs < 0) {
+    qtyDrafts[line.lineNo] = formatQtyInput(inputPendingQty(line), inputUnitOf(line))
+    return
+  }
+  let stockQty = pcs
+  let auxQty
+  if (line.multiUnit) {
+    const kg = pcsToKg(line, pcs)
+    auxQtyDrafts[line.lineNo] = formatQtyInput(kg, autoUnitOf(line))
+    if (inputMapsToAux(line)) {
+      stockQty = kg
+      auxQty = pcs
+    } else {
+      stockQty = pcs
+      auxQty = kg
+    }
+  }
+  updatingLineNo.value = line.lineNo
+  const ok = await updateQty(line.lineNo, stockQty, auxQty)
+  updatingLineNo.value = null
+  if (ok) {
+    const updated = lines.value.find((l) => l.lineNo === line.lineNo)
+    if (updated) {
+      qtyDrafts[line.lineNo] = formatQtyInput(inputPendingQty(updated), inputUnitOf(updated))
+      if (updated.multiUnit) auxQtyDrafts[line.lineNo] = formatQtyInput(autoPendingQty(updated), autoUnitOf(updated))
+    }
+  } else {
+    qtyDrafts[line.lineNo] = formatQtyInput(inputPendingQty(line), inputUnitOf(line))
+    if (line.multiUnit) auxQtyDrafts[line.lineNo] = formatQtyInput(autoPendingQty(line), autoUnitOf(line))
+  }
 }
 
 
@@ -402,27 +545,23 @@ async function onScan(barcode) {
 
 
 function onToggle(line) {
-
   toggleCheck(line.lineNo, !line.checked)
-
 }
 
 
 
 function onRowTap(line) {
-
-  if (!line.checked && !isDoneLine(line)) toggleCheck(line.lineNo, true)
-
+  // 未扫标签不可手动勾选
 }
 
 
 
 async function onSubmit() {
-
-  const ok = await submit(() => warehousePickerRef.value?.getPayload?.() || warehousePayload.value)
-
+  const ok = await submit(() => ({
+    ...(warehousePickerRef.value?.getPayload?.() || warehousePayload.value),
+    ...(locationPickerRef.value?.getPayload?.() || locationPayload.value),
+  }))
   if (ok) syncQtyDrafts()
-
 }
 
 
@@ -670,6 +809,7 @@ onShow(async () => {
 
 }
 
+.aux-grid { margin-top: 8rpx; padding-top: 8rpx; border-top: 1rpx dashed #e2e8f0; }
 .qty-grid {
 
   display: flex;
@@ -794,6 +934,12 @@ onShow(async () => {
 
 }
 
+.qty-locked-tip {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: #94a3b8;
+  text-align: center;
+}
 .qty-done-tip {
 
   margin-top: 10rpx;

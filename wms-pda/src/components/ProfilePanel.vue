@@ -42,9 +42,9 @@
 
     <!-- 快捷操作 -->
     <view class="action-section">
-      <view class="action-item" @click="handleSync">
-        <text class="action-icon">🔄</text>
-        <text>同步离线数据</text>
+      <view class="action-item" @click="goUpdate">
+        <text class="action-icon">⬆️</text>
+        <text>更新</text>
       </view>
       <view class="action-item" @click="goSettings">
         <text class="action-icon">⚙️</text>
@@ -58,10 +58,11 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { getUserInfo } from '@/api/mobile.js'
+import { clearSession } from '@/utils/authStorage.js'
 import defaultConfig from '@/utils/config.js'
-import { getServerDisplay } from '@/utils/server.js'
-import { getUserInfo, syncOfflineData } from '@/api/mobile.js'
 import { getOfflineQueue } from '@/utils/offline.js'
+import { getServerDisplay } from '@/utils/server.js'
 
 const user = ref({})
 const deviceNo = defaultConfig.deviceNo
@@ -95,19 +96,8 @@ function goSettings() {
   uni.navigateTo({ url: '/pages/settings/settings' })
 }
 
-async function handleSync() {
-  const queue = getOfflineQueue()
-  if (!queue.length) {
-    uni.showToast({ title: '无离线数据', icon: 'none' })
-    return
-  }
-  const res = await syncOfflineData(queue, uni.getStorageSync('last_sync_time') || '')
-  uni.setStorageSync('last_sync_time', new Date().toISOString())
-  uni.removeStorageSync('offline_queue')
-  queueCount.value = 0
-  const ok = res.successCount ?? res.totalSynced ?? 0
-  const fail = res.failCount ?? 0
-  uni.showToast({ title: `成功${ok}条${fail ? `，失败${fail}条` : ''}`, icon: 'none' })
+function goUpdate() {
+  uni.navigateTo({ url: '/pages/profile/update' })
 }
 
 function handleLogout() {
@@ -116,9 +106,7 @@ function handleLogout() {
     content: '确定要退出登录吗？',
     success(res) {
       if (res.confirm) {
-        uni.removeStorageSync('wms_token')
-        uni.removeStorageSync('wms_refresh_token')
-        uni.removeStorageSync('wms_user')
+        clearSession()
         uni.reLaunch({ url: '/pages/login/login' })
       }
     },

@@ -5,8 +5,19 @@ import {
   toggleReceiveLine,
   updateReceiveLineQty,
   submitReceiveInbound,
+  heartbeatReceiveNoticeLock,
+  releaseReceiveNoticeLock,
 } from '@/api/receiveNotice.js'
 import { isNoticeBillCompleted } from '@/utils/noticeBill.js'
+import { isLabelScanned } from '@/utils/labelScanGate.js'
+import { useBillExclusiveLock, isBillLockedError } from '@/composables/useBillExclusiveLock.js'
+import { formatQty as formatQtyByUnit } from '@/utils/formatQty.js'
+import {
+  handleErpSubmitResult,
+  formatErpSubmitError,
+  alertErpSubmitFailed,
+} from '@/utils/erpSyncFeedback.js'
+import { navigateBackAfterSubmit } from '@/utils/listKeywordReset.js'
 
 export function useReceiveNoticeScan(billNo) {
   const loading = ref(false)
@@ -15,10 +26,31 @@ export function useReceiveNoticeScan(billNo) {
   const lines = ref([])
   const lastHighlightLineNo = ref(null)
 
-  const checkedCount = computed(() => lines.value.filter((l) => l.checked).length)
-  const submitableCount = computed(() =>
-    lines.value.filter((l) => l.checked && (Number(l.pendingSubmitQty) || 0) > 0).length,
+  const billLock = useBillExclusiveLock({
+    heartbeat: () => heartbeatReceiveNoticeLock(billNo.value),
+    release: () => releaseReceiveNoticeLock(billNo.value),
+  })
+
+  /** 已勾选且库存/计价任一侧有待提交数量 */
+  function hasPendingSubmit(line) {
+    if (!line?.checked) return false
+    if ((Number(line.pendingSubmitQty) || 0) > 0) return true
+    return (Number(line.pendingSubmitAuxQty) || 0) > 0
+  }
+
+  const checkedCount = computed(() =>
+    lines.value.filter((l) => l.checked).length,
   )
+  const submitableCount = computed(() =>
+    lines.value.filter((l) => hasPendingSubmit(l)).length,
+  )
+
+  function handleLockDenied(e) {
+    billLock.stop()
+    const msg = e?.message || '单据正被其他人操作'
+    uni.showToast({ title: msg, icon: 'none', duration: 2500 })
+    setTimeout(() => uni.navigateBack({ fail: () => {} }), 400)
+  }
 
   async function loadDetail() {
     if (!billNo.value) return null
@@ -27,8 +59,13 @@ export function useReceiveNoticeScan(billNo) {
       const data = await getReceiveNoticeDetail(billNo.value)
       detail.value = data
       lines.value = (data.lines || []).map(normalizeLine)
+      billLock.start()
       return data
     } catch (e) {
+      if (isBillLockedError(e)) {
+        handleLockDenied(e)
+        return null
+      }
       uni.showToast({ title: e?.message || '加载明细失败', icon: 'none' })
       return null
     } finally {
@@ -42,6 +79,7 @@ export function useReceiveNoticeScan(billNo) {
       ...line,
       checked: line.checked === true || line.checked === 1,
       pendingSubmitQty: line.pendingSubmitQty ?? 0,
+      pendingSubmitAuxQty: line.pendingSubmitAuxQty ?? 0,
     }
   }
 
@@ -86,7 +124,7 @@ export function useReceiveNoticeScan(billNo) {
       mergeLine(line)
       lastHighlightLineNo.value = line.lineNo
       const qty = line.scannedBarcodeQty ?? line.pendingSubmitQty
-      const qtyText = qty != null && qty !== '' ? ` ×${formatQty(qty)}` : ''
+      const qtyText = qty != null && qty !== '' ? ` ×${formatQty(qty, line.unitCode)}` : ''
       uni.showToast({
         title: `✓ ${line.materialName || line.materialCode}${qtyText}`,
         icon: 'success',
@@ -110,14 +148,14 @@ export function useReceiveNoticeScan(billNo) {
     }
   }
 
-  async function updateQty(lineNo, qty) {
+  async function updateQty(lineNo, qty, auxQty) {
     const num = Number(qty)
     if (Number.isNaN(num) || num < 0) {
       uni.showToast({ title: '请输入有效数量', icon: 'none' })
       return false
     }
     try {
-      const line = await updateReceiveLineQty(billNo.value, lineNo, num)
+      const line = await updateReceiveLineQty(billNo.value, lineNo, num, auxQty)
       mergeLine(line)
       return true
     } catch (e) {
@@ -126,61 +164,48 @@ export function useReceiveNoticeScan(billNo) {
     }
   }
 
-  function formatQty(val) {
-    if (val == null || val === '') return '0'
-    const n = Number(val)
-    if (Number.isNaN(n)) return String(val)
-    return Number.isInteger(n) ? String(n) : String(n)
+  function formatQty(val, unitCode) {
+    return formatQtyByUnit(val, unitCode)
   }
 
-  function formatSubmitError(e) {
-    const type = e?.data?.errorType || e?.errorType
-    const msg = e?.message || e?.data?.message
-    if (type === 'ERP_SYNC_FAILED' || type === 'ERP_IN_STOCK_QTY_EXCEEDED') {
-      return msg || '金蝶同步失败，数量未变更'
-    }
-    return msg || '提交失败'
-  }
-
-  async function submit(getWarehousePayload) {
-    if (!submitableCount.value && !checkedCount.value) {
-      uni.showToast({ title: '请先扫描勾选物料', icon: 'none' })
+  async function submit(getSubmitPayload) {
+    if (!submitableCount.value) {
+      uni.showToast({ title: '请先扫码或手动填写数量后再提交', icon: 'none' })
       return false
     }
     submitting.value = true
     try {
-      const wh = typeof getWarehousePayload === 'function' ? getWarehousePayload() : {}
-      const manual = wh?.autoAssignWarehouse === false
+      const payload = typeof getSubmitPayload === 'function' ? getSubmitPayload() : {}
+      const manual = payload?.autoAssignWarehouse === false
       const result = await submitReceiveInbound(billNo.value, {
         supplierCode: detail.value?.supplierCode,
         supplierName: detail.value?.supplierName,
         autoAssignWarehouse: !manual,
-        warehouseCode: manual ? wh?.warehouseCode : undefined,
+        warehouseCode: manual ? payload?.warehouseCode : undefined,
         erpWarehouseCode: manual
-          ? (wh?.erpWarehouseCode || wh?.warehouseCode)
+          ? (payload?.erpWarehouseCode || payload?.warehouseCode)
           : detail.value?.erpWarehouseCode,
+        autoAllocateLocation: !!payload?.autoAllocateLocation,
+        locationCode: payload?.locationCode || payload?.targetLocation || undefined,
       })
-      if (result?.erpSyncStatus && result.erpSyncStatus !== 'SUCCESS' && result.erpSyncStatus !== 'PENDING') {
-        uni.showToast({
-          title: result.erpSyncMessage || '金蝶同步失败，数量未变更',
-          icon: 'none',
-          duration: 3500,
-        })
+      const feedback = await handleErpSubmitResult(result)
+      if (!feedback.ok) {
+        await loadDetail()
         return false
       }
-      uni.showToast({
-        title: result?.erpBillNo
-          ? `已同步 ${result.erpBillNo}`
-          : (result?.message || `已提交 ${result.lineCount || 0} 项`),
-        icon: 'success',
-      })
       await loadDetail()
       if (isNoticeBillCompleted(detail.value)) {
-        setTimeout(() => uni.navigateBack(), 600)
+        await billLock.releaseLock()
+        navigateBackAfterSubmit(400)
       }
       return true
     } catch (e) {
-      uni.showToast({ title: formatSubmitError(e), icon: 'none', duration: 3500 })
+      if (isBillLockedError(e)) {
+        handleLockDenied(e)
+        return false
+      }
+      await alertErpSubmitFailed(formatErpSubmitError(e))
+      await loadDetail()
       return false
     } finally {
       submitting.value = false
@@ -212,6 +237,7 @@ export function useReceiveNoticeScan(billNo) {
     formatQty,
     submit,
     rowClass,
+    isLabelScanned,
   }
 }
 

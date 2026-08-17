@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.math.BigDecimal;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -21,10 +20,14 @@ public class PdaInboundRecord {
     private String materialName;
     private String specification;
     private String unitCode;
+    /** 计价/辅助单位 */
+    private String auxUnitCode;
     private String warehouseCode;
     private String locationCode;
     private String batchNo;
     private BigDecimal quantity;
+    /** 计价单位数量 */
+    private BigDecimal auxQuantity;
     private String barcodeContent;
     private String operatorId;
     private String operatorName;

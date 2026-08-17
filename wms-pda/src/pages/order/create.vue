@@ -25,7 +25,7 @@
       <text class="name">{{ line.materialName || line.materialCode }}</text>
       <text class="code">{{ line.materialCode }} · 批次: {{ line.batchNo || '-' }}</text>
       <view class="row">
-        <input v-model="line.qty" class="qty-input" type="digit" placeholder="数量" />
+        <input v-model="line.qty" class="qty-input" type="text" inputmode="decimal" placeholder="数量" />
         <button size="mini" type="warn" @click="removeLine(idx)">删除</button>
       </view>
     </view>

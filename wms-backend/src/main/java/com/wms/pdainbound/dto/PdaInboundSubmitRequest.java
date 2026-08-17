@@ -16,10 +16,10 @@ public class PdaInboundSubmitRequest {
     @NotBlank(message = "仓库不能为空")
     private String warehouseCode;
 
-    /** 已废弃：入库不再分配库位 */
+    /** 可选库位；为空表示仅仓库入库 */
     private String locationCode;
 
-    /** 已废弃：入库不再分配库位 */
+    /** true=自动分配库位（可选） */
     private Boolean autoAllocateLocation;
 
     private String materialCode;

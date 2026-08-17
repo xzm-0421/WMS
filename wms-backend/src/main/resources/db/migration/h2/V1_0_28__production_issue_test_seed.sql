@@ -1,4 +1,4 @@
--- 生产领料单 PDA 联调种子：物料 / 仓库 / 库存
+-- 生产领料单 PDA 联调种子（历史脚本；后续迁移会清理）
 INSERT INTO base_warehouse (warehouse_code, warehouse_name, warehouse_type, status, create_by, erp_warehouse_code)
 SELECT 'CK004', '原材料仓', 'RAW', 1, 'system', 'CK004'
 WHERE NOT EXISTS (SELECT 1 FROM base_warehouse WHERE warehouse_code = 'CK004' AND deleted = 0);
@@ -32,7 +32,7 @@ WHERE NOT EXISTS (
 );
 
 UPDATE inventory
-SET stock_qty = 500, available_qty = 500, frozen_qty = 0, update_time = CURRENT_TIMESTAMP
+SET stock_qty = 500, available_qty = 500, frozen_qty = 0
 WHERE warehouse_code = 'CK004' AND location_code = 'CK004-A01'
   AND material_code = 'PITEST-001' AND batch_no = 'B20260715';
 
@@ -45,6 +45,6 @@ WHERE NOT EXISTS (
 );
 
 UPDATE inventory
-SET stock_qty = 300, available_qty = 300, frozen_qty = 0, update_time = CURRENT_TIMESTAMP
+SET stock_qty = 300, available_qty = 300, frozen_qty = 0
 WHERE warehouse_code = 'CK004' AND location_code = 'CK004-A01'
   AND material_code = 'PITEST-002' AND batch_no = 'B20260715';

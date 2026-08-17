@@ -4,8 +4,9 @@
       <ScanSearchBar
         ref="scanInputRef"
         v-model="keyword"
-        :disabled="loading"
-        placeholder="扫码或搜索生产领料单号/车间"
+        :disabled="busy"
+        placeholder="扫码或搜索生产退料单号/车间"
+        action-text="打开"
         @scan="onScan"
         @search="onSearch"
       />
@@ -24,7 +25,7 @@
           <text class="bill-meta">
             <text v-if="formatMaterialLineCount(item)" class="bill-lines">{{ formatMaterialLineCount(item) }}</text>
             <text v-if="item.inProgress"> · 已勾 {{ item.checkedLines || 0 }}</text>
-            <text v-if="item.erpBillNo" class="bill-erp"> · 退料 {{ item.erpBillNo }}</text>
+            <text v-if="item.locked && item.lockUserName" class="bill-lock"> · {{ item.lockUserName }}操作中</text>
           </text>
         </view>
         <view class="row-side">
@@ -35,7 +36,8 @@
 
       <view v-if="!notices.length && !loading" class="empty">
         <text class="empty-icon">↩️</text>
-        <text class="empty-text">暂无已审核的生产领料单</text>
+        <text class="empty-text">暂无未审核的生产退料单</text>
+        <text class="empty-hint">可直接扫描退料单二维码进入明细</text>
       </view>
       <view v-if="loading && !notices.length" class="loading-tip">加载中...</view>
       <view v-else-if="notices.length" class="loading-tip end-tip">共 {{ notices.length }} 条</view>
@@ -47,6 +49,7 @@
 import { ref, onMounted } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import ScanSearchBar from '@/components/ScanSearchBar.vue'
+import { resolveNoticeBarcode } from '@/api/noticeBill.js'
 import useNoticeBillList from '@/composables/useNoticeBillList.js'
 import usePageAlive from '@/composables/usePageAlive.js'
 import formatMaterialLineCount from '@/utils/materialLineCount.js'
@@ -55,34 +58,57 @@ const BILL_TYPE = 'PRODUCTION_RETURN'
 
 const scanInputRef = ref(null)
 const billType = ref(BILL_TYPE)
+const busy = ref(false)
 const { alive, refocusScanInput } = usePageAlive()
 const {
   loading,
   keyword,
   notices,
-  loadList,
   loadListOnShow,
-  searchByBarcode,
   statusLabel,
   statusClass,
 } = useNoticeBillList(billType)
 
-async function onScan(barcode) {
-  if (!alive.value) return
-  const list = await searchByBarcode(barcode)
-  if (list && list.length === 1 && list[0]?.billNo) {
-    openBill(list[0])
-    return
+/** 扫码 / 回车 / 点打开：统一进明细 */
+async function openByBarcode(barcode) {
+  if (!alive.value || busy.value) return
+  const raw = (barcode || '').trim()
+  if (!raw) return
+
+  busy.value = true
+  uni.showLoading({ title: '打开中...', mask: true })
+  try {
+    let billNo = raw
+    try {
+      const res = await resolveNoticeBarcode(BILL_TYPE, raw)
+      if (res?.billNo) billNo = String(res.billNo).trim()
+    } catch {
+      // 解析失败仍用原始内容尝试打开，由明细页报错
+    }
+    if (!billNo) {
+      uni.showToast({ title: '无法识别退料单号', icon: 'none' })
+      return
+    }
+    keyword.value = billNo
+    openBill({ billNo })
+  } finally {
+    uni.hideLoading()
+    busy.value = false
+    refocusScanInput(scanInputRef, 300)
   }
-  refocusScanInput(scanInputRef, 300)
+}
+
+function onScan(barcode) {
+  openByBarcode(barcode)
 }
 
 function onSearch(val) {
-  keyword.value = val || keyword.value
-  loadList(keyword.value)
+  // 与扫码同样处理：PDA 扫码枪多数走 confirm→search
+  openByBarcode(val || keyword.value)
 }
 
 function openBill(item) {
+  if (!item?.billNo) return
   uni.navigateTo({
     url: `/pages/picking/production-return-scan?billNo=${encodeURIComponent(item.billNo)}`,
   })
@@ -143,10 +169,6 @@ onMounted(() => refocusScanInput(scanInputRef, 500))
   color: #2563eb;
   font-weight: 600;
 }
-.bill-erp {
-  color: #16a34a;
-  font-weight: 600;
-}
 .row-side {
   display: flex;
   align-items: center;
@@ -166,6 +188,7 @@ onMounted(() => refocusScanInput(scanInputRef, 500))
 .empty { padding: 120rpx 0; text-align: center; }
 .empty-icon { font-size: 64rpx; opacity: 0.25; display: block; }
 .empty-text { display: block; margin-top: 16rpx; font-size: 24rpx; color: #94a3b8; }
+.empty-hint { display: block; margin-top: 8rpx; font-size: 22rpx; color: #cbd5e1; }
 .loading-tip { text-align: center; color: #94a3b8; padding: 24rpx; font-size: 24rpx; }
 .end-tip { color: #cbd5e1; }
 </style>

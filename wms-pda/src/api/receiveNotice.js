@@ -35,11 +35,15 @@ export function toggleReceiveLine(billNo, lineNo, checked) {
   })
 }
 
-export function updateReceiveLineQty(billNo, lineNo, qty) {
+export function updateReceiveLineQty(billNo, lineNo, qty, auxQty) {
+  const data = { qty }
+  if (auxQty != null && auxQty !== '') {
+    data.auxQty = auxQty
+  }
   return request({
     url: `/mobile/receive-notice/${billNo}/lines/${lineNo}/qty`,
     method: 'PUT',
-    data: { qty },
+    data,
   })
 }
 
@@ -48,6 +52,24 @@ export function submitReceiveInbound(billNo, data = {}) {
     url: `/mobile/receive-notice/${billNo}/submit`,
     method: 'POST',
     data: withDevice(data),
+    silent: true,
+    timeout: 180000,
+  })
+}
+
+export function heartbeatReceiveNoticeLock(billNo) {
+  return request({
+    url: `/mobile/receive-notice/${encodeURIComponent(billNo)}/lock/heartbeat`,
+    method: 'POST',
+    silent: true,
+  })
+}
+
+export function releaseReceiveNoticeLock(billNo) {
+  return request({
+    url: `/mobile/receive-notice/${encodeURIComponent(billNo)}/lock/release`,
+    method: 'POST',
+    silent: true,
   })
 }
 
@@ -59,4 +81,6 @@ export default {
   toggleReceiveLine,
   updateReceiveLineQty,
   submitReceiveInbound,
+  heartbeatReceiveNoticeLock,
+  releaseReceiveNoticeLock,
 }

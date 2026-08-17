@@ -33,6 +33,12 @@ public class PdaReceiveSubmitBatchController {
         return ApiResult.ok(batchService.page(billNo, erpSyncStatus, dir, null, null, current, size));
     }
 
+    @Operation(summary = "收料入库批次详情（明细 + 同步报错）")
+    @GetMapping("/{batchNo}")
+    public ApiResult<Map<String, Object>> detail(@PathVariable String batchNo) {
+        return ApiResult.ok(batchService.getInboundBatchDetail(batchNo));
+    }
+
     @Operation(summary = "批次同步金蝶生成入库单")
     @PostMapping("/{batchNo}/sync-erp")
     public ApiResult<Map<String, Object>> syncErp(@PathVariable String batchNo) {

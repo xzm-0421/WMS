@@ -6,12 +6,19 @@ export interface DashboardStats {
   todayOutboundCount: number
   skuCount: number
   pendingTaskCount: number
+  pendingInbound?: number
+  pendingOutbound?: number
+  pendingStockcheck?: number
+  pendingQc?: number
   weeklyTrend: {
     labels: string[]
     inbound: number[]
     outbound: number[]
   }
-  warehouseDistribution: { name: string; value: number }[]
+  /** @deprecated 工作台环形图已改为任务占比，保留兼容 */
+  warehouseDistribution?: { name: string; value: number }[]
+  /** 待处理任务分项（入库/出库/盘点/质检） */
+  taskDistribution?: { name: string; value: number }[]
   warnings: InventoryWarningItem[]
   recentLogs: OperationLogItem[]
 }

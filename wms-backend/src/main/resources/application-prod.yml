@@ -1,15 +1,14 @@
 spring:
+  # 服务器无 Redis 时排除自动配置；验证码/PDA 短缓存会回落进程内存
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   datasource:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
     url: jdbc:sqlserver://${SQLSERVER_HOST:localhost}:${SQLSERVER_PORT:1433};databaseName=${SQLSERVER_DB:wms};encrypt=true;trustServerCertificate=true
     username: ${SQLSERVER_USER:sa}
     password: ${SQLSERVER_PASSWORD:sa@2019}
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      database: 0
   flyway:
     enabled: true
     locations: classpath:db/migration/sqlserver
@@ -19,11 +18,26 @@ wms:
   pda:
     list-fetch-limit: 200
     short-cache-ttl-seconds: 90
-    async-erp-sync: true
+    # 必须同步等金蝶结果，PDA 才能当场提示成败；勿改为 true 除非另做轮询
+    async-erp-sync: false
     scan-skip-kingdee-refresh: true
     detail-local-prefer-seconds: 120
+    app-update:
+      enabled: true
+      version-name: "1.0.0"
+      version-code: 100
+      force: false
+      package-type: wgt
+      download-url: "/pda-update/wms-pda.wgt"
+      changelog: "功能优化与问题修复"
 
 logging:
   level:
     com.wms: info
     root: warn
+
+kingdee:
+  cloud:
+    # 金蝶标签打印：对外根地址与可选 API Key（详见 docs/金蝶标签打印对接说明.md）
+    print-api-key: ${KINGDEE_PRINT_API_KEY:}
+    print-public-base-url: ${WMS_PUBLIC_BASE_URL:}

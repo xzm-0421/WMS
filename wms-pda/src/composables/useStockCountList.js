@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { listStockCountBills, resolveStockCountBarcode } from '@/api/stockCount.js'
 import { parseNoticePage, PAGE_SIZE, SHOW_THROTTLE_MS, mergeNoticeRecords } from '@/utils/noticeListPaging.js'
 import { cacheGet, cacheSet, cacheDel } from '@/utils/ttlCache.js'
+import { consumeClearListKeyword } from '@/utils/listKeywordReset.js'
 
 const LIST_CACHE_TTL_MS = 120000
 
@@ -106,6 +107,11 @@ export function useStockCountList() {
   }
 
   async function loadListOnShow() {
+    if (consumeClearListKeyword()) {
+      cacheDel(cacheKey(keyword.value))
+      cacheDel(cacheKey(''))
+      return loadList('', { force: true })
+    }
     const key = cacheKey(keyword.value)
     const cached = cacheGet(key)
     if (cached?.records?.length) {

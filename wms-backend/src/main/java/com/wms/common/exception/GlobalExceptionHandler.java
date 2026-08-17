@@ -42,6 +42,16 @@ public class GlobalExceptionHandler {
         return ApiResult.fail(ErrorCode.UNAUTHORIZED, "用户名或密码错误");
     }
 
+    @ExceptionHandler(io.jsonwebtoken.ExpiredJwtException.class)
+    public ApiResult<Void> handleExpiredJwt(io.jsonwebtoken.ExpiredJwtException e) {
+        return ApiResult.fail(ErrorCode.UNAUTHORIZED, "登录已过期，请重新登录");
+    }
+
+    @ExceptionHandler(io.jsonwebtoken.JwtException.class)
+    public ApiResult<Void> handleJwt(io.jsonwebtoken.JwtException e) {
+        return ApiResult.fail(ErrorCode.UNAUTHORIZED, "Token无效");
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ApiResult<Void> handleAccessDenied(AccessDeniedException e) {
         return ApiResult.fail(ErrorCode.FORBIDDEN, "无操作权限");

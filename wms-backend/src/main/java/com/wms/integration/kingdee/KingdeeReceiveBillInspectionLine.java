@@ -35,6 +35,10 @@ public class KingdeeReceiveBillInspectionLine {
     private BigDecimal procScrapQty;
     /** 料废数量(基本单位) FDetailEntity.FMtrlScrapBaseQty */
     private BigDecimal mtrlScrapQty;
+    /** 合格入库关联数量(基本单位) FInStockJoinBaseQty */
+    private BigDecimal inStockJoinBaseQty;
+    /** 剩余可入库数量(基本单位) FRemainInStockBaseQty */
+    private BigDecimal remainInStockBaseQty;
     /** 单据物料明细行数 */
     private Integer materialLineCount;
 }

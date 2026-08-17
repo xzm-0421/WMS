@@ -1,20 +1,16 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
 import {
   getInventoryList,
   getInventoryTransactions,
   getInventoryWarnings,
-  updateInventoryStockStatus,
   type InventoryItem,
   type InventoryTransaction,
   type InventoryWarning,
 } from '@/api/inventory'
-import { STOCK_STATUS_OPTIONS, stockStatusLabel } from '@/constants/stockStatus'
 
 const activeTab = ref('list')
 const loading = ref(false)
-const statusUpdatingId = ref<number | null>(null)
 
 const listData = ref<InventoryItem[]>([])
 const listTotal = ref(0)
@@ -32,10 +28,7 @@ async function loadList() {
   loading.value = true
   try {
     const res = await getInventoryList(listQuery)
-    listData.value = res.records.map((row) => ({
-      ...row,
-      stockStatus: row.stockStatus || 'AVAILABLE',
-    }))
+    listData.value = res.records || []
     listTotal.value = res.total
   } finally {
     loading.value = false
@@ -70,21 +63,6 @@ function handleTabChange(tab: string | number) {
   else loadWarnings()
 }
 
-async function handleStockStatusChange(row: InventoryItem, stockStatus: string) {
-  if (!row.id || row.stockStatus === stockStatus) return
-  const previous = row.stockStatus
-  statusUpdatingId.value = row.id
-  try {
-    const updated = await updateInventoryStockStatus(row.id, stockStatus)
-    row.stockStatus = updated.stockStatus
-    ElMessage.success('状态已更新为「' + stockStatusLabel(updated.stockStatus) + '」')
-  } catch {
-    row.stockStatus = previous
-  } finally {
-    statusUpdatingId.value = null
-  }
-}
-
 const TXN_TYPE_MAP: Record<string, string> = {
   INBOUND: '入库',
   OUTBOUND: '出库',
@@ -109,7 +87,7 @@ onMounted(loadList)
       <el-tab-pane label="实时库存" name="list">
         <el-form :inline="true" :model="listQuery">
           <el-form-item label="仓库">
-            <el-input v-model="listQuery.warehouseCode" placeholder="WH01" clearable />
+            <el-input v-model="listQuery.warehouseCode" placeholder="仓库编码" clearable />
           </el-form-item>
           <el-form-item label="物料编码">
             <el-input v-model="listQuery.materialCode" clearable />
@@ -119,30 +97,24 @@ onMounted(loadList)
           </el-form-item>
         </el-form>
         <el-table v-loading="loading" :data="listData" stripe>
-          <el-table-column prop="warehouseCode" label="仓库" width="100" />
-          <el-table-column prop="locationCode" label="库位" width="160" />
-          <el-table-column prop="materialCode" label="物料编码" width="140" />
-          <el-table-column prop="batchNo" label="批次" width="140" />
-          <el-table-column prop="stockQty" label="库存数量" width="120" />
-          <el-table-column prop="availableQty" label="可用数量" width="120" />
-          <el-table-column prop="frozenQty" label="冻结数量" width="100" />
-          <el-table-column label="状态" width="130">
+          <el-table-column prop="materialCode" label="物料编码" min-width="120" />
+          <el-table-column prop="labelNo" label="标签号" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="materialName" label="物料名称" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="specification" label="物料规格" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="availableQty" label="可用量" width="110" />
+          <el-table-column prop="unitCode" label="单位" width="80" />
+          <el-table-column prop="warehouseCode" label="仓库编码" width="110" />
+          <el-table-column prop="productionDate" label="生产日期" width="120">
             <template #default="{ row }">
-              <WmsSelect
-                :model-value="row.stockStatus"
-                :disabled="statusUpdatingId === row.id"
-                size="small"
-                @update:model-value="(val: string) => handleStockStatusChange(row, val)"
-              >
-                <el-option
-                  v-for="item in STOCK_STATUS_OPTIONS"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </WmsSelect>
+              <WmsDateText :value="row.productionDate" />
             </template>
           </el-table-column>
+          <el-table-column prop="createTime" label="创建日期" width="160">
+            <template #default="{ row }">
+              <WmsDateText :value="row.createTime" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="stockQty" label="库存数量" width="110" />
         </el-table>
         <el-pagination
           v-model:current-page="listQuery.current"

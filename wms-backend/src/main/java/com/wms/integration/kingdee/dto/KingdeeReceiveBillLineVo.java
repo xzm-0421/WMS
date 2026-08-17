@@ -16,6 +16,10 @@ public class KingdeeReceiveBillLineVo {
     private String specification;
     private String batchNo;
     private String unitCode;
+    /** 计价单位 FPriceUnitId */
+    private String priceUnitCode;
+    /** 计价数量 FPriceUnitQty */
+    private BigDecimal priceUnitQty;
     /** 金蝶收料分录仓库 FStockId */
     private String stockWarehouseCode;
     /** 金蝶分录内码 FEntryID */
@@ -32,6 +36,8 @@ public class KingdeeReceiveBillLineVo {
     private BigDecimal inStockJoinBaseQty;
     /** 剩余可入库数量(基本单位)，用于 FInStockEntry_Link 携带量 */
     private BigDecimal remainInStockBaseQty;
+    /** 送货单号 F_QVHU_Text_qtr */
+    private String sendBillNo;
     /** 上游采购订单单号（收料分录 SrcBillNo） */
     private String poOrderNo;
     /** 采购订单分录内码 POORDERENTRYID */

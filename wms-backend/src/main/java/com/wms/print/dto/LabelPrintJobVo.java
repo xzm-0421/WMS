@@ -11,13 +11,20 @@ public class LabelPrintJobVo {
     private String jobId;
     private String sourceType;
     private String sourceBillNo;
+    private String warehouseCode;
+    private String warehouseName;
+    private String orgCode;
+    private String orgName;
     private String materialCode;
     private String materialName;
     private String specification;
     private String batchNo;
     private String productionDate;
     private BigDecimal quantity;
+    /** 入库单位 */
     private String unitCode;
+    /** 计价单位 */
+    private String priceUnitCode;
     private String barcodeContent;
     private String barcodeType;
     private BigDecimal labelWidthMm;
@@ -28,6 +35,8 @@ public class LabelPrintJobVo {
     private String operatorName;
     private String errorMessage;
     private String printUrl;
+    /** 绝对地址，金蝶浏览器可直接打开（含 autoPrint=1） */
+    private String absolutePrintUrl;
     private LocalDateTime createTime;
     private LocalDateTime openedTime;
     private LocalDateTime printedTime;

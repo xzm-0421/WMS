@@ -14,6 +14,7 @@ import com.wms.noticebill.NoticeBillProvider;
 import com.wms.noticebill.NoticeBillProviderRegistry;
 import com.wms.noticebill.NoticeBillType;
 import com.wms.integration.kingdee.KingdeeErpWarehouseResolver;
+import com.wms.integration.kingdee.KingdeeReceiveRemainQty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.wms.common.cache.PdaShortCache;
 import com.wms.config.WmsPdaProperties;
@@ -29,12 +30,16 @@ import com.wms.inventory.mapper.InventoryMapper;
 import com.wms.inventory.dto.InventoryChangeCommand;
 import com.wms.inventory.dto.InventoryChangeResult;
 import com.wms.inventory.service.InventoryService;
+import com.wms.inventory.service.LocationAllocationService;
 import com.wms.pdainbound.entity.PdaInboundRecord;
 import com.wms.pdainbound.mapper.PdaInboundRecordMapper;
 import com.wms.pdareceive.dto.*;
 import com.wms.pdareceive.entity.PdaReceiveScanLine;
 import com.wms.pdareceive.entity.PdaReceiveScanSession;
 import com.wms.pdareceive.entity.PdaReceiveSubmitBatch;
+import com.wms.pdabilllock.dto.PdaBillLockVo;
+import com.wms.pdabilllock.entity.PdaBillLock;
+import com.wms.pdabilllock.service.PdaBillLockService;
 import com.wms.pdareceive.mapper.PdaReceiveScanLineMapper;
 import com.wms.pdareceive.mapper.PdaReceiveScanSessionMapper;
 import com.wms.pdareceive.mapper.PdaReceiveSubmitBatchMapper;
@@ -70,6 +75,7 @@ public class PdaReceiveScanService {
     private final PdaInboundRecordMapper inboundRecordMapper;
     private final InventoryMapper inventoryMapper;
     private final InventoryService inventoryService;
+    private final LocationAllocationService locationAllocationService;
     private final BarcodeTraceLinkService barcodeTraceLinkService;
     private final BarcodeRecognizeService barcodeRecognizeService;
     private final PdaReceiveSubmitBatchService submitBatchService;
@@ -77,6 +83,7 @@ public class PdaReceiveScanService {
     private final KingdeeErpWarehouseResolver erpWarehouseResolver;
     private final WmsPdaProperties pdaProperties;
     private final PdaShortCache pdaShortCache;
+    private final PdaBillLockService billLockService;
 
     private record BillMaterialMatch(String materialCode, String batchNo, String matchMode) {}
 
@@ -94,6 +101,11 @@ public class PdaReceiveScanService {
         List<ReceiveNoticeListItemVo> visible = null;
         if (pdaProperties.getShortCacheTtlSeconds() > 0) {
             visible = pdaShortCache.get(visibleCacheKey, new TypeReference<List<ReceiveNoticeListItemVo>>() {});
+            // 空列表不信任短缓存（避免错误过滤结果长期占坑）
+            if (visible != null && visible.isEmpty()) {
+                visible = null;
+                pdaShortCache.evict(visibleCacheKey);
+            }
         }
         if (visible == null) {
             // 一次性取够后续翻页用的数据（金蝶侧已有短缓存），再在本地会话过滤后分页
@@ -108,6 +120,8 @@ public class PdaReceiveScanService {
                     .distinct()
                     .collect(Collectors.toList());
             Map<String, PdaReceiveScanSession> sessionMap = loadSessions(billType, billNos);
+            // 纠正状态：有提交量/可处理全 0 → 已完成并从列表剔除；仅待提交 → 扫码中
+            reconcileSessionStatuses(sessionMap.values());
 
             Map<String, ReceiveNoticeListItemVo> merged = new LinkedHashMap<>();
             for (KingdeeReceiveBillVo bill : kdRecords) {
@@ -115,7 +129,7 @@ public class PdaReceiveScanService {
                     continue;
                 }
                 PdaReceiveScanSession session = sessionMap.get(bill.getBillNo().trim());
-                if (session != null && "COMPLETED".equals(session.getStatus())) {
+                if (session != null && isSessionFinished(session.getStatus())) {
                     continue;
                 }
                 if (bill.getLines() != null && !bill.getLines().isEmpty()) {
@@ -127,10 +141,14 @@ public class PdaReceiveScanService {
             List<PdaReceiveScanSession> openSessions = sessionMapper.selectList(new LambdaQueryWrapper<PdaReceiveScanSession>()
                     .eq(PdaReceiveScanSession::getBillType, billType.getCode())
                     .eq(PdaReceiveScanSession::getDirection, billType.getDirection().name())
-                    .in(PdaReceiveScanSession::getStatus, List.of("SCANNING", "PARTIAL_SUBMITTED"))
+                    .in(PdaReceiveScanSession::getStatus, List.of("NEW", "SCANNING"))
                     .orderByDesc(PdaReceiveScanSession::getUpdateTime));
+            reconcileSessionStatuses(openSessions);
             for (PdaReceiveScanSession session : openSessions) {
                 if (!StringUtils.hasText(session.getBillNo()) || isMockReceiveBillNo(session.getBillNo())) {
+                    continue;
+                }
+                if (isSessionFinished(session.getStatus())) {
                     continue;
                 }
                 if (merged.containsKey(session.getBillNo())) {
@@ -142,7 +160,7 @@ public class PdaReceiveScanService {
             }
 
             visible = merged.values().stream()
-                    .filter(v -> !"COMPLETED".equals(v.getScanStatus()))
+                    .filter(v -> !isSessionFinished(v.getScanStatus()))
                     .sorted(noticeNewestFirst())
                     .collect(Collectors.toList());
             enrichLatestErpInfo(visible);
@@ -154,16 +172,20 @@ public class PdaReceiveScanService {
                                 || contains(v.getSupplierCode(), kw))
                         .collect(Collectors.toList());
             }
-            if (pdaProperties.getShortCacheTtlSeconds() > 0) {
+            if (pdaProperties.getShortCacheTtlSeconds() > 0 && !visible.isEmpty()) {
                 pdaShortCache.put(visibleCacheKey, visible,
                         Duration.ofSeconds(Math.max(60, pdaProperties.getShortCacheTtlSeconds())));
             }
+        } else {
+            // 短缓存命中时仍按最新会话剔除已完结（含可处理数归零）
+            visible = filterVisibleByLatestSession(billType, visible);
         }
 
         long total = visible.size();
         int from = (int) Math.max(0, (page - 1) * pageSize);
         int to = (int) Math.min(visible.size(), from + (int) pageSize);
         List<ReceiveNoticeListItemVo> slice = from < visible.size() ? visible.subList(from, to) : List.of();
+        enrichLockInfo(billType, slice);
         return PageResult.of(slice, total, page, pageSize);
     }
 
@@ -186,8 +208,26 @@ public class PdaReceiveScanService {
     public ReceiveNoticeDetailVo getDetail(NoticeBillType billType, String billNo, boolean forceRefresh) {
         NoticeBillProvider provider = noticeBillProviderRegistry.require(billType);
         String no = billNo != null ? billNo.trim() : "";
+        if (!StringUtils.hasText(no)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "单据号不能为空");
+        }
         PdaReceiveScanSession existingSession = loadSession(billType, no);
         List<PdaReceiveScanLine> existingLines = loadLines(billType, no);
+        // 退料/生产入库/补料数量曾映射为 0：强制回源金蝶重算，避免短缓存把 0 继续返回
+        boolean planQtyAllZero = existingLines != null && !existingLines.isEmpty()
+                && existingLines.stream().allMatch(l -> nullSafe(l.getPlanQty()).compareTo(BigDecimal.ZERO) <= 0);
+        boolean needQtyRepair = (billType == NoticeBillType.PRODUCTION_RETURN
+                || billType == NoticeBillType.PRODUCTION_IN
+                || billType == NoticeBillType.PRODUCTION_RET_STOCK
+                || billType == NoticeBillType.PRODUCTION_FEED
+                || billType == NoticeBillType.OUTSOURCE_FEED
+                || billType == NoticeBillType.PRODUCTION_ISSUE
+                || billType == NoticeBillType.OUTSOURCE_ISSUE)
+                && planQtyAllZero;
+        if (needQtyRepair) {
+            forceRefresh = true;
+            pdaShortCache.evict("bill:" + billType.getCode() + ":" + no.toUpperCase());
+        }
         int preferSec = pdaProperties.getDetailLocalPreferSeconds();
         if (!forceRefresh
                 && preferSec > 0
@@ -196,6 +236,9 @@ public class PdaReceiveScanService {
                 && !existingLines.isEmpty()
                 && existingSession.getUpdateTime() != null
                 && existingSession.getUpdateTime().isAfter(LocalDateTime.now().minusSeconds(preferSec))) {
+            // 进入详情即占用：一单同时仅允许一人操作
+            billLockService.acquire(billType.getCode(), no);
+            reconcileSessionStatus(existingSession, existingLines);
             return buildDetail(mockFromSession(existingSession), existingSession, existingLines, billType);
         }
 
@@ -213,14 +256,24 @@ public class PdaReceiveScanService {
         if (bill == null) {
             if (!provider.isErpEnabled()) {
                 if (existingSession != null) {
+                    billLockService.acquire(billType.getCode(), no);
                     return buildDetail(mockFromSession(existingSession), existingSession, existingLines, billType);
                 }
             }
             throw new BusinessException(ErrorCode.NOT_FOUND, billType.getLabel() + "不存在或已完结: " + no);
         }
+        billLockService.acquire(billType.getCode(), no);
         PdaReceiveScanSession session = ensureSession(billType, bill);
         syncLinesFromKingdee(session, bill);
         return buildDetail(bill, session, loadLines(billType, no), billType);
+    }
+
+    public PdaBillLockVo heartbeatLock(NoticeBillType billType, String billNo) {
+        return billLockService.heartbeat(billType.getCode(), billNo);
+    }
+
+    public void releaseLock(NoticeBillType billType, String billNo) {
+        billLockService.release(billType.getCode(), billNo);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -230,6 +283,7 @@ public class PdaReceiveScanService {
 
     @Transactional(rollbackFor = Exception.class)
     public ReceiveNoticeLineVo scanLine(NoticeBillType billType, String billNo, ReceiveNoticeScanRequest req) {
+        billLockService.assertHeld(billType.getCode(), billNo);
         List<PdaReceiveScanLine> billLines = loadLines(billType, billNo);
         PdaReceiveScanSession existing = loadSession(billType, billNo);
         if (existing == null || billLines == null || billLines.isEmpty()
@@ -250,7 +304,32 @@ public class PdaReceiveScanService {
         }
         BigDecimal submitted = nullSafe(line.getSubmittedQty());
         BigDecimal remain = nullSafe(line.getPlanQty()).subtract(submitted);
-        if (remain.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        BigDecimal remainAux = nullSafe(line.getPlanAuxQty()).subtract(submittedAux);
+        if (remainAux.compareTo(BigDecimal.ZERO) < 0) {
+            remainAux = BigDecimal.ZERO;
+        }
+        // 主录件数：以计价/件数剩余判断是否收满；已处理来自金蝶时只要可处理>0仍可扫
+        boolean lineFull;
+        if (isMultiUnit(line) && isInputMapsToAux(line)) {
+            if (nullSafe(line.getPlanAuxQty()).compareTo(BigDecimal.ZERO) <= 0
+                    && submittedAux.compareTo(BigDecimal.ZERO) <= 0
+                    && remain.compareTo(BigDecimal.ZERO) <= 0) {
+                // 计划未下发：允许先扫
+                lineFull = false;
+            } else if (nullSafe(line.getPlanAuxQty()).compareTo(BigDecimal.ZERO) > 0) {
+                lineFull = remainAux.compareTo(BigDecimal.ZERO) <= 0;
+            } else {
+                lineFull = remain.compareTo(BigDecimal.ZERO) <= 0
+                        && submitted.compareTo(BigDecimal.ZERO) > 0;
+            }
+        } else if (nullSafe(line.getPlanQty()).compareTo(BigDecimal.ZERO) <= 0
+                && submitted.compareTo(BigDecimal.ZERO) <= 0) {
+            lineFull = false;
+        } else {
+            lineFull = remain.compareTo(BigDecimal.ZERO) <= 0;
+        }
+        if (lineFull) {
             throw new BusinessException(ErrorCode.CONFLICT, "该物料已收满", "LINE_ALREADY_FULL");
         }
         String resolvedBatch = resolveLineBatchNo(
@@ -259,26 +338,68 @@ public class PdaReceiveScanService {
             line.setBatchNo(resolvedBatch);
         }
         line.setChecked(1);
-        BigDecimal currentPending = nullSafe(line.getScannedQty()).subtract(submitted);
-        if (currentPending.compareTo(BigDecimal.ZERO) < 0) {
-            currentPending = BigDecimal.ZERO;
+
+        // 标签数量按件数（主单位）累加，再换算到 KG
+        if (isMultiUnit(line) && isInputMapsToAux(line)) {
+            BigDecimal planAux = nullSafe(line.getPlanAuxQty());
+            if (remain.compareTo(BigDecimal.ZERO) < 0) {
+                remain = BigDecimal.ZERO;
+            }
+            BigDecimal currentAuxPending = nullSafe(line.getScannedAuxQty()).subtract(submittedAux);
+            if (currentAuxPending.compareTo(BigDecimal.ZERO) < 0) {
+                currentAuxPending = BigDecimal.ZERO;
+            }
+            BigDecimal nextAuxPending = currentAuxPending.add(scanQty);
+            if (planAux.compareTo(BigDecimal.ZERO) > 0 && nextAuxPending.compareTo(remainAux) > 0) {
+                nextAuxPending = remainAux;
+            }
+            BigDecimal nextStockPending = convertByPlanRate(nextAuxPending, planAux, line.getPlanQty());
+            if (nullSafe(line.getPlanQty()).compareTo(BigDecimal.ZERO) > 0
+                    && nextStockPending.compareTo(remain) > 0) {
+                nextStockPending = remain;
+                nextAuxPending = convertByPlanRate(nextStockPending, line.getPlanQty(), planAux);
+            }
+            if (nullSafe(line.getPlanQty()).compareTo(BigDecimal.ZERO) <= 0) {
+                nextStockPending = nextAuxPending;
+            }
+            line.setScannedAuxQty(submittedAux.add(nextAuxPending));
+            line.setScannedQty(submitted.add(nextStockPending));
+            if (nullSafe(line.getPlanQty()).compareTo(BigDecimal.ZERO) <= 0) {
+                line.setPlanQty(nullSafe(line.getScannedQty()));
+            }
+            if (planAux.compareTo(BigDecimal.ZERO) <= 0) {
+                line.setPlanAuxQty(nullSafe(line.getScannedAuxQty()));
+            }
+        } else {
+            if (remain.compareTo(BigDecimal.ZERO) < 0) {
+                remain = BigDecimal.ZERO;
+            }
+            BigDecimal currentPending = nullSafe(line.getScannedQty()).subtract(submitted);
+            if (currentPending.compareTo(BigDecimal.ZERO) < 0) {
+                currentPending = BigDecimal.ZERO;
+            }
+            BigDecimal nextPending = currentPending.add(scanQty);
+            if (nullSafe(line.getPlanQty()).compareTo(BigDecimal.ZERO) <= 0) {
+                // 计划未下发：按本次累计扫码抬升计划，避免无法累加
+                line.setPlanQty(submitted.add(nextPending));
+            } else if (nextPending.compareTo(remain) > 0) {
+                nextPending = remain;
+            }
+            line.setScannedQty(submitted.add(nextPending));
+            if (isMultiUnit(line)) {
+                BigDecimal nextAuxPending = resolvePendingAuxQty(line, nextPending, null);
+                line.setScannedAuxQty(submittedAux.add(nextAuxPending));
+            }
         }
-        BigDecimal nextPending = currentPending.add(scanQty);
-        if (nextPending.compareTo(remain) > 0) {
-            nextPending = remain;
-        }
-        line.setScannedQty(submitted.add(nextPending));
         line.setScannedBarcode(req.getBarcodeContent());
         line.setLastScanTime(LocalDateTime.now());
         line.setUpdateTime(LocalDateTime.now());
         lineMapper.updateById(line);
 
         PdaReceiveScanSession session = requireSession(billType, billNo);
-        refreshSessionCounters(session);
         session.setLastScanTime(LocalDateTime.now());
         session.setDeviceNo(req.getDeviceNo());
-        session.setUpdateTime(LocalDateTime.now());
-        sessionMapper.updateById(session);
+        markQtyChanged(billType, billNo, session);
         ReceiveNoticeLineVo vo = toLineVo(line);
         vo.setScannedBarcodeQty(scanQty);
         return vo;
@@ -291,34 +412,50 @@ public class PdaReceiveScanService {
 
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> submit(NoticeBillType billType, String billNo, ReceiveNoticeSubmitRequest req) {
+        billLockService.assertHeld(billType.getCode(), billNo);
         LoginUser user = SecurityUtils.currentUser();
         KingdeeReceiveBillVo kdBill = refreshKingdeeContextBeforeSubmit(billType, billNo, req);
         PdaReceiveScanSession session = requireSession(billType, billNo);
-        List<PdaReceiveScanLine> lines = loadLines(billType, billNo).stream()
+        // 双单位先对齐待提交量，再筛选：已勾选且库存/计价任一侧有待提交即可
+        // （不以会话 COMPLETED 直接拦截，避免金蝶回写后仍有待提交量却无法提交）
+        List<PdaReceiveScanLine> allLines = loadLines(billType, billNo);
+        for (PdaReceiveScanLine line : allLines) {
+            repairDualUnitPending(line);
+        }
+        List<PdaReceiveScanLine> lines = allLines.stream()
                 .filter(l -> l.getChecked() != null && l.getChecked() == 1)
-                .filter(l -> nullSafe(l.getScannedQty()).compareTo(nullSafe(l.getSubmittedQty())) > 0)
+                .filter(this::hasPendingSubmitQty)
                 .collect(Collectors.toList());
         if (lines.isEmpty()) {
             String action = billType.getDirection().isInbound() ? "入库" : "出库";
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请先扫描并勾选待" + action + "物料");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请先扫码或手动填写数量后再提交" + action);
         }
 
         boolean inbound = billType.getDirection().isInbound();
-        if (inbound) {
+        // 未审核工作流 / 已审源单下推：不改 WMS 库存，仅驱动金蝶
+        boolean auditExistingBill = billType.isErpConfirmWithoutWmsStock();
+        if (inbound && !auditExistingBill) {
             validateInboundQtyAgainstKingdee(lines, kdBill);
         }
 
         String supplierCode = firstNonBlank(req.getSupplierCode(), session.getSupplierCode(), kdBill.getSupplierCode());
         String supplierName = firstNonBlank(req.getSupplierName(), session.getSupplierName(), kdBill.getSupplierName());
-        if (inbound && !StringUtils.hasText(supplierCode)) {
+        if (inbound && !auditExistingBill && (billType == NoticeBillType.PURCHASE_RECEIVE
+                || billType == NoticeBillType.SALES_RETURN)
+                && !StringUtils.hasText(supplierCode)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "缺少供应商编码，请返回列表重新进入收料单",
-                    "MISSING_SUPPLIER");
+                    billType == NoticeBillType.SALES_RETURN
+                            ? "缺少退货客户编码，请返回列表重新进入退货通知单"
+                            : "缺少供应商编码，请返回列表重新进入收料单",
+                    billType == NoticeBillType.SALES_RETURN ? "MISSING_CUSTOMER" : "MISSING_SUPPLIER");
         }
 
         String defaultWarehouse = StringUtils.hasText(req.getWarehouseCode())
                 ? req.getWarehouseCode() : session.getWarehouseCode();
-        boolean autoAllocate = req.getAutoAllocateLocation() == null || req.getAutoAllocateLocation();
+        // 仅显式 true 时自动分配；默认不选库位（可仅仓库入库）
+        boolean autoAllocate = Boolean.TRUE.equals(req.getAutoAllocateLocation());
+        String requestedLocation = StringUtils.hasText(req.getLocationCode())
+                ? req.getLocationCode().trim() : "";
         String batchNo = generateSubmitBatchNo();
         BigDecimal totalQty = BigDecimal.ZERO;
         List<String> recordNos = new ArrayList<>();
@@ -326,6 +463,9 @@ public class PdaReceiveScanService {
         List<KingdeeSubPickMtrlRequest.Line> subPickMtrlLines = new ArrayList<>();
         List<KingdeeReturnMtrlRequest.Line> returnMtrlLines = new ArrayList<>();
         List<KingdeeSubReturnMtrlRequest.Line> subReturnMtrlLines = new ArrayList<>();
+        // 金蝶失败时还原「已处理」，保证可处理数不变
+        Map<Integer, BigDecimal[]> submittedSnapshot = new LinkedHashMap<>();
+        List<InventoryChangeCommand> inventoryUndoCommands = new ArrayList<>();
 
         PdaReceiveSubmitBatch batch = new PdaReceiveSubmitBatch();
         batch.setBatchNo(batchNo);
@@ -344,10 +484,28 @@ public class PdaReceiveScanService {
 
         boolean autoAssignWarehouse = req.getAutoAssignWarehouse() == null || req.getAutoAssignWarehouse();
         for (PdaReceiveScanLine line : lines) {
+            repairDualUnitPending(line);
             BigDecimal qty = nullSafe(line.getScannedQty()).subtract(nullSafe(line.getSubmittedQty()));
+            if (qty.compareTo(BigDecimal.ZERO) <= 0 && isMultiUnit(line)) {
+                BigDecimal auxPending = nullSafe(line.getScannedAuxQty()).subtract(nullSafe(line.getSubmittedAuxQty()));
+                if (auxPending.compareTo(BigDecimal.ZERO) > 0) {
+                    qty = convertByPlanRate(auxPending, line.getPlanAuxQty(), line.getPlanQty());
+                    if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+                        qty = auxPending;
+                    }
+                    line.setScannedQty(nullSafe(line.getSubmittedQty()).add(qty));
+                    line.setUpdateTime(LocalDateTime.now());
+                    lineMapper.updateById(line);
+                }
+            }
             if (qty.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
+            // 提交前快照：金蝶失败时还原已处理，可处理保持提交前
+            submittedSnapshot.putIfAbsent(line.getLineNo(), new BigDecimal[]{
+                    nullSafe(line.getSubmittedQty()),
+                    nullSafe(line.getSubmittedAuxQty())
+            });
             KingdeeReceiveBillLineVo kdLine = findKdLine(kdBill, line);
             String batchNoMat = resolveLineBatchNo(
                     line.getBatchNo(),
@@ -361,7 +519,36 @@ public class PdaReceiveScanService {
             String warehouse;
             String locationCode;
             String erpStockCode;
-            if (inbound) {
+            if (auditExistingBill) {
+                // 以金蝶为准：不改 WMS 库存；发货通知需落库批号/仓库供下推补全
+                warehouse = firstNonBlank(
+                        line.getErpStockCode(),
+                        kdLine != null ? kdLine.getStockWarehouseCode() : null,
+                        defaultWarehouse);
+                locationCode = StringUtils.hasText(req.getLocationCode()) ? req.getLocationCode().trim() : "";
+                erpStockCode = firstNonBlank(warehouse, req.getErpWarehouseCode());
+                if (billType == NoticeBillType.SALES_DELIVERY) {
+                    erpStockCode = erpWarehouseResolver.resolve(
+                            defaultWarehouse,
+                            firstNonBlank(
+                                    line.getErpStockCode(),
+                                    kdLine != null ? kdLine.getStockWarehouseCode() : null,
+                                    req.getErpWarehouseCode()));
+                    boolean lineChanged = false;
+                    if (StringUtils.hasText(erpStockCode) && !erpStockCode.equals(line.getErpStockCode())) {
+                        line.setErpStockCode(erpStockCode);
+                        lineChanged = true;
+                    }
+                    if (StringUtils.hasText(batchNoMat) && !batchNoMat.equals(line.getBatchNo())) {
+                        line.setBatchNo(batchNoMat);
+                        lineChanged = true;
+                    }
+                    if (lineChanged) {
+                        line.setUpdateTime(LocalDateTime.now());
+                        lineMapper.updateById(line);
+                    }
+                }
+            } else if (inbound) {
                 if (autoAssignWarehouse) {
                     warehouse = resolveLineWarehouse(line, kdLine, req);
                     if (!StringUtils.hasText(warehouse)) {
@@ -380,16 +567,20 @@ public class PdaReceiveScanService {
                     erpStockCode = erpWarehouseResolver.resolve(
                             req.getWarehouseCode(), firstNonBlank(req.getErpWarehouseCode(), warehouse));
                 }
-                locationCode = "";
+                locationCode = resolveInboundLocationCode(
+                        warehouse, line.getMaterialCode(), batchNoMat, autoAllocate, requestedLocation);
             } else {
-                warehouse = defaultWarehouse;
-                locationCode = resolveLocation(billType, warehouse, line, batchNoMat, autoAllocate, req.getLocationCode());
+                Inventory pickStock = resolveOutboundStock(defaultWarehouse, line, kdLine, batchNoMat, req.getLocationCode());
+                warehouse = pickStock.getWarehouseCode();
+                locationCode = pickStock.getLocationCode() != null ? pickStock.getLocationCode() : "";
                 erpStockCode = resolveSubmitErpStockCode(warehouse, line, kdLine, req.getErpWarehouseCode());
             }
             String unitCode = firstNonBlank(line.getUnitCode(), kdLine != null ? kdLine.getUnitCode() : null);
             String recordNo = generateRecordNo();
 
-            if (inbound) {
+            if (auditExistingBill) {
+                // 仅更新扫码进度；ERP 侧回写实发/实退后立即审核（含部分领退）
+            } else if (inbound) {
                 PdaInboundRecord record = new PdaInboundRecord();
                 record.setRecordNo(recordNo);
                 record.setMaterialCode(line.getMaterialCode());
@@ -400,6 +591,14 @@ public class PdaReceiveScanService {
                 record.setLocationCode(locationCode);
                 record.setBatchNo(batchNoMat);
                 record.setQuantity(qty);
+                if (isMultiUnit(line)) {
+                    BigDecimal auxPending = nullSafe(line.getScannedAuxQty()).subtract(nullSafe(line.getSubmittedAuxQty()));
+                    if (auxPending.compareTo(BigDecimal.ZERO) <= 0) {
+                        auxPending = resolvePendingAuxQty(line, qty, null);
+                    }
+                    record.setAuxUnitCode(line.getAuxUnitCode());
+                    record.setAuxQuantity(auxPending);
+                }
                 record.setBarcodeContent(line.getScannedBarcode());
                 record.setOperatorId(batch.getOperatorId());
                 record.setOperatorName(batch.getOperatorName());
@@ -438,41 +637,25 @@ public class PdaReceiveScanService {
                         .deviceNo(record.getDeviceNo())
                         .remark(line.getScannedBarcode())
                         .build());
+                inventoryUndoCommands.add(InventoryChangeCommand.builder()
+                        .transactionType(billType.getTransactionType())
+                        .warehouseCode(warehouse)
+                        .locationCode(locationCode)
+                        .materialCode(line.getMaterialCode())
+                        .batchNo(batchNoMat)
+                        .quantity(qty)
+                        .sourceOrderType(billType.getSourceOrderType())
+                        .sourceOrderNo(billNo)
+                        .sourceOrderLine(line.getLineNo())
+                        .operatorId(record.getOperatorId())
+                        .operatorName(record.getOperatorName())
+                        .deviceNo(record.getDeviceNo())
+                        .remark("ERP失败回滚:" + line.getScannedBarcode())
+                        .build());
                 barcodeTraceLinkService.linkPdaInbound(
                         line.getScannedBarcode(), recordNo, changeResult.getTransactionNo(),
                         line.getMaterialCode(), batchNoMat, null);
-                if (billType == NoticeBillType.PRODUCTION_RETURN) {
-                    String kdWarehouse = firstNonBlank(erpStockCode, warehouse);
-                    if (!StringUtils.hasText(kdWarehouse)) {
-                        throw new BusinessException(ErrorCode.BAD_REQUEST,
-                                "第" + line.getLineNo() + "行缺少金蝶仓库编码，无法同步生产退料单",
-                                "MISSING_ERP_STOCK");
-                    }
-                    returnMtrlLines.add(KingdeeReturnMtrlRequest.Line.builder()
-                            .materialCode(line.getMaterialCode())
-                            .materialName(line.getMaterialName())
-                            .unitCode(unitCode)
-                            .warehouseCode(kdWarehouse)
-                            .locationCode(locationCode)
-                            .batchNo(batchNoMat)
-                            .quantity(qty)
-                            .sourceLineNo(line.getLineNo())
-                            .entryNote(line.getScannedBarcode())
-                            .parentMaterialCode(firstNonBlank(
-                                    kdLine != null ? kdLine.getParentMaterialCode() : null,
-                                    kdBill.getParentMaterialCode()))
-                            .moBillNo(firstNonBlank(
-                                    kdLine != null ? kdLine.getMoBillNo() : null,
-                                    kdBill.getMoBillNo()))
-                            .moId(kdLine != null ? kdLine.getMoId() : null)
-                            .moEntryId(kdLine != null ? kdLine.getMoEntryId() : null)
-                            .moEntrySeq(kdLine != null ? kdLine.getMoEntrySeq() : null)
-                            .ppBomBillNo(kdLine != null ? kdLine.getPpBomBillNo() : null)
-                            .ppBomEntryId(kdLine != null ? kdLine.getPpBomEntryId() : null)
-                            .pickEntryId(kdLine != null ? kdLine.getEntryId() : null)
-                            .pickBillId(kdBill.getBillId())
-                            .build());
-                } else if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+                if (billType == NoticeBillType.OUTSOURCE_RETURN) {
                     String kdWarehouse = firstNonBlank(erpStockCode, warehouse);
                     if (!StringUtils.hasText(kdWarehouse)) {
                         throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -520,41 +703,22 @@ public class PdaReceiveScanService {
                         .deviceNo(req.getDeviceNo())
                         .remark(line.getScannedBarcode())
                         .build());
-                if (billType == NoticeBillType.PRODUCTION_ISSUE) {
-                    String kdWarehouse = firstNonBlank(erpStockCode, warehouse);
-                    if (!StringUtils.hasText(kdWarehouse)) {
-                        throw new BusinessException(ErrorCode.BAD_REQUEST,
-                                "第" + line.getLineNo() + "行缺少金蝶仓库编码，无法同步生产领料单",
-                                "MISSING_ERP_STOCK");
-                    }
-                    pickMtrlLines.add(KingdeePickMtrlRequest.Line.builder()
-                            .materialCode(line.getMaterialCode())
-                            .materialName(line.getMaterialName())
-                            .unitCode(unitCode)
-                            .warehouseCode(kdWarehouse)
-                            .locationCode(locationCode)
-                            .batchNo(batchNoMat)
-                            .quantity(qty)
-                            .sourceLineNo(line.getLineNo())
-                            .entryNote(line.getScannedBarcode())
-                            .parentMaterialCode(firstNonBlank(
-                                    kdLine != null ? kdLine.getParentMaterialCode() : null,
-                                    kdBill.getParentMaterialCode()))
-                            .moBillNo(firstNonBlank(
-                                    kdLine != null ? kdLine.getMoBillNo() : null,
-                                    kdBill.getMoBillNo()))
-                            .moId(kdLine != null ? kdLine.getMoId() : null)
-                            .moEntryId(kdLine != null ? kdLine.getMoEntryId() : null)
-                            .moEntrySeq(kdLine != null ? kdLine.getMoEntrySeq() : null)
-                            .ppBomBillNo(firstNonBlank(
-                                    kdLine != null ? kdLine.getPpBomBillNo() : null,
-                                    billNo))
-                            .ppBomEntryId(firstNonNull(
-                                    kdLine != null ? kdLine.getPpBomEntryId() : null,
-                                    kdLine != null ? kdLine.getEntryId() : null))
-                            .ppBomBillId(kdBill.getBillId())
-                            .build());
-                } else if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
+                inventoryUndoCommands.add(InventoryChangeCommand.builder()
+                        .transactionType(billType.getTransactionType())
+                        .warehouseCode(warehouse)
+                        .locationCode(locationCode)
+                        .materialCode(line.getMaterialCode())
+                        .batchNo(batchNoMat)
+                        .quantity(qty)
+                        .sourceOrderType(billType.getSourceOrderType())
+                        .sourceOrderNo(billNo)
+                        .sourceOrderLine(line.getLineNo())
+                        .operatorId(batch.getOperatorId())
+                        .operatorName(batch.getOperatorName())
+                        .deviceNo(req.getDeviceNo())
+                        .remark("ERP失败回滚:" + line.getScannedBarcode())
+                        .build());
+                if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
                     String kdWarehouse = firstNonBlank(erpStockCode, warehouse);
                     if (!StringUtils.hasText(kdWarehouse)) {
                         throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -592,6 +756,16 @@ public class PdaReceiveScanService {
             }
 
             line.setSubmittedQty(nullSafe(line.getSubmittedQty()).add(qty));
+            if (isMultiUnit(line)) {
+                BigDecimal auxPending = nullSafe(line.getScannedAuxQty()).subtract(nullSafe(line.getSubmittedAuxQty()));
+                if (auxPending.compareTo(BigDecimal.ZERO) <= 0) {
+                    auxPending = resolvePendingAuxQty(line, qty, null);
+                }
+                line.setSubmittedAuxQty(nullSafe(line.getSubmittedAuxQty()).add(auxPending));
+                if (nullSafe(line.getScannedAuxQty()).compareTo(nullSafe(line.getSubmittedAuxQty())) < 0) {
+                    line.setScannedAuxQty(line.getSubmittedAuxQty());
+                }
+            }
             line.setUpdateTime(LocalDateTime.now());
             lineMapper.updateById(line);
             totalQty = totalQty.add(qty);
@@ -599,10 +773,12 @@ public class PdaReceiveScanService {
         }
 
         batch.setTotalQty(totalQty);
-        int outboundLines = !pickMtrlLines.isEmpty()
+        int workflowLines = auditExistingBill
+                ? recordNos.size()
+                : (!pickMtrlLines.isEmpty()
                 ? pickMtrlLines.size()
-                : (!subPickMtrlLines.isEmpty() ? subPickMtrlLines.size() : recordNos.size());
-        batch.setLineCount(inbound ? recordNos.size() : outboundLines);
+                : (!subPickMtrlLines.isEmpty() ? subPickMtrlLines.size() : recordNos.size()));
+        batch.setLineCount(inbound && !auditExistingBill ? recordNos.size() : workflowLines);
         submitBatchMapper.updateById(batch);
         refreshSessionCounters(session);
         session.setUpdateTime(LocalDateTime.now());
@@ -618,29 +794,93 @@ public class PdaReceiveScanService {
         result.put("totalQty", totalQty);
         result.put("scanStatus", session.getStatus());
         result.put("erpSyncStatus", "PENDING");
-        result.put("message", billType == NoticeBillType.PURCHASE_RECEIVE
-                ? "已提交至WMS，正在同步金蝶"
-                : (billType == NoticeBillType.PRODUCTION_RETURN
-                ? "已入库增加库存，正在同步金蝶生产退料单"
-                : (billType == NoticeBillType.OUTSOURCE_RETURN
-                ? "已入库增加库存，正在同步金蝶委外退料单"
-                : (billType == NoticeBillType.PRODUCTION_ISSUE
-                ? "已出库扣减库存，正在同步金蝶生产领料单"
-                : (billType == NoticeBillType.OUTSOURCE_ISSUE
-                ? "已出库扣减库存，正在同步金蝶委外领料单"
-                : (inbound ? "已提交至WMS" : "已出库扣减库存"))))));
+        result.put("message", resolveSubmitMessage(billType, auditExistingBill, inbound));
 
+        // 未审核工作流 / 发货通知下推：不 Save 新建；收料/退货通知仍走新建入库
         boolean needErp = (billType == NoticeBillType.PURCHASE_RECEIVE && !recordNos.isEmpty())
-                || (billType == NoticeBillType.PRODUCTION_RETURN && !returnMtrlLines.isEmpty())
-                || (billType == NoticeBillType.OUTSOURCE_RETURN && !subReturnMtrlLines.isEmpty())
-                || (billType == NoticeBillType.PRODUCTION_ISSUE && !pickMtrlLines.isEmpty())
-                || (billType == NoticeBillType.OUTSOURCE_ISSUE && !subPickMtrlLines.isEmpty());
+                || (billType == NoticeBillType.PRODUCTION_IN && !recordNos.isEmpty())
+                || (billType == NoticeBillType.SALES_RETURN && !recordNos.isEmpty())
+                || auditExistingBill;
         if (needErp) {
             evictBillCaches(billType, billNo);
             dispatchErpSync(billType, batchNo, result,
                     recordNos, returnMtrlLines, subReturnMtrlLines, pickMtrlLines, subPickMtrlLines);
+            String erpStatus = String.valueOf(result.getOrDefault("erpSyncStatus", ""));
+            // 同步失败（非 SUCCESS）；异步 PENDING 不在此还原（当前默认 async=false）
+            if (!"SUCCESS".equalsIgnoreCase(erpStatus)
+                    && !Boolean.TRUE.equals(result.get("erpSyncAsync"))) {
+                restoreSubmittedQtyAfterErpFail(billType, billNo, submittedSnapshot);
+                undoInventoryAfterErpFail(inbound, auditExistingBill, inventoryUndoCommands);
+                markInboundRecordsFailedAndDeleted(batchNo);
+                refreshSessionCounters(session);
+                session.setUpdateTime(LocalDateTime.now());
+                sessionMapper.updateById(session);
+                result.put("scanStatus", session.getStatus());
+                result.put("qtyUnchanged", true);
+                result.put("erpSyncStatus", "FAILED");
+                String failMsg = firstNonBlank(
+                        String.valueOf(result.getOrDefault("erpSyncMessage", "")),
+                        String.valueOf(result.getOrDefault("message", "")),
+                        "金蝶同步失败，已处理/可处理数量未变更");
+                result.put("erpSyncMessage", failMsg);
+                result.put("message", failMsg);
+                return result;
+            }
+        }
+        // 仅金蝶成功（或不需要同步）后才允许完结并释放锁
+        if (isSessionFinished(session.getStatus())) {
+            billLockService.forceRelease(billType.getCode(), billNo);
         }
         return result;
+    }
+
+    private String resolveSubmitMessage(NoticeBillType billType, boolean auditExistingBill, boolean inbound) {
+        if (billType == NoticeBillType.PURCHASE_RECEIVE) {
+            return "已提交至WMS，正在同步金蝶";
+        }
+        if (billType == NoticeBillType.PRODUCTION_IN) {
+            return "汇报入库已确认，正在生成金蝶生产入库单并反写审核";
+        }
+        if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            return "退库已确认，正在提交并审核金蝶生产退库单";
+        }
+        if (billType == NoticeBillType.PRODUCTION_ISSUE) {
+            return "领料已确认，正在回写金蝶实发并审核（支持部分领料）";
+        }
+        if (billType == NoticeBillType.PRODUCTION_FEED) {
+            return "补料已确认，正在回写金蝶实发并工作流审批（支持部分补料）";
+        }
+        if (billType == NoticeBillType.OUTSOURCE_FEED) {
+            return "补料已确认，正在回写金蝶实发并工作流审批（支持部分补料）";
+        }
+        if (billType == NoticeBillType.PRODUCTION_RETURN) {
+            return "退料已确认，正在回写金蝶实退并审核（支持部分退料）";
+        }
+        if (billType == NoticeBillType.OUTSOURCE_RETURN) {
+            return "退料已确认，正在回写金蝶实退并审核（支持部分退料）";
+        }
+        if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
+            return "领料已确认，正在回写金蝶实发并审核（支持部分领料）";
+        }
+        if (billType == NoticeBillType.OTHER_IN) {
+            return "入库已确认，正在提交并审核金蝶其他入库单";
+        }
+        if (billType == NoticeBillType.OTHER_OUT) {
+            return "出库已确认，正在提交并审核金蝶其他出库单";
+        }
+        if (billType == NoticeBillType.PURCHASE_RETURN) {
+            return "退货已确认，正在提交并审核金蝶采购退料单";
+        }
+        if (billType == NoticeBillType.SALES_DELIVERY) {
+            return "发货已确认，正在下推并审核金蝶销售出库单";
+        }
+        if (billType == NoticeBillType.SALES_RETURN) {
+            return "退货已确认，正在生成并审核金蝶销售退货单";
+        }
+        if (auditExistingBill) {
+            return "已确认，正在提交并审核金蝶单据";
+        }
+        return inbound ? "已提交至WMS" : "已出库扣减库存";
     }
 
     private void dispatchErpSync(NoticeBillType billType, String batchNo, Map<String, Object> result,
@@ -658,10 +898,17 @@ public class PdaReceiveScanService {
             Runnable task = () -> {
                 switch (billType) {
                     case PURCHASE_RECEIVE -> erpSyncAsyncService.syncPurchaseInStock(batchNo);
+                    case PRODUCTION_IN -> erpSyncAsyncService.syncPrdInStock(batchNo);
+                    case PRODUCTION_RET_STOCK -> erpSyncAsyncService.syncPrdRetStock(batchNo);
                     case PRODUCTION_RETURN -> erpSyncAsyncService.syncReturnMtrl(batchNo, returnCopy);
                     case OUTSOURCE_RETURN -> erpSyncAsyncService.syncSubReturnMtrl(batchNo, subReturnCopy);
                     case PRODUCTION_ISSUE -> erpSyncAsyncService.syncPickMtrl(batchNo, pickCopy);
+                    case PRODUCTION_FEED -> erpSyncAsyncService.syncFeedMtrl(batchNo);
                     case OUTSOURCE_ISSUE -> erpSyncAsyncService.syncSubPickMtrl(batchNo, subCopy);
+                    case OUTSOURCE_FEED -> erpSyncAsyncService.syncSubFeedMtrl(batchNo);
+                    case OTHER_IN, OTHER_OUT, SALES_DELIVERY, PURCHASE_RETURN
+                            -> erpSyncAsyncService.syncAuditExistingBill(batchNo);
+                    case SALES_RETURN -> erpSyncAsyncService.syncSalReturnStock(batchNo);
                     default -> {
                     }
                 }
@@ -674,18 +921,39 @@ public class PdaReceiveScanService {
         if (billType == NoticeBillType.PURCHASE_RECEIVE && !recordNos.isEmpty()) {
             Map<String, Object> syncResult = submitBatchService.syncBatchToErp(batchNo);
             applyErpSyncResult(result, batchNo, syncResult, "采购入库单");
-        } else if (billType == NoticeBillType.PRODUCTION_RETURN && !returnMtrlLines.isEmpty()) {
+        } else if (billType == NoticeBillType.PRODUCTION_IN && !recordNos.isEmpty()) {
+            Map<String, Object> syncResult = submitBatchService.syncPrdInStockBatch(batchNo);
+            applyErpSyncResult(result, batchNo, syncResult, "生产入库单");
+        } else if (billType == NoticeBillType.PRODUCTION_RET_STOCK) {
+            Map<String, Object> syncResult = submitBatchService.syncPrdRetStockBatch(batchNo);
+            applyErpSyncResult(result, batchNo, syncResult, "生产退库单");
+        } else if (billType == NoticeBillType.PRODUCTION_RETURN) {
             Map<String, Object> syncResult = submitBatchService.syncReturnMtrlBatch(batchNo, returnMtrlLines);
             applyErpSyncResult(result, batchNo, syncResult, "生产退料单");
-        } else if (billType == NoticeBillType.OUTSOURCE_RETURN && !subReturnMtrlLines.isEmpty()) {
+        } else if (billType == NoticeBillType.OUTSOURCE_RETURN) {
             Map<String, Object> syncResult = submitBatchService.syncSubReturnMtrlBatch(batchNo, subReturnMtrlLines);
             applyErpSyncResult(result, batchNo, syncResult, "委外退料单");
-        } else if (billType == NoticeBillType.PRODUCTION_ISSUE && !pickMtrlLines.isEmpty()) {
+        } else if (billType == NoticeBillType.PRODUCTION_ISSUE) {
             Map<String, Object> syncResult = submitBatchService.syncPickMtrlBatch(batchNo, pickMtrlLines);
             applyErpSyncResult(result, batchNo, syncResult, "生产领料单");
-        } else if (billType == NoticeBillType.OUTSOURCE_ISSUE && !subPickMtrlLines.isEmpty()) {
+        } else if (billType == NoticeBillType.PRODUCTION_FEED) {
+            Map<String, Object> syncResult = submitBatchService.syncFeedMtrlBatch(batchNo);
+            applyErpSyncResult(result, batchNo, syncResult, "生产补料单");
+        } else if (billType == NoticeBillType.OUTSOURCE_ISSUE) {
             Map<String, Object> syncResult = submitBatchService.syncSubPickMtrlBatch(batchNo, subPickMtrlLines);
             applyErpSyncResult(result, batchNo, syncResult, "委外领料单");
+        } else if (billType == NoticeBillType.OUTSOURCE_FEED) {
+            Map<String, Object> syncResult = submitBatchService.syncSubFeedMtrlBatch(batchNo);
+            applyErpSyncResult(result, batchNo, syncResult, "委外补料单");
+        } else if (billType == NoticeBillType.OTHER_IN
+                || billType == NoticeBillType.OTHER_OUT
+                || billType == NoticeBillType.SALES_DELIVERY
+                || billType == NoticeBillType.PURCHASE_RETURN) {
+            Map<String, Object> syncResult = submitBatchService.syncAuditExistingBillBatch(batchNo);
+            applyErpSyncResult(result, batchNo, syncResult, billType.getLabel());
+        } else if (billType == NoticeBillType.SALES_RETURN && !recordNos.isEmpty()) {
+            Map<String, Object> syncResult = submitBatchService.syncSalReturnStockBatch(batchNo);
+            applyErpSyncResult(result, batchNo, syncResult, "销售退货单");
         }
     }
 
@@ -721,15 +989,110 @@ public class PdaReceiveScanService {
             String erpMsg = syncResult.get("erpSyncMessage") != null
                     ? String.valueOf(syncResult.get("erpSyncMessage"))
                     : "金蝶同步失败";
-            throw new BusinessException(ErrorCode.CONFLICT,
-                    KingdeeResponseMessageFormatter.format(erpMsg),
-                    "ERP_SYNC_FAILED",
-                    Map.of("batchNo", batchNo, "erpSyncStatus", erpSyncStatus));
+            String formatted = KingdeeResponseMessageFormatter.format(erpMsg);
+            result.put("erpSyncMessage", formatted);
+            result.put("message", formatted);
+            result.put("errorType", "ERP_SYNC_FAILED");
+            log.warn("ERP sync failed batchNo={} billLabel={} status={} msg={}",
+                    batchNo, billLabel, erpSyncStatus, formatted);
+            return;
         }
         String erpBillNo = syncResult.get("erpBillNo") != null
                 ? String.valueOf(syncResult.get("erpBillNo")) : null;
-        if (StringUtils.hasText(erpBillNo)) {
+        String erpSyncMessage = syncResult.get("erpSyncMessage") != null
+                ? String.valueOf(syncResult.get("erpSyncMessage")) : null;
+        if (StringUtils.hasText(erpSyncMessage)) {
+            result.put("message", erpSyncMessage);
+        } else if (StringUtils.hasText(erpBillNo)) {
             result.put("message", "已提交并同步金蝶，" + billLabel + " " + erpBillNo);
+        }
+    }
+
+    /**
+     * 金蝶失败：把扫码行「已处理」还原为提交前快照，可处理=计划−已处理随之恢复。
+     * 扫描量保留，便于修改后重提。
+     */
+    private void restoreSubmittedQtyAfterErpFail(NoticeBillType billType, String billNo,
+                                                 Map<Integer, BigDecimal[]> submittedSnapshot) {
+        if (billType == null || !StringUtils.hasText(billNo) || submittedSnapshot == null || submittedSnapshot.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Integer, BigDecimal[]> e : submittedSnapshot.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) {
+                continue;
+            }
+            PdaReceiveScanLine line = lineMapper.selectOne(new LambdaQueryWrapper<PdaReceiveScanLine>()
+                    .eq(PdaReceiveScanLine::getBillType, billType.getCode())
+                    .eq(PdaReceiveScanLine::getDirection, billType.getDirection().name())
+                    .eq(PdaReceiveScanLine::getBillNo, billNo)
+                    .eq(PdaReceiveScanLine::getLineNo, e.getKey()));
+            if (line == null) {
+                continue;
+            }
+            BigDecimal prevSubmitted = e.getValue()[0] != null ? e.getValue()[0] : BigDecimal.ZERO;
+            BigDecimal prevSubmittedAux = e.getValue().length > 1 && e.getValue()[1] != null
+                    ? e.getValue()[1] : BigDecimal.ZERO;
+            line.setSubmittedQty(prevSubmitted);
+            line.setSubmittedAuxQty(prevSubmittedAux);
+            // 扫描量不低于已处理，保留用户已扫待提数量
+            if (nullSafe(line.getScannedQty()).compareTo(prevSubmitted) < 0) {
+                line.setScannedQty(prevSubmitted);
+            }
+            if (isMultiUnit(line) && nullSafe(line.getScannedAuxQty()).compareTo(prevSubmittedAux) < 0) {
+                line.setScannedAuxQty(prevSubmittedAux);
+            }
+            line.setUpdateTime(LocalDateTime.now());
+            lineMapper.updateById(line);
+            log.info("Restore submittedQty after ERP fail billType={} billNo={} line={} submitted={}",
+                    billType.getCode(), billNo, e.getKey(), prevSubmitted.stripTrailingZeros().toPlainString());
+        }
+    }
+
+    /** 金蝶失败：撤销本批次引起的库存变动（入库冲减 / 出库加回） */
+    private void undoInventoryAfterErpFail(boolean inbound, boolean auditExistingBill,
+                                           List<InventoryChangeCommand> undoCommands) {
+        if (auditExistingBill || undoCommands == null || undoCommands.isEmpty()) {
+            return;
+        }
+        for (InventoryChangeCommand cmd : undoCommands) {
+            if (cmd == null || cmd.getQuantity() == null
+                    || cmd.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            try {
+                if (inbound) {
+                    inventoryService.decreaseWithTransaction(cmd);
+                } else {
+                    inventoryService.increaseWithTransaction(cmd);
+                }
+            } catch (Exception ex) {
+                log.error("Undo inventory after ERP fail failed material={} wh={} qty={}",
+                        cmd.getMaterialCode(), cmd.getWarehouseCode(), cmd.getQuantity(), ex);
+                throw new BusinessException(ErrorCode.CONFLICT,
+                        "金蝶同步失败，且库存回滚失败: " + ex.getMessage(),
+                        "ERP_SYNC_INVENTORY_ROLLBACK_FAILED");
+            }
+        }
+    }
+
+    /** 金蝶失败：本批次入库记录标记失败并软删，避免计入已处理/成功量 */
+    private void markInboundRecordsFailedAndDeleted(String batchNo) {
+        if (!StringUtils.hasText(batchNo)) {
+            return;
+        }
+        List<PdaInboundRecord> records = inboundRecordMapper.selectList(new LambdaQueryWrapper<PdaInboundRecord>()
+                .eq(PdaInboundRecord::getSubmitBatchNo, batchNo)
+                .eq(PdaInboundRecord::getDeleted, 0));
+        LocalDateTime now = LocalDateTime.now();
+        for (PdaInboundRecord record : records) {
+            record.setErpSyncStatus("FAILED");
+            record.setDeleted(1);
+            record.setErpSyncTime(now);
+            record.setUpdateTime(now);
+            if (!StringUtils.hasText(record.getErpSyncMessage())) {
+                record.setErpSyncMessage("金蝶同步失败，数量已还原");
+            }
+            inboundRecordMapper.updateById(record);
         }
     }
 
@@ -740,6 +1103,7 @@ public class PdaReceiveScanService {
 
     @Transactional(rollbackFor = Exception.class)
     public ReceiveNoticeLineVo toggleLine(NoticeBillType billType, String billNo, Integer lineNo, boolean checked) {
+        billLockService.assertHeld(billType.getCode(), billNo);
         PdaReceiveScanLine line = lineMapper.selectOne(new LambdaQueryWrapper<PdaReceiveScanLine>()
                 .eq(PdaReceiveScanLine::getBillType, billType.getCode())
                 .eq(PdaReceiveScanLine::getDirection, billType.getDirection().name())
@@ -764,6 +1128,11 @@ public class PdaReceiveScanService {
 
     @Transactional(rollbackFor = Exception.class)
     public ReceiveNoticeLineVo updateLineQty(NoticeBillType billType, String billNo, Integer lineNo, ReceiveNoticeQtyRequest req) {
+        billLockService.assertHeld(billType.getCode(), billNo);
+        PdaReceiveScanSession session = requireSession(billType, billNo);
+        if (isSessionFinished(session.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "单据已提交完成，不可再改数量");
+        }
         PdaReceiveScanLine line = lineMapper.selectOne(new LambdaQueryWrapper<PdaReceiveScanLine>()
                 .eq(PdaReceiveScanLine::getBillType, billType.getCode())
                 .eq(PdaReceiveScanLine::getDirection, billType.getDirection().name())
@@ -772,29 +1141,222 @@ public class PdaReceiveScanService {
         if (line == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "明细行不存在");
         }
-        BigDecimal pending = req.getQty();
-        if (pending == null || pending.compareTo(BigDecimal.ZERO) < 0) {
+        repairDualUnitPending(line);
+        if (req.getQty() != null && req.getQty().compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "领取数量不能为负");
         }
+        if (req.getAuxQty() != null && req.getAuxQty().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "辅助单位数量不能为负");
+        }
+
         BigDecimal submitted = nullSafe(line.getSubmittedQty());
         BigDecimal plan = nullSafe(line.getPlanQty());
-        BigDecimal remain = plan.subtract(submitted);
-        if (remain.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(ErrorCode.CONFLICT, "该物料已领满");
+        BigDecimal remainStock = plan.subtract(submitted);
+        if (remainStock.compareTo(BigDecimal.ZERO) < 0) {
+            remainStock = BigDecimal.ZERO;
         }
-        if (pending.compareTo(remain) > 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "领取数量不能超过剩余可领 " + remain.stripTrailingZeros().toPlainString());
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        BigDecimal planAux = nullSafe(line.getPlanAuxQty());
+        BigDecimal remainAux = planAux.subtract(submittedAux);
+        if (remainAux.compareTo(BigDecimal.ZERO) < 0) {
+            remainAux = BigDecimal.ZERO;
         }
-        line.setScannedQty(submitted.add(pending));
+
+        BigDecimal stockPending;
+        BigDecimal auxPending;
+        // 已处理以金蝶已入库为准；可否录入只看可处理余量，不因「已有已处理」锁死
+        if (isMultiUnit(line) && isInputMapsToAux(line)) {
+            boolean stockFull = plan.compareTo(BigDecimal.ZERO) > 0 && remainStock.compareTo(BigDecimal.ZERO) <= 0;
+            boolean auxFull = planAux.compareTo(BigDecimal.ZERO) > 0 && remainAux.compareTo(BigDecimal.ZERO) <= 0;
+            if (stockFull || (plan.compareTo(BigDecimal.ZERO) <= 0 && auxFull)) {
+                throw new BusinessException(ErrorCode.CONFLICT, "该物料已领满");
+            }
+            if (req.getAuxQty() != null) {
+                auxPending = req.getAuxQty();
+            } else if (req.getQty() != null) {
+                auxPending = convertByPlanRate(req.getQty(),
+                        plan.compareTo(BigDecimal.ZERO) > 0 ? plan : BigDecimal.ONE,
+                        planAux.compareTo(BigDecimal.ZERO) > 0 ? planAux : BigDecimal.ONE);
+            } else {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "领取数量不能为空");
+            }
+            if (planAux.compareTo(BigDecimal.ZERO) > 0 && auxPending.compareTo(remainAux) > 0) {
+                auxPending = remainAux;
+            }
+            stockPending = convertByPlanRate(auxPending,
+                    planAux.compareTo(BigDecimal.ZERO) > 0 ? planAux : BigDecimal.ONE,
+                    plan.compareTo(BigDecimal.ZERO) > 0 ? plan : BigDecimal.ONE);
+            if (plan.compareTo(BigDecimal.ZERO) > 0 && stockPending.compareTo(remainStock) > 0) {
+                stockPending = remainStock;
+                auxPending = convertByPlanRate(stockPending, plan, planAux);
+            }
+            if (plan.compareTo(BigDecimal.ZERO) <= 0) {
+                stockPending = auxPending;
+            }
+        } else {
+            stockPending = req.getQty();
+            if (stockPending == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "领取数量不能为空");
+            }
+            if (plan.compareTo(BigDecimal.ZERO) > 0 && remainStock.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "该物料已领满");
+            }
+            if (plan.compareTo(BigDecimal.ZERO) > 0 && stockPending.compareTo(remainStock) > 0) {
+                stockPending = remainStock;
+            }
+            auxPending = resolvePendingAuxQty(line, stockPending, req.getAuxQty());
+        }
+
+        line.setScannedQty(submitted.add(stockPending));
+        line.setScannedAuxQty(submittedAux.add(auxPending));
         line.setChecked(1);
+        if (!StringUtils.hasText(line.getScannedBarcode())) {
+            line.setScannedBarcode("MANUAL");
+        }
         line.setUpdateTime(LocalDateTime.now());
         lineMapper.updateById(line);
-        PdaReceiveScanSession session = requireSession(billType, billNo);
-        refreshSessionCounters(session);
-        session.setUpdateTime(LocalDateTime.now());
-        sessionMapper.updateById(session);
+        markQtyChanged(billType, billNo, session);
         return toLineVo(line);
+    }
+
+    private void applyAuxUnitFromKingdee(PdaReceiveScanLine line, KingdeeReceiveBillLineVo kdLine) {
+        if (line == null || kdLine == null) {
+            return;
+        }
+        String auxUnit = kdLine.getPriceUnitCode();
+        BigDecimal planAux = kdLine.getPriceUnitQty();
+        // 只要金蝶返回了库存单位 + 计价单位（无论是否相同）即启用双单位编辑
+        boolean multi = isMultiUnit(kdLine.getUnitCode(), auxUnit);
+        if (!multi) {
+            line.setAuxUnitCode(null);
+            line.setPlanAuxQty(null);
+            if (line.getScannedAuxQty() == null) {
+                line.setScannedAuxQty(BigDecimal.ZERO);
+            }
+            if (line.getSubmittedAuxQty() == null) {
+                line.setSubmittedAuxQty(BigDecimal.ZERO);
+            }
+            return;
+        }
+        line.setAuxUnitCode(auxUnit.trim());
+        // 计价数量缺失时：同单位可回落库存计划；异单位（如 PCS/KG）禁止 1:1，否则换算率错误
+        if (planAux == null || planAux.compareTo(BigDecimal.ZERO) <= 0) {
+            if (sameUnitCode(kdLine.getUnitCode(), auxUnit)) {
+                planAux = resolvePlanQty(kdLine);
+            } else {
+                log.warn("双单位缺计价数量，无法换算 bill={} material={} stockUnit={} priceUnit={}",
+                        line.getBillNo(), line.getMaterialCode(), kdLine.getUnitCode(), auxUnit);
+                line.setAuxUnitCode(null);
+                line.setPlanAuxQty(null);
+                return;
+            }
+        }
+        line.setPlanAuxQty(planAux);
+        if (line.getScannedAuxQty() == null) {
+            line.setScannedAuxQty(BigDecimal.ZERO);
+        }
+        if (line.getSubmittedAuxQty() == null) {
+            line.setSubmittedAuxQty(BigDecimal.ZERO);
+        }
+    }
+
+    /**
+     * 金蝶同时返回库存单位（FUnitID）与计价单位（FPriceUnitId）即视为双单位，
+     * 两单位相同或不同均展示双单位编辑。
+     */
+    private boolean isMultiUnit(String unitCode, String auxUnitCode) {
+        return StringUtils.hasText(unitCode) && StringUtils.hasText(auxUnitCode);
+    }
+
+    private boolean sameUnitCode(String left, String right) {
+        if (!StringUtils.hasText(left) || !StringUtils.hasText(right)) {
+            return false;
+        }
+        return left.trim().equalsIgnoreCase(right.trim());
+    }
+
+    private boolean isMultiUnit(PdaReceiveScanLine line) {
+        return line != null && isMultiUnit(line.getUnitCode(), line.getAuxUnitCode());
+    }
+
+    /**
+     * 主录件数、换算 KG：
+     * - 库存=KG、计价=PCS → 主录计价，换算库存 KG
+     * - 库存=PCS、计价=KG → 主录库存，换算计价 KG
+     * - 均非重量 → 默认主录计价，换算库存
+     */
+    private boolean isInputMapsToAux(PdaReceiveScanLine line) {
+        if (!isMultiUnit(line)) {
+            return false;
+        }
+        boolean stockIsWeight = isWeightUnit(line.getUnitCode());
+        boolean priceIsWeight = isWeightUnit(line.getAuxUnitCode());
+        if (stockIsWeight && !priceIsWeight) {
+            return true;
+        }
+        if (!stockIsWeight && priceIsWeight) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isWeightUnit(String unitCode) {
+        if (!StringUtils.hasText(unitCode)) {
+            return false;
+        }
+        String raw = unitCode.trim();
+        String u = raw.toUpperCase();
+        return "KG".equals(u)
+                || "KGS".equals(u)
+                || "KILOGRAM".equals(u)
+                || "千克".equals(raw)
+                || "公斤".equals(raw)
+                || "G".equals(u)
+                || "克".equals(raw)
+                || "T".equals(u)
+                || "吨".equals(raw)
+                || "斤".equals(raw);
+    }
+
+    /**
+     * 解析本次计价数量：优先用手输值；否则按计划换算率由库存数量推算。
+     */
+    private BigDecimal resolvePendingAuxQty(PdaReceiveScanLine line, BigDecimal pendingQty, BigDecimal requestedAuxQty) {
+        if (!isMultiUnit(line)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        BigDecimal planAux = nullSafe(line.getPlanAuxQty());
+        BigDecimal remainAux = planAux.subtract(submittedAux);
+        if (remainAux.compareTo(BigDecimal.ZERO) < 0) {
+            remainAux = BigDecimal.ZERO;
+        }
+        BigDecimal auxPending;
+        if (requestedAuxQty != null) {
+            if (requestedAuxQty.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "辅助单位数量不能为负");
+            }
+            auxPending = requestedAuxQty;
+        } else {
+            auxPending = convertByPlanRate(pendingQty, line.getPlanQty(), line.getPlanAuxQty());
+        }
+        if (auxPending.compareTo(remainAux) > 0) {
+            auxPending = remainAux;
+        }
+        return auxPending;
+    }
+
+    private BigDecimal convertByPlanRate(BigDecimal qty, BigDecimal planQty, BigDecimal planAuxQty) {
+        if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal plan = nullSafe(planQty);
+        BigDecimal planAux = nullSafe(planAuxQty);
+        if (plan.compareTo(BigDecimal.ZERO) <= 0 || planAux.compareTo(BigDecimal.ZERO) <= 0) {
+            return qty;
+        }
+        return qty.multiply(planAux).divide(plan, 6, java.math.RoundingMode.HALF_UP)
+                .stripTrailingZeros();
     }
 
     private PdaReceiveScanSession ensureSession(NoticeBillType billType, KingdeeReceiveBillVo bill) {
@@ -808,8 +1370,9 @@ public class PdaReceiveScanService {
             session.setSupplierCode(bill.getSupplierCode());
             session.setSupplierName(bill.getSupplierName());
             session.setBillDate(bill.getBillDate());
-            session.setWarehouseCode(StringUtils.hasText(bill.getWarehouseCode()) ? bill.getWarehouseCode() : "WH01");
-            session.setStatus("SCANNING");
+            session.setWarehouseCode(resolveSessionWarehouseCode(bill));
+            // 仅打开明细不视为扫码中；数量变更后再置为 SCANNING
+            session.setStatus("NEW");
             session.setTotalLines(bill.getLines() != null ? bill.getLines().size() : 0);
             session.setCheckedLines(0);
             session.setSubmittedLines(0);
@@ -841,6 +1404,13 @@ public class PdaReceiveScanService {
         return session;
     }
 
+    /** 会话仓库存 WMS 编码；金蝶仓编码会反查映射 */
+    private String resolveSessionWarehouseCode(KingdeeReceiveBillVo bill) {
+        String raw = bill != null ? bill.getWarehouseCode() : null;
+        String wms = erpWarehouseResolver.resolveWmsCode(raw);
+        return StringUtils.hasText(wms) ? wms : "WH01";
+    }
+
     private void syncLinesFromKingdee(PdaReceiveScanSession session, KingdeeReceiveBillVo bill) {
         if (bill.getLines() == null) {
             return;
@@ -867,6 +1437,8 @@ public class PdaReceiveScanService {
                 line.setScannedQty(BigDecimal.ZERO);
                 line.setSubmittedQty(BigDecimal.ZERO);
                 line.setUnitCode(kdLine.getUnitCode());
+                applyAuxUnitFromKingdee(line, kdLine);
+                refreshPlanQtyFromKingdee(line, kdLine);
                 line.setErpStockCode(kdLine.getStockWarehouseCode());
                 line.setCreateTime(LocalDateTime.now());
                 lineMapper.insert(line);
@@ -879,12 +1451,13 @@ public class PdaReceiveScanService {
                 } else if (BatchNoNormalizer.isMalformed(existing.getBatchNo())) {
                     existing.setBatchNo(null);
                 }
-                existing.setPlanQty(resolvePlanQty(kdLine));
                 existing.setUnitCode(kdLine.getUnitCode());
+                applyAuxUnitFromKingdee(existing, kdLine);
                 if (StringUtils.hasText(kdLine.getStockWarehouseCode())) {
                     existing.setErpStockCode(kdLine.getStockWarehouseCode());
                 }
-                reconcileSubmittedQtyFromKingdee(existing, kdLine);
+                // 按金蝶已入库量回写「已处理」，并刷新计划/可处理
+                refreshPlanQtyFromKingdee(existing, kdLine);
                 existing.setUpdateTime(LocalDateTime.now());
                 lineMapper.updateById(existing);
             }
@@ -895,35 +1468,246 @@ public class PdaReceiveScanService {
         sessionMapper.updateById(session);
     }
 
-    private void reconcileSubmittedQtyFromKingdee(PdaReceiveScanLine line, KingdeeReceiveBillLineVo kdLine) {
-        if (line == null || kdLine == null || kdLine.getInStockJoinBaseQty() == null) {
+    /**
+     * 金蝶有已入库量(FInStockJoinBaseQty)时，「已处理」写为该数量；
+     * 「计划」固定为金蝶应收/合格数，禁止用「已处理+剩余」叠加。
+     * <p>收料通知单用合格入库关联量；生产汇报用合格品入库选单量（FStockInSelQty）。
+     * <p>本地已处理大于金蝶时：仅存在 PENDING/SYNCING 同步才短暂保留；否则压回金蝶已入库
+     * （避免下推失败的数量一直占着已处理、并推高计划）。
+     */
+    private void refreshPlanQtyFromKingdee(PdaReceiveScanLine line, KingdeeReceiveBillLineVo kdLine) {
+        if (line == null || kdLine == null) {
             return;
         }
-        BigDecimal erpSubmitted = kdLine.getInStockJoinBaseQty();
-        if (erpSubmitted.compareTo(BigDecimal.ZERO) < 0) {
-            erpSubmitted = BigDecimal.ZERO;
+        if (!usesKingdeeInStockJoin(line.getBillType())) {
+            refreshPlanQtyWithoutInStockJoin(line, kdLine);
+            return;
         }
+        BigDecimal erpJoined = BigDecimal.ZERO;
+        if (kdLine.getInStockJoinBaseQty() != null) {
+            erpJoined = kdLine.getInStockJoinBaseQty();
+            if (erpJoined.compareTo(BigDecimal.ZERO) < 0) {
+                erpJoined = BigDecimal.ZERO;
+            }
+        }
+
+        BigDecimal basePlan = resolvePlanQty(kdLine);
+        if (basePlan.compareTo(BigDecimal.ZERO) <= 0 && erpJoined.compareTo(BigDecimal.ZERO) > 0) {
+            basePlan = erpJoined;
+        }
+        // 计划=金蝶应收，不再做 submitted + remain 叠加
+        line.setPlanQty(basePlan);
+
         BigDecimal wmsSubmitted = nullSafe(line.getSubmittedQty());
-        if (erpSubmitted.compareTo(wmsSubmitted) == 0) {
-            return;
+        BigDecimal successSum = sumSuccessfulInboundQty(line);
+        // 已处理 = 金蝶已入库 ∪ 本地已同步成功；失败批次不计入
+        BigDecimal nextSubmitted = erpJoined.max(successSum);
+        if (wmsSubmitted.compareTo(nextSubmitted) > 0 && hasInFlightErpSync(line)) {
+            // 刚提交尚未回写金蝶：短暂保留本地，避免可处理闪回导致重复提交
+            nextSubmitted = wmsSubmitted;
+        } else if (wmsSubmitted.compareTo(nextSubmitted) != 0) {
+            log.info("Sync submittedQty from Kingdee/success records: bill={} line={} material={} wms={} erp={} successSum={}",
+                    line.getBillNo(), line.getLineNo(), line.getMaterialCode(),
+                    wmsSubmitted.stripTrailingZeros().toPlainString(),
+                    erpJoined.stripTrailingZeros().toPlainString(),
+                    successSum.stripTrailingZeros().toPlainString());
         }
-        log.info("Reconcile submittedQty from Kingdee receive bill: bill={} line={} material={} wms={} erp={}",
-                line.getBillNo(), line.getLineNo(), line.getMaterialCode(),
-                wmsSubmitted.stripTrailingZeros().toPlainString(),
-                erpSubmitted.stripTrailingZeros().toPlainString());
-        line.setSubmittedQty(erpSubmitted);
-        // 金蝶已入库量减少时，同步压低本次待提交量，避免显示可领数量异常
-        if (nullSafe(line.getScannedQty()).compareTo(erpSubmitted) < 0) {
-            line.setScannedQty(erpSubmitted);
-        }
-        if (erpSubmitted.compareTo(BigDecimal.ZERO) <= 0) {
+        line.setSubmittedQty(nextSubmitted);
+        wmsSubmitted = nextSubmitted;
+        if (erpJoined.compareTo(BigDecimal.ZERO) <= 0
+                && nullSafe(line.getScannedQty()).compareTo(BigDecimal.ZERO) <= 0) {
             line.setChecked(0);
         }
+
+        BigDecimal scanned = nullSafe(line.getScannedQty());
+        if (scanned.compareTo(wmsSubmitted) < 0) {
+            line.setScannedQty(wmsSubmitted);
+        } else if (wmsSubmitted.compareTo(BigDecimal.ZERO) > 0 && scanned.compareTo(basePlan) > 0) {
+            line.setScannedQty(basePlan);
+        }
+
+        if (!isMultiUnit(line)) {
+            return;
+        }
+        BigDecimal basePlanAux = kdLine.getPriceUnitQty();
+        if (basePlanAux == null || basePlanAux.compareTo(BigDecimal.ZERO) <= 0) {
+            basePlanAux = basePlan.compareTo(BigDecimal.ZERO) > 0 ? basePlan : nullSafe(line.getPlanAuxQty());
+        }
+        line.setPlanAuxQty(basePlanAux);
+
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        BigDecimal successAuxSum = sumSuccessfulInboundAuxQty(line);
+        BigDecimal planForRate = resolvePlanQty(kdLine);
+        if (planForRate.compareTo(BigDecimal.ZERO) <= 0) {
+            planForRate = basePlan;
+        }
+        if (!hasInFlightErpSync(line)
+                && planForRate.compareTo(BigDecimal.ZERO) > 0
+                && basePlanAux.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal fromStock = convertByPlanRate(wmsSubmitted, planForRate, basePlanAux);
+            submittedAux = fromStock.max(successAuxSum);
+            line.setSubmittedAuxQty(submittedAux);
+        } else if (submittedAux.compareTo(basePlanAux) > 0) {
+            submittedAux = basePlanAux;
+            line.setSubmittedAuxQty(submittedAux);
+        }
+
+        BigDecimal scannedAux = nullSafe(line.getScannedAuxQty());
+        if (scannedAux.compareTo(submittedAux) < 0) {
+            line.setScannedAuxQty(submittedAux);
+        } else if (submittedAux.compareTo(BigDecimal.ZERO) > 0 && scannedAux.compareTo(basePlanAux) > 0) {
+            line.setScannedAuxQty(basePlanAux);
+        }
+    }
+
+    /** 该行是否存在尚未结束的金蝶入库同步（失败不算在途）。 */
+    private boolean hasInFlightErpSync(PdaReceiveScanLine line) {
+        if (line == null || line.getLineNo() == null || !StringUtils.hasText(line.getBillNo())) {
+            return false;
+        }
+        Long count = inboundRecordMapper.selectCount(new LambdaQueryWrapper<PdaInboundRecord>()
+                .eq(PdaInboundRecord::getSourceBillNo, line.getBillNo())
+                .eq(PdaInboundRecord::getSourceLineNo, line.getLineNo())
+                .in(PdaInboundRecord::getErpSyncStatus, "PENDING", "SYNCING")
+                .eq(PdaInboundRecord::getDeleted, 0));
+        return count != null && count > 0;
+    }
+
+    /** 已成功同步到金蝶的入库数量合计（失败批次不计入已处理）。 */
+    private BigDecimal sumSuccessfulInboundQty(PdaReceiveScanLine line) {
+        if (line == null || line.getLineNo() == null || !StringUtils.hasText(line.getBillNo())) {
+            return BigDecimal.ZERO;
+        }
+        List<PdaInboundRecord> rows = inboundRecordMapper.selectList(new LambdaQueryWrapper<PdaInboundRecord>()
+                .eq(PdaInboundRecord::getSourceBillNo, line.getBillNo())
+                .eq(PdaInboundRecord::getSourceLineNo, line.getLineNo())
+                .eq(PdaInboundRecord::getErpSyncStatus, "SUCCESS")
+                .eq(PdaInboundRecord::getDeleted, 0));
+        BigDecimal sum = BigDecimal.ZERO;
+        for (PdaInboundRecord row : rows) {
+            if (row.getQuantity() != null) {
+                sum = sum.add(row.getQuantity());
+            }
+        }
+        return sum;
+    }
+
+    private BigDecimal sumSuccessfulInboundAuxQty(PdaReceiveScanLine line) {
+        if (line == null || line.getLineNo() == null || !StringUtils.hasText(line.getBillNo())) {
+            return BigDecimal.ZERO;
+        }
+        List<PdaInboundRecord> rows = inboundRecordMapper.selectList(new LambdaQueryWrapper<PdaInboundRecord>()
+                .eq(PdaInboundRecord::getSourceBillNo, line.getBillNo())
+                .eq(PdaInboundRecord::getSourceLineNo, line.getLineNo())
+                .eq(PdaInboundRecord::getErpSyncStatus, "SUCCESS")
+                .eq(PdaInboundRecord::getDeleted, 0));
+        BigDecimal sum = BigDecimal.ZERO;
+        for (PdaInboundRecord row : rows) {
+            if (row.getAuxQuantity() != null) {
+                sum = sum.add(row.getAuxQuantity());
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * 收料通知单才用金蝶「合格入库关联量」回写已处理；采购退料/领退料等实退(发)数量不是已处理。
+     */
+    private boolean usesKingdeeInStockJoin(String billTypeCode) {
+        return NoticeBillType.PURCHASE_RECEIVE.getCode().equals(billTypeCode)
+                || NoticeBillType.PRODUCTION_IN.getCode().equals(billTypeCode);
+    }
+
+    /**
+     * 非收料入库单据：计划=金蝶实退/实发等数量；已处理仅保留本地扫码提交，并纠偏误把计划写成已处理的脏数据。
+     */
+    private void refreshPlanQtyWithoutInStockJoin(PdaReceiveScanLine line, KingdeeReceiveBillLineVo kdLine) {
+        BigDecimal erpPlan = resolvePlanQty(kdLine);
+        BigDecimal localPlan = nullSafe(line.getPlanQty());
+        BigDecimal submitted = nullSafe(line.getSubmittedQty());
+        // 分批回写后金蝶实退会变小/变大；已开始提交时不要把本地计划压成当前实退，否则无法继续扫第二批
+        BigDecimal plan = erpPlan;
+        if (submitted.compareTo(BigDecimal.ZERO) > 0 && localPlan.compareTo(erpPlan) > 0) {
+            plan = localPlan;
+        }
+        line.setPlanQty(plan);
+
+        BigDecimal scanned = nullSafe(line.getScannedQty());
+        // 尚未扫码却「已处理=计划」：上次误把 FRMREALQTY 当 FInStockJoin，清零以便可录入
+        if (scanned.compareTo(BigDecimal.ZERO) <= 0
+                && submitted.compareTo(BigDecimal.ZERO) > 0
+                && submitted.compareTo(plan) == 0) {
+            log.info("Reset false submittedQty for non-receive bill: billType={} bill={} line={} material={} qty={}",
+                    line.getBillType(), line.getBillNo(), line.getLineNo(), line.getMaterialCode(),
+                    submitted.stripTrailingZeros().toPlainString());
+            submitted = BigDecimal.ZERO;
+            line.setSubmittedQty(submitted);
+            line.setChecked(0);
+        }
+        if (scanned.compareTo(submitted) < 0) {
+            line.setScannedQty(submitted);
+        } else if (scanned.compareTo(plan) > 0) {
+            line.setScannedQty(plan);
+        }
+
+        if (!isMultiUnit(line)) {
+            return;
+        }
+        BigDecimal planAux = kdLine.getPriceUnitQty();
+        if (planAux == null || planAux.compareTo(BigDecimal.ZERO) <= 0) {
+            if (sameUnitCode(line.getUnitCode(), line.getAuxUnitCode())) {
+                planAux = plan;
+            } else if (isMultiUnit(line)) {
+                // 保留原 planAux，避免异单位被重置成 1:1
+                planAux = nullSafe(line.getPlanAuxQty());
+                if (planAux.compareTo(BigDecimal.ZERO) <= 0) {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        line.setPlanAuxQty(planAux);
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        BigDecimal scannedAux = nullSafe(line.getScannedAuxQty());
+        if (scannedAux.compareTo(BigDecimal.ZERO) <= 0
+                && submittedAux.compareTo(BigDecimal.ZERO) > 0
+                && submittedAux.compareTo(planAux) == 0) {
+            submittedAux = BigDecimal.ZERO;
+            line.setSubmittedAuxQty(submittedAux);
+        }
+        if (scannedAux.compareTo(submittedAux) < 0) {
+            line.setScannedAuxQty(submittedAux);
+        } else if (scannedAux.compareTo(planAux) > 0) {
+            line.setScannedAuxQty(planAux);
+        }
+    }
+
+    private boolean hasPendingSubmitQty(PdaReceiveScanLine line) {
+        if (line == null) {
+            return false;
+        }
+        BigDecimal pending = nullSafe(line.getScannedQty()).subtract(nullSafe(line.getSubmittedQty()));
+        if (pending.compareTo(BigDecimal.ZERO) > 0) {
+            return true;
+        }
+        if (!isMultiUnit(line)) {
+            return false;
+        }
+        BigDecimal pendingAux = nullSafe(line.getScannedAuxQty()).subtract(nullSafe(line.getSubmittedAuxQty()));
+        return pendingAux.compareTo(BigDecimal.ZERO) > 0;
     }
 
     private void refreshSessionCounters(PdaReceiveScanSession session) {
         List<PdaReceiveScanLine> lines = loadLines(
                 NoticeBillType.fromCode(session.getBillType()), session.getBillNo());
+        refreshSessionCounters(session, lines);
+    }
+
+    private void refreshSessionCounters(PdaReceiveScanSession session, List<PdaReceiveScanLine> lines) {
+        if (lines == null) {
+            lines = List.of();
+        }
         int checked = (int) lines.stream().filter(l -> l.getChecked() != null && l.getChecked() == 1).count();
         int submitted = (int) lines.stream()
                 .filter(l -> nullSafe(l.getSubmittedQty()).compareTo(nullSafe(l.getPlanQty())) >= 0
@@ -932,13 +1716,175 @@ public class PdaReceiveScanService {
         session.setCheckedLines(checked);
         session.setSubmittedLines(submitted);
         session.setTotalLines(lines.size());
-        if (submitted >= lines.size() && !lines.isEmpty()) {
+        boolean hasSubmittedQty = lines.stream()
+                .anyMatch(l -> nullSafe(l.getSubmittedQty()).compareTo(BigDecimal.ZERO) > 0
+                        || nullSafe(l.getSubmittedAuxQty()).compareTo(BigDecimal.ZERO) > 0);
+        boolean hasPendingQty = lines.stream().anyMatch(l -> {
+            BigDecimal pending = nullSafe(l.getScannedQty()).subtract(nullSafe(l.getSubmittedQty()));
+            BigDecimal pendingAux = nullSafe(l.getScannedAuxQty()).subtract(nullSafe(l.getSubmittedAuxQty()));
+            return pending.compareTo(BigDecimal.ZERO) > 0 || pendingAux.compareTo(BigDecimal.ZERO) > 0;
+        });
+        boolean noProcessableRemain = !lines.isEmpty()
+                && lines.stream().allMatch(this::isLineFullyProcessed);
+        // 可处理全 0 → 已完成（列表不展示）；有余量时才保留扫码中
+        if (noProcessableRemain || (submitted > 0 && submitted >= lines.size())) {
+            // 完结时压平无效待提交草稿，避免可处理=0 仍显示可改
+            for (PdaReceiveScanLine line : lines) {
+                clampPendingToSubmitted(line);
+            }
             session.setStatus("COMPLETED");
-        } else if (submitted > 0 || lines.stream().anyMatch(l -> nullSafe(l.getSubmittedQty()).compareTo(BigDecimal.ZERO) > 0)) {
-            session.setStatus("PARTIAL_SUBMITTED");
+        } else if (hasPendingQty || hasSubmittedQty) {
+            session.setStatus("SCANNING");
         } else {
+            session.setStatus("NEW");
+        }
+    }
+
+    /** 可处理为 0 时将 scanned 压到 submitted，清除无法提交的草稿 */
+    private void clampPendingToSubmitted(PdaReceiveScanLine line) {
+        if (line == null || hasProcessableRemain(line)) {
+            return;
+        }
+        BigDecimal submitted = nullSafe(line.getSubmittedQty());
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        boolean changed = false;
+        if (nullSafe(line.getScannedQty()).compareTo(submitted) != 0) {
+            line.setScannedQty(submitted);
+            changed = true;
+        }
+        if (nullSafe(line.getScannedAuxQty()).compareTo(submittedAux) != 0) {
+            line.setScannedAuxQty(submittedAux);
+            changed = true;
+        }
+        if (changed) {
+            line.setUpdateTime(LocalDateTime.now());
+            lineMapper.updateById(line);
+        }
+    }
+
+    /** 行是否仍有可处理数量（计划-已提交；双单位任一侧有余量即视为可处理） */
+    private boolean hasProcessableRemain(PdaReceiveScanLine line) {
+        if (line == null) {
+            return false;
+        }
+        BigDecimal plan = nullSafe(line.getPlanQty());
+        BigDecimal submitted = nullSafe(line.getSubmittedQty());
+        BigDecimal remain = plan.subtract(submitted);
+        if (remain.compareTo(BigDecimal.ZERO) > 0) {
+            return true;
+        }
+        if (isMultiUnit(line)) {
+            BigDecimal remainAux = nullSafe(line.getPlanAuxQty()).subtract(nullSafe(line.getSubmittedAuxQty()));
+            if (remainAux.compareTo(BigDecimal.ZERO) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 是否明确已处理满：有计划或已处理量，且可处理余量为 0。
+     * 计划与已处理均为 0 时不算完结（避免未同步明细被误剔出列表）。
+     */
+    private boolean isLineFullyProcessed(PdaReceiveScanLine line) {
+        if (line == null) {
+            return false;
+        }
+        BigDecimal plan = nullSafe(line.getPlanQty());
+        BigDecimal submitted = nullSafe(line.getSubmittedQty());
+        BigDecimal planAux = nullSafe(line.getPlanAuxQty());
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        boolean hasQtyBasis = plan.compareTo(BigDecimal.ZERO) > 0
+                || submitted.compareTo(BigDecimal.ZERO) > 0
+                || planAux.compareTo(BigDecimal.ZERO) > 0
+                || submittedAux.compareTo(BigDecimal.ZERO) > 0;
+        return hasQtyBasis && !hasProcessableRemain(line);
+    }
+
+    private void reconcileSessionStatuses(Collection<PdaReceiveScanSession> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+        for (PdaReceiveScanSession session : sessions) {
+            reconcileSessionStatus(session, null);
+        }
+    }
+
+    /**
+     * 短缓存列表再按会话状态过滤，避免完结后仍短暂出现在列表。
+     */
+    private List<ReceiveNoticeListItemVo> filterVisibleByLatestSession(
+            NoticeBillType billType, List<ReceiveNoticeListItemVo> visible) {
+        if (visible == null || visible.isEmpty()) {
+            return visible == null ? List.of() : visible;
+        }
+        List<String> billNos = visible.stream()
+                .map(ReceiveNoticeListItemVo::getBillNo)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, PdaReceiveScanSession> sessionMap = loadSessions(billType, billNos);
+        reconcileSessionStatuses(sessionMap.values());
+        return visible.stream()
+                .filter(v -> {
+                    if (v == null || !StringUtils.hasText(v.getBillNo())) {
+                        return false;
+                    }
+                    PdaReceiveScanSession session = sessionMap.get(v.getBillNo().trim());
+                    if (session == null) {
+                        return !isSessionFinished(v.getScanStatus());
+                    }
+                    return !isSessionFinished(session.getStatus());
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 按行数量重算状态：有提交量或可处理全 0 → 已完成；仅有待提交量 → 扫码中。
+     */
+    private void reconcileSessionStatus(PdaReceiveScanSession session, List<PdaReceiveScanLine> lines) {
+        if (session == null) {
+            return;
+        }
+        String before = session.getStatus();
+        if (lines == null) {
+            refreshSessionCounters(session);
+        } else {
+            refreshSessionCounters(session, lines);
+        }
+        if (!Objects.equals(before, session.getStatus())) {
+            session.setUpdateTime(LocalDateTime.now());
+            sessionMapper.updateById(session);
+            NoticeBillType billType = NoticeBillType.fromCode(session.getBillType());
+            if (billType != null) {
+                evictListCaches(billType);
+            }
+        }
+    }
+
+    /** 已完结会话：含历史 PARTIAL_SUBMITTED，列表不再展示 */
+    private static boolean isSessionFinished(String status) {
+        return "COMPLETED".equals(status) || "PARTIAL_SUBMITTED".equals(status);
+    }
+
+    /** 数量变更后失效列表缓存，保证列表及时显示「扫码中」 */
+    private void markQtyChanged(NoticeBillType billType, String billNo, PdaReceiveScanSession session) {
+        refreshSessionCounters(session);
+        // 仅未提交完结时：待收料 → 扫码中
+        if ("NEW".equals(session.getStatus())) {
             session.setStatus("SCANNING");
         }
+        session.setUpdateTime(LocalDateTime.now());
+        sessionMapper.updateById(session);
+        evictListCaches(billType);
+    }
+
+    private void evictListCaches(NoticeBillType billType) {
+        if (billType == null) {
+            return;
+        }
+        pdaShortCache.evictByPrefix("list:" + billType.getCode() + ":");
     }
 
     private ReceiveNoticeDetailVo buildDetail(KingdeeReceiveBillVo bill, PdaReceiveScanSession session,
@@ -963,6 +1909,11 @@ public class PdaReceiveScanService {
         vo.setTotalLines(session != null ? session.getTotalLines() : lines.size());
         vo.setCheckedLines(session != null ? session.getCheckedLines() : 0);
         vo.setSubmittedLines(session != null ? session.getSubmittedLines() : 0);
+        if (lines != null) {
+            for (PdaReceiveScanLine line : lines) {
+                repairDualUnitPending(line);
+            }
+        }
         vo.setLines(lines.stream().map(this::toLineVo).collect(Collectors.toList()));
         enrichLatestErpInfo(vo);
         return vo;
@@ -1011,6 +1962,32 @@ public class PdaReceiveScanService {
         }
     }
 
+    private void enrichLockInfo(NoticeBillType billType, List<ReceiveNoticeListItemVo> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<String> billNos = items.stream()
+                .map(ReceiveNoticeListItemVo::getBillNo)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, PdaBillLock> locks = billLockService.findActiveLocks(billType.getCode(), billNos);
+        for (ReceiveNoticeListItemVo item : items) {
+            if (item == null || !StringUtils.hasText(item.getBillNo())) {
+                continue;
+            }
+            PdaBillLock lock = locks.get(item.getBillNo().trim());
+            if (lock != null) {
+                item.setLocked(true);
+                item.setLockUserName(lock.getLockUserName());
+            } else {
+                item.setLocked(false);
+                item.setLockUserName(null);
+            }
+        }
+    }
+
     private ReceiveNoticeListItemVo toListItem(KingdeeReceiveBillVo bill, PdaReceiveScanSession session,
                                                NoticeBillType billType) {
         ReceiveNoticeListItemVo vo = new ReceiveNoticeListItemVo();
@@ -1027,7 +2004,7 @@ public class PdaReceiveScanService {
             vo.setTotalLines(resolveTotalLines(bill, session));
             vo.setCheckedLines(session.getCheckedLines());
             vo.setSubmittedLines(session.getSubmittedLines());
-            vo.setInProgress(!"COMPLETED".equals(session.getStatus()));
+            vo.setInProgress("SCANNING".equals(session.getStatus()));
             vo.setPendingLines(Math.max(0, vo.getTotalLines() - session.getSubmittedLines()));
         } else {
             vo.setScanStatus("NEW");
@@ -1053,6 +2030,48 @@ public class PdaReceiveScanService {
         return 0;
     }
 
+    /** 扫码中双单位待提交量两侧对齐并落库，保证重新进入后可编辑展示 */
+    private boolean repairDualUnitPending(PdaReceiveScanLine line) {
+        if (line == null || !isMultiUnit(line)) {
+            return false;
+        }
+        BigDecimal submitted = nullSafe(line.getSubmittedQty());
+        BigDecimal scanned = nullSafe(line.getScannedQty());
+        if (scanned.compareTo(submitted) < 0) {
+            scanned = submitted;
+        }
+        BigDecimal pending = scanned.subtract(submitted);
+        BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+        BigDecimal scannedAux = nullSafe(line.getScannedAuxQty());
+        if (scannedAux.compareTo(submittedAux) < 0) {
+            scannedAux = submittedAux;
+        }
+        BigDecimal pendingAux = scannedAux.subtract(submittedAux);
+        boolean changed = false;
+        if (isInputMapsToAux(line)) {
+            if (pending.compareTo(BigDecimal.ZERO) > 0 && pendingAux.compareTo(BigDecimal.ZERO) <= 0) {
+                pendingAux = convertByPlanRate(pending, line.getPlanQty(), line.getPlanAuxQty());
+                scannedAux = submittedAux.add(pendingAux);
+                changed = true;
+            } else if (pendingAux.compareTo(BigDecimal.ZERO) > 0 && pending.compareTo(BigDecimal.ZERO) <= 0) {
+                pending = convertByPlanRate(pendingAux, line.getPlanAuxQty(), line.getPlanQty());
+                scanned = submitted.add(pending);
+                changed = true;
+            }
+        } else if (pending.compareTo(BigDecimal.ZERO) > 0 && pendingAux.compareTo(BigDecimal.ZERO) <= 0) {
+            pendingAux = convertByPlanRate(pending, line.getPlanQty(), line.getPlanAuxQty());
+            scannedAux = submittedAux.add(pendingAux);
+            changed = true;
+        }
+        if (changed) {
+            line.setScannedQty(scanned);
+            line.setScannedAuxQty(scannedAux);
+            line.setUpdateTime(LocalDateTime.now());
+            lineMapper.updateById(line);
+        }
+        return changed;
+    }
+
     private ReceiveNoticeLineVo toLineVo(PdaReceiveScanLine line) {
         ReceiveNoticeLineVo vo = new ReceiveNoticeLineVo();
         vo.setLineNo(line.getLineNo());
@@ -1061,6 +2080,7 @@ public class PdaReceiveScanService {
         vo.setSpecification(line.getSpecification());
         vo.setBatchNo(line.getBatchNo());
         vo.setUnitCode(line.getUnitCode());
+        vo.setAuxUnitCode(line.getAuxUnitCode());
         vo.setErpStockCode(line.getErpStockCode());
         vo.setPlanQty(line.getPlanQty());
         BigDecimal submitted = nullSafe(line.getSubmittedQty());
@@ -1073,6 +2093,64 @@ public class PdaReceiveScanService {
         BigDecimal pending = scanned.subtract(submitted);
         vo.setPendingSubmitQty(pending.compareTo(BigDecimal.ZERO) > 0 ? pending : BigDecimal.ZERO);
         vo.setRemainQty(nullSafe(line.getPlanQty()).subtract(submitted));
+
+        boolean multi = isMultiUnit(line);
+        vo.setMultiUnit(multi);
+        if (multi) {
+            // 主录件数侧，自动换算到 KG 侧
+            boolean inputMapsToAux = isInputMapsToAux(line);
+            vo.setInputMapsToAux(inputMapsToAux);
+            vo.setInputUnitCode(inputMapsToAux ? line.getAuxUnitCode() : line.getUnitCode());
+            vo.setAutoUnitCode(inputMapsToAux ? line.getUnitCode() : line.getAuxUnitCode());
+            vo.setPlanAuxQty(line.getPlanAuxQty());
+            BigDecimal submittedAux = nullSafe(line.getSubmittedAuxQty());
+            BigDecimal scannedAux = nullSafe(line.getScannedAuxQty());
+            if (scannedAux.compareTo(submittedAux) < 0) {
+                scannedAux = submittedAux;
+            }
+            // 扫码中旧数据：仅有库存待提交、无计价待提交时，按计划比例回填，保证可编辑展示
+            BigDecimal pendingAux = scannedAux.subtract(submittedAux);
+            if (pending.compareTo(BigDecimal.ZERO) > 0 && pendingAux.compareTo(BigDecimal.ZERO) <= 0) {
+                pendingAux = convertByPlanRate(pending, line.getPlanQty(), line.getPlanAuxQty());
+                scannedAux = submittedAux.add(pendingAux);
+            } else if (pendingAux.compareTo(BigDecimal.ZERO) > 0 && pending.compareTo(BigDecimal.ZERO) <= 0
+                    && inputMapsToAux) {
+                pending = convertByPlanRate(pendingAux, line.getPlanAuxQty(), line.getPlanQty());
+                scanned = submitted.add(pending);
+                vo.setScannedQty(scanned);
+                vo.setPendingSubmitQty(pending.compareTo(BigDecimal.ZERO) > 0 ? pending : BigDecimal.ZERO);
+                vo.setRemainQty(nullSafe(line.getPlanQty()).subtract(submitted));
+            }
+            vo.setScannedAuxQty(scannedAux);
+            vo.setSubmittedAuxQty(submittedAux);
+            vo.setPendingSubmitAuxQty(pendingAux.compareTo(BigDecimal.ZERO) > 0 ? pendingAux : BigDecimal.ZERO);
+            BigDecimal remainQty = nullSafe(line.getPlanQty()).subtract(submitted);
+            if (remainQty.compareTo(BigDecimal.ZERO) < 0) {
+                remainQty = BigDecimal.ZERO;
+            }
+            vo.setRemainQty(remainQty);
+            BigDecimal remainAux = nullSafe(line.getPlanAuxQty()).subtract(submittedAux);
+            if (remainAux.compareTo(BigDecimal.ZERO) < 0) {
+                remainAux = BigDecimal.ZERO;
+            }
+            // 主录件数时以副单位可处理为准，不因库存可处理为 0 强行清零副单位余量
+            if (!inputMapsToAux && remainQty.compareTo(BigDecimal.ZERO) <= 0) {
+                remainAux = BigDecimal.ZERO;
+            } else if (remainQty.compareTo(BigDecimal.ZERO) > 0
+                    && nullSafe(line.getPlanQty()).compareTo(BigDecimal.ZERO) > 0
+                    && nullSafe(line.getPlanAuxQty()).compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal remainAuxByStock = convertByPlanRate(remainQty, line.getPlanQty(), line.getPlanAuxQty());
+                if (remainAux.compareTo(remainAuxByStock) > 0) {
+                    remainAux = remainAuxByStock;
+                }
+            }
+            vo.setRemainAuxQty(remainAux);
+        } else {
+            vo.setInputMapsToAux(false);
+            vo.setInputUnitCode(line.getUnitCode());
+            vo.setAutoUnitCode(null);
+        }
+
         vo.setChecked(line.getChecked() != null && line.getChecked() == 1);
         vo.setScannedBarcode(line.getScannedBarcode());
         vo.setLastScanTime(line.getLastScanTime());
@@ -1272,31 +2350,116 @@ public class PdaReceiveScanService {
     private String resolveLocation(NoticeBillType billType, String warehouse, PdaReceiveScanLine line,
                                    String batchNoMat, boolean autoAllocate, String requestedLocation) {
         if (billType.getDirection().isInbound()) {
+            return resolveInboundLocationCode(
+                    warehouse, line.getMaterialCode(), batchNoMat, autoAllocate, requestedLocation);
+        }
+        Inventory stock = resolveOutboundStock(warehouse, line, null, batchNoMat, requestedLocation);
+        return stock.getLocationCode() != null ? stock.getLocationCode() : "";
+    }
+
+    /**
+     * 入库库位：自动分配 / 手动指定 / 不选（空串，仅仓库维度）。
+     */
+    private String resolveInboundLocationCode(String warehouse, String materialCode, String batchNo,
+                                              boolean autoAllocate, String requestedLocation) {
+        if (!StringUtils.hasText(warehouse)) {
             return "";
         }
-        if (StringUtils.hasText(requestedLocation)) {
-            return requestedLocation;
+        try {
+            if (autoAllocate) {
+                String code = locationAllocationService.resolveInboundLocation(
+                        warehouse.trim(), materialCode, batchNo, null);
+                return code != null ? code : "";
+            }
+            if (StringUtils.hasText(requestedLocation)) {
+                return locationAllocationService.resolveInboundLocation(
+                        warehouse.trim(), materialCode, batchNo, requestedLocation.trim());
+            }
+        } catch (BusinessException ex) {
+            // 手动指定无效库位时明确失败；自动分配失败则降级为仅仓库
+            if (!autoAllocate && StringUtils.hasText(requestedLocation)) {
+                throw ex;
+            }
+            log.warn("入库库位分配失败，降级为仅仓库 warehouse={} material={} msg={}",
+                    warehouse, materialCode, ex.getMessage());
         }
-        Inventory stock = inventoryMapper.selectOne(new LambdaQueryWrapper<Inventory>()
-                .eq(Inventory::getWarehouseCode, warehouse)
-                .eq(Inventory::getMaterialCode, line.getMaterialCode())
-                .eq(Inventory::getBatchNo, batchNoMat)
+        return "";
+    }
+
+    /**
+     * 解析出库扣减用的库存行：金蝶仓→WMS 仓映射，批号放宽，全仓兜底；库位允许为空。
+     */
+    private Inventory resolveOutboundStock(String sessionWarehouse, PdaReceiveScanLine line,
+                                           KingdeeReceiveBillLineVo kdLine, String batchNoMat,
+                                           String requestedLocation) {
+        if (StringUtils.hasText(requestedLocation) && StringUtils.hasText(sessionWarehouse)) {
+            Inventory exact = inventoryMapper.selectByKey(
+                    sessionWarehouse.trim(), requestedLocation.trim(), line.getMaterialCode(),
+                    batchNoMat != null ? batchNoMat : "");
+            if (exact != null && exact.getAvailableQty() != null
+                    && exact.getAvailableQty().compareTo(BigDecimal.ZERO) > 0) {
+                return exact;
+            }
+        }
+        String preferredWms = resolveOutboundWmsWarehouse(sessionWarehouse, line, kdLine);
+        Inventory stock = findOutboundStock(preferredWms, line.getMaterialCode(), batchNoMat);
+        if (stock == null && StringUtils.hasText(preferredWms)) {
+            stock = findOutboundStock(preferredWms, line.getMaterialCode(), null);
+        }
+        if (stock == null) {
+            stock = findOutboundStock(null, line.getMaterialCode(), batchNoMat);
+        }
+        if (stock == null) {
+            stock = findOutboundStock(null, line.getMaterialCode(), null);
+        }
+        if (stock != null) {
+            return stock;
+        }
+        throw new BusinessException(ErrorCode.CONFLICT,
+                "未找到可出库库存: " + line.getMaterialCode()
+                        + (StringUtils.hasText(preferredWms) ? "（仓库 " + preferredWms + "）" : ""),
+                "NO_STOCK");
+    }
+
+    private Inventory findOutboundStock(String warehouse, String materialCode, String batchNo) {
+        if (!StringUtils.hasText(materialCode)) {
+            return null;
+        }
+        LambdaQueryWrapper<Inventory> q = new LambdaQueryWrapper<Inventory>()
+                .eq(Inventory::getMaterialCode, materialCode)
                 .gt(Inventory::getAvailableQty, BigDecimal.ZERO)
                 .orderByDesc(Inventory::getAvailableQty)
-                .last("OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY"));
-        if (stock != null && StringUtils.hasText(stock.getLocationCode())) {
-            return stock.getLocationCode();
+                .last("OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY");
+        if (StringUtils.hasText(warehouse)) {
+            q.eq(Inventory::getWarehouseCode, warehouse.trim());
         }
-        stock = inventoryMapper.selectOne(new LambdaQueryWrapper<Inventory>()
-                .eq(Inventory::getWarehouseCode, warehouse)
-                .eq(Inventory::getMaterialCode, line.getMaterialCode())
-                .gt(Inventory::getAvailableQty, BigDecimal.ZERO)
-                .orderByDesc(Inventory::getAvailableQty)
-                .last("OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY"));
-        if (stock != null && StringUtils.hasText(stock.getLocationCode())) {
-            return stock.getLocationCode();
+        if (batchNo != null) {
+            q.eq(Inventory::getBatchNo, batchNo);
         }
-        throw new BusinessException(ErrorCode.CONFLICT, "未找到可出库库存: " + line.getMaterialCode(), "NO_STOCK");
+        return inventoryMapper.selectOne(q);
+    }
+
+    /**
+     * 出库扣库存使用 WMS 仓库编码：金蝶 FStockId / 会话仓 → 反查 WMS；必要时按物料有货仓库兜底。
+     */
+    private String resolveOutboundWmsWarehouse(String sessionWarehouse, PdaReceiveScanLine line,
+                                               KingdeeReceiveBillLineVo kdLine) {
+        String erpOrSession = firstNonBlank(
+                line != null ? line.getErpStockCode() : null,
+                kdLine != null ? kdLine.getStockWarehouseCode() : null,
+                sessionWarehouse);
+        String wms = erpWarehouseResolver.resolveWmsCode(erpOrSession);
+        if (StringUtils.hasText(wms)) {
+            Inventory hit = findOutboundStock(wms, line.getMaterialCode(), null);
+            if (hit != null) {
+                return wms;
+            }
+        }
+        Inventory any = findOutboundStock(null, line.getMaterialCode(), null);
+        if (any != null && StringUtils.hasText(any.getWarehouseCode())) {
+            return any.getWarehouseCode();
+        }
+        return firstNonBlank(wms, sessionWarehouse, "WH01");
     }
 
     private void validateInboundQtyAgainstKingdee(List<PdaReceiveScanLine> lines, KingdeeReceiveBillVo kdBill) {
@@ -1308,11 +2471,15 @@ public class PdaReceiveScanService {
             KingdeeReceiveBillLineVo kdLine = findKdLine(kdBill, line);
             BigDecimal remain = resolveKingdeeRemainInStock(kdLine);
             if (remain != null && qty.compareTo(remain) > 0) {
+                boolean productionReport = NoticeBillType.PRODUCTION_IN.getCode()
+                        .equalsIgnoreCase(line.getBillType());
+                String billLabel = productionReport ? "生产汇报单剩余可入库" : "收料单剩余可入库";
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        String.format("第%d行「%s」本次入库 %s 超过收料单剩余可入库 %s",
+                        String.format("第%d行「%s」本次入库 %s 超过%s %s",
                                 line.getLineNo(),
                                 firstNonBlank(line.getMaterialName(), line.getMaterialCode()),
                                 qty.stripTrailingZeros().toPlainString(),
+                                billLabel,
                                 remain.stripTrailingZeros().toPlainString()),
                         "ERP_IN_STOCK_QTY_EXCEEDED");
             }
@@ -1323,17 +2490,11 @@ public class PdaReceiveScanService {
         if (kdLine == null) {
             return null;
         }
-        if (kdLine.getRemainInStockBaseQty() != null
-                && kdLine.getRemainInStockBaseQty().compareTo(BigDecimal.ZERO) >= 0) {
-            return kdLine.getRemainInStockBaseQty();
-        }
-        BigDecimal qualified = nullSafe(kdLine.getQualifiedQty());
-        BigDecimal joined = nullSafe(kdLine.getInStockJoinBaseQty());
-        if (qualified.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal remain = qualified.subtract(joined);
-            return remain.compareTo(BigDecimal.ZERO) > 0 ? remain : BigDecimal.ZERO;
-        }
-        return null;
+        return KingdeeReceiveRemainQty.resolve(
+                kdLine.getRemainInStockBaseQty(),
+                kdLine.getQualifiedQty(),
+                kdLine.getPlanQty(),
+                kdLine.getInStockJoinBaseQty());
     }
 
     private PdaReceiveScanSession loadSession(String billNo) {
@@ -1362,10 +2523,11 @@ public class PdaReceiveScanService {
         BigDecimal qty = scanQty == null || scanQty.compareTo(BigDecimal.ZERO) <= 0
                 ? BigDecimal.ONE : scanQty;
         List<PdaReceiveScanLine> open = candidates.stream()
-                .filter(l -> nullSafe(l.getPlanQty()).subtract(nullSafe(l.getSubmittedQty())).compareTo(BigDecimal.ZERO) > 0)
+                .filter(this::hasProcessableRemain)
                 .toList();
         if (open.isEmpty()) {
-            return null;
+            // 有物料行但已无可处理：返回首行，由上层给出「已收满」提示
+            return candidates.get(0);
         }
         for (PdaReceiveScanLine line : open) {
             BigDecimal remain = nullSafe(line.getPlanQty()).subtract(nullSafe(line.getSubmittedQty()));
@@ -1374,10 +2536,22 @@ public class PdaReceiveScanService {
             }
         }
         return open.stream()
-                .filter(l -> nullSafe(l.getPlanQty()).subtract(nullSafe(l.getSubmittedQty())).compareTo(qty) >= 0)
+                .filter(l -> {
+                    BigDecimal remain = nullSafe(l.getPlanQty()).subtract(nullSafe(l.getSubmittedQty()));
+                    return remain.compareTo(BigDecimal.ZERO) <= 0 || remain.compareTo(qty) >= 0;
+                })
                 .min((a, b) -> {
                     BigDecimal ra = nullSafe(a.getPlanQty()).subtract(nullSafe(a.getSubmittedQty()));
                     BigDecimal rb = nullSafe(b.getPlanQty()).subtract(nullSafe(b.getSubmittedQty()));
+                    if (ra.compareTo(BigDecimal.ZERO) <= 0 && rb.compareTo(BigDecimal.ZERO) <= 0) {
+                        return 0;
+                    }
+                    if (ra.compareTo(BigDecimal.ZERO) <= 0) {
+                        return 1;
+                    }
+                    if (rb.compareTo(BigDecimal.ZERO) <= 0) {
+                        return -1;
+                    }
                     return ra.compareTo(rb);
                 })
                 .orElse(open.get(0));

@@ -16,8 +16,6 @@ export type PrintBiz =
 
   | 'stockcheck_task'
 
-  | 'qc_order'
-
   | 'material_label'
 
   | 'barcode_archive'
@@ -54,8 +52,6 @@ export const PRINT_BIZ_REGISTRY: Record<PrintBiz, PrintBizMeta> = {
 
   stockcheck_task: { biz: 'stockcheck_task', templateId: 'tpl-stockcheck-task', label: '盘点任务' },
 
-  qc_order: { biz: 'qc_order', templateId: 'tpl-qc-order', label: '质检单' },
-
   material_label: { biz: 'material_label', templateId: 'tpl-material-label', label: '物料标签' },
 
   barcode_archive: { biz: 'barcode_archive', templateId: 'tpl-barcode-label', label: '条码标签' },
@@ -64,11 +60,11 @@ export const PRINT_BIZ_REGISTRY: Record<PrintBiz, PrintBizMeta> = {
 
 }
 
-/** 常用标签纸尺寸（mm），6×4 指 60×40mm */
+/** 常用标签纸尺寸（mm），11×8 指 110×80mm */
 export const LABEL_PAPER_PRESETS = [
-  { label: '6×4cm', width: 60, height: 40 },
+  { label: '11×8cm', width: 110, height: 80 },
   { label: '10×6cm', width: 100, height: 60 },
-  { label: '10×5.5cm', width: 100, height: 55 },
+  { label: '6×4cm', width: 60, height: 40 },
 ] as const
 
 export const DEFAULT_LABEL_PAPER = LABEL_PAPER_PRESETS[0]

@@ -72,12 +72,6 @@ const router = createRouter({
           meta: { title: '收料入库批次', permission: MENU_PERMISSIONS['/inbound/pda-records'] },
         },
         {
-          path: 'outbound/orders',
-          name: 'OutboundOrders',
-          component: () => import('@/views/outbound/OutboundOrderList.vue'),
-          meta: { title: '出库单', permission: MENU_PERMISSIONS['/outbound/orders'] },
-        },
-        {
           path: 'outbound/pda-records',
           name: 'PdaOutboundRecords',
           component: () => import('@/views/outbound/PdaOutboundRecordList.vue'),
@@ -90,40 +84,10 @@ const router = createRouter({
           meta: { title: '实时库存', permission: MENU_PERMISSIONS['/inventory/list'] },
         },
         {
-          path: 'inventory/other-inbound',
-          name: 'OtherInbound',
-          component: () => import('@/views/inventory/OtherInboundList.vue'),
-          meta: { title: '其他入库', permission: MENU_PERMISSIONS['/inventory/other-inbound'] },
-        },
-        {
-          path: 'inventory/other-outbound',
-          name: 'OtherOutbound',
-          component: () => import('@/views/inventory/OtherOutboundList.vue'),
-          meta: { title: '其他出货', permission: MENU_PERMISSIONS['/inventory/other-outbound'] },
-        },
-        {
-          path: 'inventory/transfers',
-          name: 'Transfers',
-          component: () => import('@/views/inventory/TransferList.vue'),
-          meta: { title: '库存调拨', permission: MENU_PERMISSIONS['/inventory/transfers'] },
-        },
-        {
           path: 'inventory/sample-plans',
           name: 'SamplePlans',
           component: () => import('@/views/inventory/SamplePlanList.vue'),
           meta: { title: '库存抽检', permission: MENU_PERMISSIONS['/inventory/sample-plans'] },
-        },
-        {
-          path: 'stocktake/tasks',
-          name: 'StocktakeTasks',
-          component: () => import('@/views/stocktake/PlanList.vue'),
-          meta: { title: '盘点任务', permission: MENU_PERMISSIONS['/stocktake/tasks'] },
-        },
-        {
-          path: 'qc/tasks',
-          name: 'QcTasks',
-          component: () => import('@/views/qc/OrderList.vue'),
-          meta: { title: '质检任务', permission: MENU_PERMISSIONS['/qc/tasks'] },
         },
         {
           path: 'barcode/rules',
@@ -135,7 +99,7 @@ const router = createRouter({
           path: 'print/label-jobs',
           name: 'LabelPrintJobs',
           component: () => import('@/views/print/LabelPrintJobList.vue'),
-          meta: { title: '物料标签打印', permission: MENU_PERMISSIONS['/print/label-jobs'] },
+          meta: { title: '期初库存', permission: MENU_PERMISSIONS['/print/label-jobs'] },
         },
         {
           path: 'dashboard/warehouse',

@@ -11,11 +11,23 @@ export const ORDER_MODULES = [
       label: '收料通知单',
       listPage: '/pages/notice/list?billType=PURCHASE_RECEIVE&direction=INBOUND',
     },
+    returnOut: {
+      billType: 'PURCHASE_RETURN',
+      orderType: 'PURCHASE',
+      label: '采购退料单',
+      listPage: '/pages/notice/list?billType=PURCHASE_RETURN&direction=OUTBOUND',
+    },
     outbound: {
       billType: 'SALES_DELIVERY',
       orderType: 'SALES',
       label: '销售发货通知单',
       listPage: '/pages/notice/list?billType=SALES_DELIVERY&direction=OUTBOUND',
+    },
+    returnIn: {
+      billType: 'SALES_RETURN',
+      orderType: 'SALES',
+      label: '销售退货通知单',
+      listPage: '/pages/notice/list?billType=SALES_RETURN&direction=INBOUND',
     },
   },
   {
@@ -35,6 +47,12 @@ export const ORDER_MODULES = [
       label: '委外领料',
       listPage: '/pages/picking/outsource-issue',
     },
+    feed: {
+      billType: 'OUTSOURCE_FEED',
+      orderType: 'OUTSOURCE',
+      label: '委外补料',
+      listPage: '/pages/picking/outsource-feed',
+    },
   },
   {
     id: 'product',
@@ -44,7 +62,7 @@ export const ORDER_MODULES = [
     inbound: {
       billType: 'PRODUCTION_IN',
       orderType: 'PRODUCTION',
-      label: '生产入库单',
+      label: '生产汇报入库',
       listPage: '/pages/notice/list?billType=PRODUCTION_IN&direction=INBOUND',
     },
     returnIn: {
@@ -58,6 +76,18 @@ export const ORDER_MODULES = [
       orderType: 'PRODUCTION',
       label: '生产领料',
       listPage: '/pages/picking/production-issue',
+    },
+    feed: {
+      billType: 'PRODUCTION_FEED',
+      orderType: 'PRODUCTION',
+      label: '生产补料',
+      listPage: '/pages/picking/production-feed',
+    },
+    stockReturn: {
+      billType: 'PRODUCTION_RET_STOCK',
+      orderType: 'PRODUCTION',
+      label: '生产退库',
+      listPage: '/pages/notice/list?billType=PRODUCTION_RET_STOCK&direction=OUTBOUND',
     },
   },
   {

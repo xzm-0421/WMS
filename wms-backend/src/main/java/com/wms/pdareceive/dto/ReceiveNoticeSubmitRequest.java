@@ -13,9 +13,9 @@ public class ReceiveNoticeSubmitRequest {
     private String erpWarehouseCode;
     /** true=按分录物料仓库自动分配（默认）；false=使用 warehouseCode/erpWarehouseCode */
     private Boolean autoAssignWarehouse;
-    /** 已废弃：入库不再分配库位 */
+    /** true=自动分配库位；false/空=不自动分配（可仅仓库入库） */
     private Boolean autoAllocateLocation;
-    /** 已废弃：入库不再分配库位 */
+    /** 手动指定库位；为空表示不指定库位 */
     private String locationCode;
     private String deviceNo;
     private String remark;

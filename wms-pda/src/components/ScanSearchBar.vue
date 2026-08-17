@@ -69,10 +69,13 @@ const {
   onInput,
   onBlur,
   onFocus,
-} = useScannerInput((code) => {
-  emit('update:modelValue', code)
-  emit('scan', code)
-})
+} = useScannerInput(
+  (code) => {
+    emit('update:modelValue', code)
+    emit('scan', code)
+  },
+  { getDisabled: () => props.disabled },
+)
 
 watch(
   () => props.modelValue,
@@ -98,10 +101,14 @@ function focusInput() {
   if (!props.disabled) focusInputOnce()
 }
 
+/**
+ * 点「搜索/打开」或扫码枪 Enter：只触发一次业务回调，避免 search+scan 双发。
+ */
 function onConfirm() {
   const val = (innerValue.value || '').trim()
   if (!val) return
-  emit('search', val)
+  emit('update:modelValue', val)
+  emit('scan', val)
   resetInputState()
 }
 

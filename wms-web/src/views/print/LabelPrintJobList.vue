@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
 import {
   createLabelPrintJob,
   listLabelPrintJobs,
   updateLabelPrintSettings,
+  downloadOpeningStockTemplate,
+  exportOpeningStockExcel,
+  importOpeningStockExcel,
+  deleteOpeningStockJobs,
   type LabelPrintJob,
   type LabelPrintCreateRequest,
 } from '@/api/labelPrint'
@@ -16,10 +20,20 @@ import { DEFAULT_LABEL_PAPER, LABEL_PAPER_PRESETS } from '@/config/printConfig'
 const loading = ref(false)
 const tableData = ref<LabelPrintJob[]>([])
 const total = ref(0)
-const query = ref({ current: 1, size: 20, keyword: '', status: '' })
+const query = ref({
+  current: 1,
+  size: 20,
+  warehouseCode: '',
+  warehouseName: '',
+  materialKeyword: '',
+})
 const tableRef = ref<TableInstance>()
 const selectedRows = ref<LabelPrintJob[]>([])
 const batchPrinting = ref(false)
+const importing = ref(false)
+const exporting = ref(false)
+const deleting = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const createVisible = ref(false)
 const settingsVisible = ref(false)
@@ -27,17 +41,28 @@ const saving = ref(false)
 const currentJob = ref<LabelPrintJob | null>(null)
 
 const createForm = reactive<LabelPrintCreateRequest>({
+  warehouseCode: '',
+  warehouseName: '',
+  orgCode: '',
+  orgName: '',
   materialCode: '',
   batchNo: '',
   productionDate: '',
   quantity: undefined,
+  unitCode: '',
+  priceUnitCode: '',
   barcodeType: 'QR',
   labelWidthMm: DEFAULT_LABEL_PAPER.width,
   labelHeightMm: DEFAULT_LABEL_PAPER.height,
   copies: 1,
 })
 
-const settingsForm = reactive({
+const settingsForm = reactive<{
+  labelWidthMm: number
+  labelHeightMm: number
+  copies: number
+  barcodeType: string
+}>({
   labelWidthMm: DEFAULT_LABEL_PAPER.width,
   labelHeightMm: DEFAULT_LABEL_PAPER.height,
   copies: 1,
@@ -57,10 +82,16 @@ async function load() {
 
 function resetCreateForm() {
   Object.assign(createForm, {
+    warehouseCode: '',
+    warehouseName: '',
+    orgCode: '',
+    orgName: '',
     materialCode: '',
     batchNo: '',
     productionDate: '',
     quantity: undefined,
+    unitCode: '',
+    priceUnitCode: '',
     barcodeType: 'QR',
     labelWidthMm: DEFAULT_LABEL_PAPER.width,
     labelHeightMm: DEFAULT_LABEL_PAPER.height,
@@ -68,7 +99,10 @@ function resetCreateForm() {
   })
 }
 
-function applyPaperPreset(target: { labelWidthMm: number; labelHeightMm: number }, preset: typeof LABEL_PAPER_PRESETS[number]) {
+function applyPaperPreset(
+  target: { labelWidthMm?: number; labelHeightMm?: number },
+  preset: (typeof LABEL_PAPER_PRESETS)[number],
+) {
   target.labelWidthMm = preset.width
   target.labelHeightMm = preset.height
 }
@@ -177,14 +211,79 @@ async function handleBatchPrint() {
   }
 }
 
-function selectKingdeeRowsOnPage() {
-  const rows = tableData.value.filter((row) => row.sourceType === 'KINGDEE')
-  if (!rows.length) {
-    ElMessage.warning('当前页没有金蝶来源的打印任务')
+async function handleDownloadTemplate() {
+  try {
+    await downloadOpeningStockTemplate()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '模板下载失败')
+  }
+}
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    await exportOpeningStockExcel({
+      warehouseCode: query.value.warehouseCode || undefined,
+      warehouseName: query.value.warehouseName || undefined,
+      materialKeyword: query.value.materialKeyword || undefined,
+    })
+    ElMessage.success('导出成功')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
+function triggerImport() {
+  fileInputRef.value?.click()
+}
+
+async function onImportFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const count = await importOpeningStockExcel(file)
+    ElMessage.success(`成功导入 ${count} 条`)
+    await load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '导入失败')
+  } finally {
+    importing.value = false
+  }
+}
+
+async function handleDelete() {
+  const ids = selectedRows.value
+    .map((row) => row.id)
+    .filter((id): id is number => typeof id === 'number' && id > 0)
+  if (!ids.length) {
+    ElMessage.warning('请先勾选要删除的数据')
     return
   }
-  rows.forEach((row) => tableRef.value?.toggleRowSelection(row, true))
-  ElMessage.success(`已选中当前页 ${rows.length} 条金蝶任务`)
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${ids.length} 条期初库存数据？此操作不可恢复。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    const count = await deleteOpeningStockJobs(ids)
+    ElMessage.success(`已删除 ${count ?? 0} 条`)
+    clearSelection()
+    await load()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '删除失败')
+  } finally {
+    deleting.value = false
+  }
 }
 
 onMounted(load)
@@ -195,8 +294,20 @@ onMounted(load)
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>金蝶物料标签打印</span>
+          <span>期初库存</span>
           <div class="header-actions">
+            <el-button @click="handleDownloadTemplate">下载模板</el-button>
+            <el-button :loading="importing" @click="triggerImport">导入</el-button>
+            <el-button :loading="exporting" @click="handleExport">导出</el-button>
+            <el-button
+              type="danger"
+              plain
+              :disabled="!selectedRows.length"
+              :loading="deleting"
+              @click="handleDelete"
+            >
+              删除{{ selectedRows.length ? ` (${selectedRows.length})` : '' }}
+            </el-button>
             <el-button
               :disabled="!selectedRows.length"
               :loading="batchPrinting"
@@ -212,40 +323,48 @@ onMounted(load)
             >
               批量打印{{ selectedRows.length ? ` (${selectedRows.length})` : '' }}
             </el-button>
-            <el-button type="primary" @click="openCreate">新建打印任务</el-button>
+            <el-button type="primary" @click="openCreate">新建打印</el-button>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".xlsx,.xls"
+              class="hidden-file"
+              @change="onImportFileChange"
+            />
           </div>
         </div>
       </template>
 
-      <el-alert
-        class="mb-12"
-        type="info"
-        :closable="false"
-        title="标签打印机说明"
-        description="物料名称/规格/单位均来自「物料信息」主数据。新建时只需选择物料并填写批次、数量等打印参数。"
-      />
-
       <el-form :inline="true" class="mb-12">
-        <el-form-item label="关键词">
+        <el-form-item label="仓库编码">
           <el-input
-            v-model="query.keyword"
+            v-model="query.warehouseCode"
             clearable
-            placeholder="物料编码/名称"
-            style="width: 220px"
+            placeholder="仓库编码"
+            style="width: 160px"
             @keyup.enter="load"
           />
         </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" clearable placeholder="全部" style="width: 120px">
-            <el-option label="待打印" value="PENDING" />
-            <el-option label="已预览" value="OPENED" />
-            <el-option label="已打印" value="PRINTED" />
-            <el-option label="失败" value="FAILED" />
-          </el-select>
+        <el-form-item label="仓库名称">
+          <el-input
+            v-model="query.warehouseName"
+            clearable
+            placeholder="仓库名称"
+            style="width: 160px"
+            @keyup.enter="load"
+          />
+        </el-form-item>
+        <el-form-item label="物料编码/名称">
+          <el-input
+            v-model="query.materialKeyword"
+            clearable
+            placeholder="物料编码/名称"
+            style="width: 200px"
+            @keyup.enter="load"
+          />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="load">查询</el-button>
-          <el-button @click="selectKingdeeRowsOnPage">选中当前页金蝶任务</el-button>
         </el-form-item>
       </el-form>
 
@@ -258,9 +377,11 @@ onMounted(load)
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" reserve-selection />
-        <el-table-column label="来源" width="110">
+        <el-table-column prop="warehouseCode" label="仓库编码" width="110" />
+        <el-table-column prop="warehouseName" label="仓库名称" min-width="120" show-overflow-tooltip />
+        <el-table-column label="业务组织" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
-            <WmsStatusTag :status="row.sourceType" />
+            {{ row.orgName || row.orgCode || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="materialCode" label="物料编码" min-width="120" />
@@ -272,11 +393,9 @@ onMounted(load)
             <WmsDateText :value="row.productionDate" />
           </template>
         </el-table-column>
-        <el-table-column label="数量" width="90">
-          <template #default="{ row }">
-            {{ row.quantity ?? '-' }}{{ row.unitCode ? ` ${row.unitCode}` : '' }}
-          </template>
-        </el-table-column>
+        <el-table-column prop="quantity" label="数量" width="90" />
+        <el-table-column prop="unitCode" label="入库单位" width="90" />
+        <el-table-column prop="priceUnitCode" label="计价单位" width="90" />
         <el-table-column label="标签尺寸" width="100">
           <template #default="{ row }">
             {{ row.labelWidthMm }}×{{ row.labelHeightMm }}mm
@@ -292,11 +411,6 @@ onMounted(load)
         <el-table-column prop="printedTime" label="打印时间" min-width="120">
           <template #default="{ row }">
             <WmsDateText :value="row.printedTime" />
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="90" fixed="right">
-          <template #default="{ row }">
-            <WmsStatusTag :status="row.status" pending-label="待打印" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
@@ -318,8 +432,20 @@ onMounted(load)
       />
     </el-card>
 
-    <el-dialog v-model="createVisible" title="新建物料标签打印" width="520px" destroy-on-close>
+    <el-dialog v-model="createVisible" title="新建期初库存打印" width="520px" destroy-on-close>
       <el-form label-width="96px">
+        <el-form-item label="仓库编码">
+          <el-input v-model="createForm.warehouseCode" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="仓库名称">
+          <el-input v-model="createForm.warehouseName" placeholder="选填，可按编码自动回填" />
+        </el-form-item>
+        <el-form-item label="业务组织编码">
+          <el-input v-model="createForm.orgCode" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="业务组织名称">
+          <el-input v-model="createForm.orgName" placeholder="选填" />
+        </el-form-item>
         <el-form-item label="物料" required>
           <MaterialSelectInput
             v-model="createForm.materialCode"
@@ -341,6 +467,12 @@ onMounted(load)
         <el-form-item label="数量">
           <el-input-number v-model="createForm.quantity" :min="0" :precision="4" style="width: 100%" />
         </el-form-item>
+        <el-form-item label="入库单位">
+          <el-input v-model="createForm.unitCode" placeholder="选填，默认取物料主数据单位" />
+        </el-form-item>
+        <el-form-item label="计价单位">
+          <el-input v-model="createForm.priceUnitCode" placeholder="选填" />
+        </el-form-item>
         <el-form-item label="条码类型">
           <el-select v-model="createForm.barcodeType" style="width: 100%">
             <el-option label="二维码 QR" value="QR" />
@@ -361,15 +493,16 @@ onMounted(load)
             </el-button>
           </el-button-group>
         </el-form-item>
-        <el-form-item label="纸张宽(mm)">
+        <el-form-item label="纸宽(mm)">
           <el-input-number v-model="createForm.labelWidthMm" :min="40" :max="300" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="纸张高(mm)">
+        <el-form-item label="纸高(mm)">
           <el-input-number v-model="createForm.labelHeightMm" :min="30" :max="300" style="width: 100%" />
         </el-form-item>
         <el-form-item label="打印份数">
           <el-input-number v-model="createForm.copies" :min="1" :max="99" style="width: 100%" />
         </el-form-item>
+        <div class="form-tip">默认宽 110mm × 高 80mm。打印选「纵向」；驱动纸张设 宽110×高80mm；缩放选实际大小。</div>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -392,10 +525,10 @@ onMounted(load)
             </el-button>
           </el-button-group>
         </el-form-item>
-        <el-form-item label="纸张宽(mm)">
+        <el-form-item label="纸宽(mm)">
           <el-input-number v-model="settingsForm.labelWidthMm" :min="40" :max="300" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="纸张高(mm)">
+        <el-form-item label="纸高(mm)">
           <el-input-number v-model="settingsForm.labelHeightMm" :min="30" :max="300" style="width: 100%" />
         </el-form-item>
         <el-form-item label="打印份数">
@@ -408,6 +541,7 @@ onMounted(load)
             <el-option label="Code39" value="CODE39" />
           </el-select>
         </el-form-item>
+        <div class="form-tip">默认宽 110mm × 高 80mm。打印选「纵向」；驱动纸张设 宽110×高80mm；缩放选实际大小。</div>
       </el-form>
       <template #footer>
         <el-button @click="settingsVisible = false">取消</el-button>
@@ -420,7 +554,14 @@ onMounted(load)
 <style scoped>
 .page { padding: 16px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; }
-.header-actions { display: flex; align-items: center; gap: 8px; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hidden-file { display: none; }
 .mb-12 { margin-bottom: 12px; }
 .mt-16 { margin-top: 16px; justify-content: flex-end; }
+.form-tip {
+  margin: 0 0 8px 96px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
 </style>

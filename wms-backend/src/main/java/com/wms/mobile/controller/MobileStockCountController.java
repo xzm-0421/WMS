@@ -2,6 +2,7 @@ package com.wms.mobile.controller;
 
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
+import com.wms.pdabilllock.dto.PdaBillLockVo;
 import com.wms.pdastockcount.dto.StockCountDetailVo;
 import com.wms.pdastockcount.dto.StockCountLineVo;
 import com.wms.pdastockcount.dto.StockCountListItemVo;
@@ -24,7 +25,7 @@ public class MobileStockCountController {
 
     private final PdaStockCountService stockCountService;
 
-    @Operation(summary = "盘点作业列表（仅已审核）")
+    @Operation(summary = "盘点作业列表（未审核 A/B）")
     @GetMapping
     public ApiResult<PageResult<StockCountListItemVo>> list(
             @RequestParam(required = false) String keyword,
@@ -74,9 +75,22 @@ public class MobileStockCountController {
         return ApiResult.ok("数量已更新", stockCountService.updateQty(billNo, lineNo, request));
     }
 
-    @Operation(summary = "完成盘点")
+    @Operation(summary = "完成盘点（回写实盘数量并提交审核）")
     @PostMapping("/{billNo}/complete")
     public ApiResult<Map<String, Object>> complete(@PathVariable String billNo) {
-        return ApiResult.ok("盘点完成", stockCountService.complete(billNo));
+        return ApiResult.ok("盘点完成并已提交审核", stockCountService.complete(billNo));
+    }
+
+    @Operation(summary = "单据操作锁心跳续租")
+    @PostMapping("/{billNo}/lock/heartbeat")
+    public ApiResult<PdaBillLockVo> heartbeatLock(@PathVariable String billNo) {
+        return ApiResult.ok(stockCountService.heartbeatLock(billNo));
+    }
+
+    @Operation(summary = "释放单据操作锁（离开页面）")
+    @PostMapping("/{billNo}/lock/release")
+    public ApiResult<Void> releaseLock(@PathVariable String billNo) {
+        stockCountService.releaseLock(billNo);
+        return ApiResult.ok(null);
     }
 }

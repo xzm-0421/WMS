@@ -11,7 +11,10 @@ import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
 import com.wms.common.security.SecurityUtils;
 import com.wms.config.WmsPdaProperties;
+import com.wms.integration.kingdee.KingdeeCloudService;
+import com.wms.integration.kingdee.KingdeeStockCountCountQtyBuilder;
 import com.wms.integration.kingdee.KingdeeStockCountService;
+import com.wms.integration.kingdee.KingdeeSyncResult;
 import com.wms.integration.kingdee.dto.KingdeeStockCountBillVo;
 import com.wms.integration.kingdee.dto.KingdeeStockCountLineVo;
 import com.wms.pdastockcount.dto.StockCountDetailVo;
@@ -19,6 +22,10 @@ import com.wms.pdastockcount.dto.StockCountLineVo;
 import com.wms.pdastockcount.dto.StockCountListItemVo;
 import com.wms.pdastockcount.dto.StockCountQtyRequest;
 import com.wms.pdastockcount.dto.StockCountScanRequest;
+import com.wms.pdabilllock.PdaBillLockTypes;
+import com.wms.pdabilllock.dto.PdaBillLockVo;
+import com.wms.pdabilllock.entity.PdaBillLock;
+import com.wms.pdabilllock.service.PdaBillLockService;
 import com.wms.pdastockcount.entity.PdaStockCountLine;
 import com.wms.pdastockcount.entity.PdaStockCountSession;
 import com.wms.pdastockcount.mapper.PdaStockCountLineMapper;
@@ -41,7 +48,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * PDA 金蝶盘点作业：拉取已审核明细、扫码匹配、实盘录入。
+ * PDA 金蝶盘点作业：拉取未审核明细、扫码匹配、实盘录入，完成后回写金蝶并提交审核。
  */
 @Slf4j
 @Service
@@ -49,11 +56,13 @@ import java.util.stream.Collectors;
 public class PdaStockCountService {
 
     private final KingdeeStockCountService kingdeeStockCountService;
+    private final KingdeeCloudService kingdeeCloudService;
     private final PdaStockCountSessionMapper sessionMapper;
     private final PdaStockCountLineMapper lineMapper;
     private final BarcodeRecognizeService barcodeRecognizeService;
     private final WmsPdaProperties pdaProperties;
     private final PdaShortCache pdaShortCache;
+    private final PdaBillLockService billLockService;
 
     public PageResult<StockCountListItemVo> list(String keyword, long current, long size) {
         long page = Math.max(1, current);
@@ -116,6 +125,7 @@ public class PdaStockCountService {
         int from = (int) Math.max(0, (page - 1) * pageSize);
         int to = (int) Math.min(visible.size(), from + (int) pageSize);
         List<StockCountListItemVo> slice = from < visible.size() ? visible.subList(from, to) : List.of();
+        enrichLockInfo(slice);
         return PageResult.of(slice, total, page, pageSize);
     }
 
@@ -136,7 +146,8 @@ public class PdaStockCountService {
         PdaStockCountSession session = loadSession(no);
         List<PdaStockCountLine> localLines = loadLines(no);
         if (!forceRefresh && session != null && localLines != null && !localLines.isEmpty()) {
-            return buildDetail(session, localLines);
+            billLockService.acquire(PdaBillLockTypes.STOCK_COUNT, no);
+            return buildDetail(session, localLines, null);
         }
 
         KingdeeStockCountBillVo bill;
@@ -145,30 +156,39 @@ public class PdaStockCountService {
         } catch (BusinessException ex) {
             if (session != null && localLines != null && !localLines.isEmpty()) {
                 log.warn("金蝶拉取盘点单失败，使用本地会话 billNo={} msg={}", no, ex.getMessage());
-                return buildDetail(session, localLines);
+                billLockService.acquire(PdaBillLockTypes.STOCK_COUNT, no);
+                return buildDetail(session, localLines, null);
             }
             throw ex;
         } catch (Exception e) {
             if (session != null && localLines != null && !localLines.isEmpty()) {
                 log.warn("金蝶拉取盘点单异常，使用本地会话 billNo={}", no, e);
-                return buildDetail(session, localLines);
+                billLockService.acquire(PdaBillLockTypes.STOCK_COUNT, no);
+                return buildDetail(session, localLines, null);
             }
             throw new BusinessException(ErrorCode.BAD_REQUEST, "拉取盘点单失败，请检查网络后重试");
         }
         if (bill == null) {
             if (session != null && localLines != null && !localLines.isEmpty()) {
                 log.warn("金蝶拉取盘点单为空，使用本地会话 billNo={}", no);
-                return buildDetail(session, localLines);
+                billLockService.acquire(PdaBillLockTypes.STOCK_COUNT, no);
+                return buildDetail(session, localLines, null);
             }
-            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到已审核的盘点作业单: " + no);
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到盘点作业单: " + no);
         }
-        if (StringUtils.hasText(bill.getDocumentStatus()) && !"C".equalsIgnoreCase(bill.getDocumentStatus())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "仅支持已审核的盘点作业单，当前状态: " + bill.getDocumentStatus());
-        }
+        assertCountableStatus(bill.getDocumentStatus());
+        billLockService.acquire(PdaBillLockTypes.STOCK_COUNT, no);
         session = ensureSession(bill, session);
         localLines = syncLinesFromKingdee(session, bill, localLines);
-        return buildDetail(session, localLines);
+        return buildDetail(session, localLines, bill.getDocumentStatus());
+    }
+
+    public PdaBillLockVo heartbeatLock(String billNo) {
+        return billLockService.heartbeat(PdaBillLockTypes.STOCK_COUNT, billNo);
+    }
+
+    public void releaseLock(String billNo) {
+        billLockService.release(PdaBillLockTypes.STOCK_COUNT, billNo);
     }
 
     /**
@@ -236,6 +256,7 @@ public class PdaStockCountService {
      */
     @Transactional
     public StockCountLineVo scan(String billNo, StockCountScanRequest request) {
+        billLockService.assertHeld(PdaBillLockTypes.STOCK_COUNT, billNo);
         if (request == null || request.getActualQty() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "实盘数量不能为空");
         }
@@ -285,7 +306,16 @@ public class PdaStockCountService {
 
     @Transactional
     public Map<String, Object> complete(String billNo) {
-        StockCountDetailVo detail = getDetail(billNo);
+        String no = billNo != null ? billNo.trim() : "";
+        if (!StringUtils.hasText(no)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "盘点单号不能为空");
+        }
+        billLockService.assertHeld(PdaBillLockTypes.STOCK_COUNT, no);
+        PdaStockCountSession existing = loadSession(no);
+        if (existing != null && "COMPLETED".equals(existing.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "盘点已完成并已提交审核");
+        }
+        StockCountDetailVo detail = getDetail(no, true);
         PdaStockCountSession session = loadSession(detail.getBillNo());
         if (session == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "盘点会话不存在");
@@ -296,15 +326,61 @@ public class PdaStockCountService {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "还有 " + pending + " 行未盘点，请完成后再提交");
         }
+        for (PdaStockCountLine line : lines) {
+            if (line.getEntryId() == null || line.getEntryId() <= 0) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "明细缺少金蝶分录内码，无法回写，请刷新后重试: 行" + line.getLineNo());
+            }
+        }
+
+        KingdeeStockCountBillVo bill = kingdeeStockCountService.getBill(session.getBillNo());
+        if (bill == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到盘点作业单: " + session.getBillNo());
+        }
+        assertCountableStatus(bill.getDocumentStatus());
+
+        List<KingdeeStockCountCountQtyBuilder.Line> kdLines = lines.stream()
+                .map(l -> new KingdeeStockCountCountQtyBuilder.Line(
+                        l.getEntryId(),
+                        l.getActualQty() != null ? l.getActualQty() : BigDecimal.ZERO))
+                .collect(Collectors.toList());
+        KingdeeSyncResult syncResult = kingdeeCloudService.saveStockCountQtyThenSubmitAudit(
+                bill.getBillId(), session.getBillNo(), kdLines);
+        if (syncResult == null || !syncResult.isSuccess()) {
+            String msg = syncResult != null && StringUtils.hasText(syncResult.getMessage())
+                    ? syncResult.getMessage() : "金蝶回写/审核失败";
+            throw new BusinessException(ErrorCode.BAD_REQUEST, msg);
+        }
+
         session.setStatus("COMPLETED");
         session.setCountedLines(lines.size());
         session.setUpdateTime(LocalDateTime.now());
+        fillOperator(session);
         sessionMapper.updateById(session);
+        billLockService.forceRelease(PdaBillLockTypes.STOCK_COUNT, session.getBillNo());
         invalidateListCache();
-        return Map.of(
-                "billNo", session.getBillNo(),
-                "totalLines", session.getTotalLines() != null ? session.getTotalLines() : lines.size(),
-                "countedLines", session.getCountedLines());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("billNo", session.getBillNo());
+        result.put("totalLines", session.getTotalLines() != null ? session.getTotalLines() : lines.size());
+        result.put("countedLines", session.getCountedLines());
+        result.put("submitted", syncResult.isSubmitted());
+        result.put("audited", syncResult.isAudited());
+        result.put("message", syncResult.getMessage());
+        return result;
+    }
+
+    private static void assertCountableStatus(String documentStatus) {
+        if (!StringUtils.hasText(documentStatus)) {
+            return;
+        }
+        String st = documentStatus.trim().toUpperCase();
+        if ("C".equals(st)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该盘点单已审核，无需再盘");
+        }
+        if (!"A".equals(st) && !"B".equals(st)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "仅支持未审核的盘点作业单，当前状态: " + documentStatus);
+        }
     }
 
     private void applyActualQty(PdaStockCountSession session, PdaStockCountLine line,
@@ -463,7 +539,8 @@ public class PdaStockCountService {
         return result;
     }
 
-    private StockCountDetailVo buildDetail(PdaStockCountSession session, List<PdaStockCountLine> lines) {
+    private StockCountDetailVo buildDetail(PdaStockCountSession session, List<PdaStockCountLine> lines,
+                                           String documentStatus) {
         List<StockCountLineVo> vos = lines.stream()
                 .sorted(Comparator.comparing(PdaStockCountLine::getLineNo, Comparator.nullsLast(Integer::compareTo)))
                 .map(this::toLineVo)
@@ -474,7 +551,7 @@ public class PdaStockCountService {
                 .warehouseCode(session.getWarehouseCode())
                 .stockOrgCode(session.getStockOrgCode())
                 .remark(session.getRemark())
-                .documentStatus("C")
+                .documentStatus(StringUtils.hasText(documentStatus) ? documentStatus.trim() : "A")
                 .scanStatus(session.getStatus())
                 .totalLines(session.getTotalLines())
                 .countedLines(session.getCountedLines())
@@ -504,6 +581,32 @@ public class PdaStockCountService {
                 .build();
     }
 
+    private void enrichLockInfo(List<StockCountListItemVo> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<String> billNos = items.stream()
+                .map(StockCountListItemVo::getBillNo)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, PdaBillLock> locks = billLockService.findActiveLocks(PdaBillLockTypes.STOCK_COUNT, billNos);
+        for (StockCountListItemVo item : items) {
+            if (item == null || !StringUtils.hasText(item.getBillNo())) {
+                continue;
+            }
+            PdaBillLock lock = locks.get(item.getBillNo().trim());
+            if (lock != null) {
+                item.setLocked(true);
+                item.setLockUserName(lock.getLockUserName());
+            } else {
+                item.setLocked(false);
+                item.setLockUserName(null);
+            }
+        }
+    }
+
     private StockCountListItemVo toListItem(KingdeeStockCountBillVo bill, PdaStockCountSession session) {
         int total = bill.getTotalLines() != null ? bill.getTotalLines()
                 : (bill.getLines() != null ? bill.getLines().size() : 0);
@@ -515,7 +618,7 @@ public class PdaStockCountService {
                 .warehouseCode(bill.getWarehouseCode())
                 .stockOrgCode(bill.getStockOrgCode())
                 .remark(bill.getRemark())
-                .documentStatus(StringUtils.hasText(bill.getDocumentStatus()) ? bill.getDocumentStatus() : "C")
+                .documentStatus(StringUtils.hasText(bill.getDocumentStatus()) ? bill.getDocumentStatus() : "A")
                 .totalLines(total)
                 .countedLines(counted)
                 .scanStatus(scanStatus)
@@ -530,7 +633,7 @@ public class PdaStockCountService {
                 .warehouseCode(session.getWarehouseCode())
                 .stockOrgCode(session.getStockOrgCode())
                 .remark(session.getRemark())
-                .documentStatus("C")
+                .documentStatus("A")
                 .totalLines(session.getTotalLines())
                 .countedLines(session.getCountedLines())
                 .scanStatus(session.getStatus())
@@ -577,7 +680,8 @@ public class PdaStockCountService {
     }
 
     private void invalidateListCache() {
-        // 依赖短缓存 TTL 自动失效
+        pdaShortCache.evictByPrefix("kd-stockcount-list:");
+        pdaShortCache.evictByPrefix("stockcount-list-visible:");
     }
 
     private static String nullToEmpty(String v) {

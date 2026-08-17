@@ -2,6 +2,8 @@ package com.wms.mobile.controller;
 
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
+import com.wms.noticebill.NoticeBillType;
+import com.wms.pdabilllock.dto.PdaBillLockVo;
 import com.wms.pdareceive.dto.*;
 import com.wms.pdareceive.service.PdaReceiveScanService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -77,5 +79,18 @@ public class MobileReceiveNoticeController {
             request = new ReceiveNoticeSubmitRequest();
         }
         return ApiResult.ok("提交成功", receiveScanService.submit(billNo, request));
+    }
+
+    @Operation(summary = "单据操作锁心跳续租")
+    @PostMapping("/{billNo}/lock/heartbeat")
+    public ApiResult<PdaBillLockVo> heartbeatLock(@PathVariable String billNo) {
+        return ApiResult.ok(receiveScanService.heartbeatLock(NoticeBillType.PURCHASE_RECEIVE, billNo));
+    }
+
+    @Operation(summary = "释放单据操作锁（离开页面）")
+    @PostMapping("/{billNo}/lock/release")
+    public ApiResult<Void> releaseLock(@PathVariable String billNo) {
+        receiveScanService.releaseLock(NoticeBillType.PURCHASE_RECEIVE, billNo);
+        return ApiResult.ok(null);
     }
 }

@@ -12,11 +12,11 @@
       <view class="order-info">
         <text class="order-no">{{ detail.billNo }}</text>
         <text class="order-sub">{{ detail.supplierName || detail.supplierCode || '-' }}</text>
-        <text v-if="detail.erpBillNo" class="order-erp">????? {{ detail.erpBillNo }}</text>
+        <text v-if="detail.erpBillNo" class="order-erp">委外领料单 {{ detail.erpBillNo }}</text>
       </view>
       <view class="order-stat-wrap">
-        <text class="order-stat">{{ checkedCount }}/{{ lines.length }} ??</text>
-        <text v-if="partialCount" class="order-partial">???? {{ partialCount }}</text>
+        <text class="order-stat">{{ checkedCount }}/{{ lines.length }} 已勾</text>
+        <text v-if="partialCount" class="order-partial">部分已领 {{ partialCount }}</text>
       </view>
     </view>
 
@@ -31,42 +31,42 @@
         <view class="row-header">
           <view class="check-box" @click.stop="onToggle(line)">
             <view :class="['check-inner', line.checked && 'on']">
-              <text v-if="line.checked" class="check-mark">?</text>
+              <text v-if="line.checked" class="check-mark">✓</text>
             </view>
           </view>
           <view class="row-main">
             <view class="name-row">
               <text class="mat-code">{{ line.materialCode }}</text>
-              <text v-if="isPartialLine(line)" class="partial-tag">????</text>
+              <text v-if="isPartialLine(line)" class="partial-tag">部分已领</text>
             </view>
             <text class="mat-name">{{ line.materialName || '-' }}</text>
-            <text class="mat-spec">?? {{ line.specification || '-' }}</text>
-            <text class="mat-batch">?? {{ line.batchNo || '-' }}</text>
-            <text class="mat-wh">?? {{ line.erpStockCode || '-' }}</text>
+            <text class="mat-spec">规格 {{ line.specification || '-' }}</text>
+            <text class="mat-batch">批次 {{ line.batchNo || '-' }}</text>
+            <text class="mat-wh">仓库 {{ line.erpStockCode || '-' }}</text>
           </view>
         </view>
 
         <view class="qty-panel" @click.stop>
           <view class="qty-grid">
             <view class="qty-cell">
-              <text class="qty-label">??</text>
-              <text class="qty-value">{{ formatQty(line.planQty) }}</text>
+              <text class="qty-label">计划</text>
+              <text class="qty-value">{{ formatQty(line.planQty, line.unitCode) }}</text>
             </view>
             <view class="qty-cell">
-              <text class="qty-label">??</text>
-              <text class="qty-value submitted">{{ formatQty(line.submittedQty) }}</text>
+              <text class="qty-label">已领</text>
+              <text class="qty-value submitted">{{ formatQty(line.submittedQty, line.unitCode) }}</text>
             </view>
             <view class="qty-cell">
-              <text class="qty-label">??</text>
-              <text class="qty-value remain">{{ formatQty(line.remainQty) }}</text>
+              <text class="qty-label">可领</text>
+              <text class="qty-value remain">{{ formatQty(line.remainQty, line.unitCode) }}</text>
             </view>
             <view class="qty-cell unit-cell">
-              <text class="qty-label">??</text>
+              <text class="qty-label">单位</text>
               <text class="qty-value unit">{{ line.unitCode || 'PCS' }}</text>
             </view>
           </view>
           <view v-if="!isDoneLine(line)" class="qty-edit">
-            <text class="qty-edit-label">????</text>
+            <text class="qty-edit-label">本次领取</text>
             <input
               class="qty-input"
               type="digit"
@@ -79,16 +79,16 @@
             />
             <text class="qty-edit-unit">{{ line.unitCode || 'PCS' }}</text>
           </view>
-          <view v-else class="qty-done-tip">?????</view>
+          <view v-else class="qty-done-tip">已全部领取</view>
         </view>
       </view>
 
       <view v-if="windowed.padBottom" :style="{ height: windowed.padBottom + 'px' }" />
       <view v-if="!lines.length && !loading" class="empty">
-        <text class="empty-icon">??</text>
+        <text class="empty-icon">📦</text>
       </view>
       <view v-else-if="lines.length > windowed.items.length" class="loading-tip end-tip">
-        ?? {{ windowed.items.length }}/{{ lines.length }} ? ? ??????
+        显示 {{ windowed.items.length }}/{{ lines.length }} 行 · 滚动查看更多
       </view>
 
       <view class="scroll-bottom-pad" />
@@ -102,7 +102,7 @@
         :disabled="!submitableCount"
         @click="onSubmit"
       >
-        ????{{ submitableCount ? ` (${submitableCount})` : '' }}
+        确认领料{{ submitableCount ? ` (${submitableCount})` : '' }}
       </button>
     </view>
   </view>
@@ -114,6 +114,8 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import CompactScanBox from '@/components/CompactScanBox.vue'
 import useOutsourceIssueScan from '@/composables/useOutsourceIssueScan.js'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { sanitizeDecimalInput } from '@/utils/decimalInput.js'
+import { qtyDecimalScale, formatQtyInput } from '@/utils/formatQty.js'
 import useWindowedLines from '@/utils/useWindowedLines.js'
 
 const billNo = ref('')
@@ -159,26 +161,26 @@ function isPartialLine(line) {
 
 function syncQtyDrafts() {
   lines.value.forEach((line) => {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
   })
 }
 
 function getQtyDraft(line) {
   if (qtyDrafts[line.lineNo] == null) {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
   }
   return qtyDrafts[line.lineNo]
 }
 
 function onQtyInput(line, e) {
-  qtyDrafts[line.lineNo] = e.detail.value
+  qtyDrafts[line.lineNo] = sanitizeDecimalInput(e.detail.value, qtyDecimalScale(line.unitCode))
 }
 
 async function onQtyBlur(line) {
   const raw = qtyDrafts[line.lineNo]
   const num = raw === '' || raw == null ? 0 : Number(raw)
   if (Number.isNaN(num) || num < 0) {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
     return
   }
   const current = Number(line.pendingSubmitQty) || 0
@@ -188,9 +190,9 @@ async function onQtyBlur(line) {
   updatingLineNo.value = null
   if (ok) {
     const updated = lines.value.find((l) => l.lineNo === line.lineNo)
-    if (updated) qtyDrafts[line.lineNo] = formatQty(updated.pendingSubmitQty || 0)
+    if (updated) qtyDrafts[line.lineNo] = formatQtyInput(updated.pendingSubmitQty || 0, updated.unitCode)
   } else {
-    qtyDrafts[line.lineNo] = formatQty(line.pendingSubmitQty || 0)
+    qtyDrafts[line.lineNo] = formatQtyInput(line.pendingSubmitQty || 0, line.unitCode)
   }
 }
 
@@ -218,7 +220,7 @@ async function onSubmit() {
 
 onLoad((options) => {
   billNo.value = decodeURIComponent(options?.billNo || '')
-  uni.setNavigationBarTitle({ title: '??????' })
+  uni.setNavigationBarTitle({ title: '委外领料确认' })
 })
 
 onShow(async () => {

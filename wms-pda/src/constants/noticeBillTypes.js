@@ -12,11 +12,11 @@ export const NOTICE_BILL_TYPES = {
   },
   PRODUCTION_IN: {
     code: 'PRODUCTION_IN',
-    label: '生产入库单',
+    label: '生产汇报入库',
     direction: 'INBOUND',
     icon: '📦',
     color: '#22c55e',
-    searchPlaceholder: '扫码或搜索生产入库单号',
+    searchPlaceholder: '扫码或搜索已审核生产汇报单号/车间/生产订单',
   },
   PRODUCTION_RETURN: {
     code: 'PRODUCTION_RETURN',
@@ -24,7 +24,7 @@ export const NOTICE_BILL_TYPES = {
     direction: 'INBOUND',
     icon: '↩️',
     color: '#0ea5e9',
-    searchPlaceholder: '扫码或搜索生产领料单号/车间',
+    searchPlaceholder: '扫码或搜索生产退料单号/车间',
   },
   OUTSOURCE_RETURN: {
     code: 'OUTSOURCE_RETURN',
@@ -32,7 +32,7 @@ export const NOTICE_BILL_TYPES = {
     direction: 'INBOUND',
     icon: '🔁',
     color: '#7c3aed',
-    searchPlaceholder: '扫码或搜索委外领料单号/供应商',
+    searchPlaceholder: '扫码或搜索委外退料单号/供应商',
   },
   OTHER_IN: {
     code: 'OTHER_IN',
@@ -40,7 +40,15 @@ export const NOTICE_BILL_TYPES = {
     direction: 'INBOUND',
     icon: '📋',
     color: '#64748b',
-    searchPlaceholder: '扫码或搜索其他入库单号',
+    searchPlaceholder: '扫码或搜索未审核其他入库单号',
+  },
+  SALES_RETURN: {
+    code: 'SALES_RETURN',
+    label: '销售退货通知单',
+    direction: 'INBOUND',
+    icon: '🛍️',
+    color: '#e11d48',
+    searchPlaceholder: '扫码或搜索已审核退货通知单号/客户',
   },
   SALES_DELIVERY: {
     code: 'SALES_DELIVERY',
@@ -48,7 +56,7 @@ export const NOTICE_BILL_TYPES = {
     direction: 'OUTBOUND',
     icon: '🚚',
     color: '#ef4444',
-    searchPlaceholder: '扫码或搜索发货通知单号',
+    searchPlaceholder: '扫码或搜索已审核发货通知单号',
   },
   PRODUCTION_ISSUE: {
     code: 'PRODUCTION_ISSUE',
@@ -56,7 +64,23 @@ export const NOTICE_BILL_TYPES = {
     direction: 'OUTBOUND',
     icon: '🔧',
     color: '#f97316',
-    searchPlaceholder: '扫码或搜索生产用料清单号/车间',
+    searchPlaceholder: '扫码或搜索生产领料单号/车间',
+  },
+  PRODUCTION_FEED: {
+    code: 'PRODUCTION_FEED',
+    label: '生产补料',
+    direction: 'OUTBOUND',
+    icon: '➕',
+    color: '#fb923c',
+    searchPlaceholder: '扫码或搜索生产补料单号/车间',
+  },
+  PRODUCTION_RET_STOCK: {
+    code: 'PRODUCTION_RET_STOCK',
+    label: '生产退库',
+    direction: 'OUTBOUND',
+    icon: '📤',
+    color: '#ea580c',
+    searchPlaceholder: '扫码或搜索未审核生产退库单号/车间',
   },
   OUTSOURCE_ISSUE: {
     code: 'OUTSOURCE_ISSUE',
@@ -64,7 +88,15 @@ export const NOTICE_BILL_TYPES = {
     direction: 'OUTBOUND',
     icon: '🏗️',
     color: '#a855f7',
-    searchPlaceholder: '扫码或搜索委外用料清单号/供应商',
+    searchPlaceholder: '扫码或搜索委外领料单号/供应商',
+  },
+  OUTSOURCE_FEED: {
+    code: 'OUTSOURCE_FEED',
+    label: '委外补料',
+    direction: 'OUTBOUND',
+    icon: '➕',
+    color: '#c084fc',
+    searchPlaceholder: '扫码或搜索委外补料单号/供应商',
   },
   OTHER_OUT: {
     code: 'OTHER_OUT',
@@ -72,7 +104,15 @@ export const NOTICE_BILL_TYPES = {
     direction: 'OUTBOUND',
     icon: '📤',
     color: '#64748b',
-    searchPlaceholder: '扫码或搜索其他出库单号',
+    searchPlaceholder: '扫码或搜索未审核其他出库单号',
+  },
+  PURCHASE_RETURN: {
+    code: 'PURCHASE_RETURN',
+    label: '采购退料单',
+    direction: 'OUTBOUND',
+    icon: '🔙',
+    color: '#2563eb',
+    searchPlaceholder: '扫码或搜索未审核采购退料单号/供应商',
   },
 }
 
