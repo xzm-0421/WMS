@@ -41,6 +41,9 @@ public class KingdeeReceiveBillService {
         if (kingdeeCloudService.isEnabled()) {
             return pageFromKingdee(keyword, current, size);
         }
+        if (!kingdeeCloudService.isMockEnabled()) {
+            return PageResult.of(List.of(), 0, current, size);
+        }
         return pageMock(keyword, current, size);
     }
 
@@ -55,6 +58,9 @@ public class KingdeeReceiveBillService {
         if (kingdeeCloudService.isEnabled()) {
             return getFromKingdee(billNo.trim());
         }
+        if (!kingdeeCloudService.isMockEnabled()) {
+            return null;
+        }
         return getMock(billNo.trim());
     }
 
@@ -68,6 +74,9 @@ public class KingdeeReceiveBillService {
         }
         String no = billNo.trim();
         if (!kingdeeCloudService.isEnabled()) {
+            if (!kingdeeCloudService.isMockEnabled()) {
+                return List.of();
+            }
             KingdeeReceiveBillVo mock = getMock(no);
             return mock != null && mock.getLines() != null ? mock.getLines() : List.of();
         }
@@ -81,33 +90,7 @@ public class KingdeeReceiveBillService {
     }
 
     public String parseBillNo(String barcode) {
-        if (!StringUtils.hasText(barcode)) {
-            return "";
-        }
-        String raw = barcode.trim();
-        try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            var node = mapper.readTree(raw);
-            if (node.has("billNo")) {
-                return node.get("billNo").asText("").trim();
-            }
-            if (node.has("orderNo")) {
-                return node.get("orderNo").asText("").trim();
-            }
-        } catch (Exception ignored) {
-            // not json
-        }
-        if (raw.regionMatches(true, 0, "RN:", 0, 3) || raw.regionMatches(true, 0, "SLD:", 0, 4)) {
-            return raw.replaceFirst("(?i)^(RN|SLD):", "").trim().toUpperCase();
-        }
-        var matcher = java.util.regex.Pattern.compile("(?i)(SLD\\d{6,}|RN\\d{6,})").matcher(raw);
-        if (matcher.find()) {
-            return matcher.group(1).toUpperCase();
-        }
-        if (raw.matches("(?i)(SLD|RN)\\d{6,}")) {
-            return raw.toUpperCase();
-        }
-        return raw.trim();
+        return KingdeeBillNoParser.parse(barcode);
     }
 
     private PageResult<KingdeeReceiveBillVo> pageFromKingdee(String keyword, long current, long size) {

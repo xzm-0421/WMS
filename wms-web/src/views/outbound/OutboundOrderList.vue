@@ -201,7 +201,7 @@ onMounted(loadData)
           <el-form-item label="出库类型" required>
             <WmsSelect v-model="form.orderType">
               <el-option label="销售出库" value="SALES" />
-              <el-option label="生产领料" value="PRODUCTION" />
+              <el-option label="生产备料" value="PRODUCTION" />
               <el-option label="调拨出库" value="TRANSFER" />
             </WmsSelect>
           </el-form-item>

@@ -70,7 +70,7 @@ public enum NoticeBillType {
             ""),
     PRODUCTION_ISSUE(
             NoticeBillDirection.OUTBOUND,
-            "生产领料单",
+            "生产领料",
             "PRD_PickMtrl",
             "PRODUCTION_OUT",
             "PRODUCTION_ISSUE",
@@ -178,9 +178,23 @@ public enum NoticeBillType {
     }
 
     /**
+     * 列表拉金蝶未审核单据（暂存 Z / 创建 A / 审核中 B / 重新审核 D）。
+     * <p>已审核 C 不再返回；反审核后可重新扫码领料。
+     */
+    public boolean isSubmittedInProcessListBill() {
+        return this == PRODUCTION_ISSUE;
+    }
+
+    /**
+     * 提交即回写实发并审核（不等本单领满），审核后本单在 WMS 一并完结。
+     */
+    public boolean isSubmitThenAuditBill() {
+        return this == PRODUCTION_ISSUE;
+    }
+
+    /**
      * 对已有未审核单据确认（不 Save 新建、不改 WMS 库存）。
-     * 生产/委外领退、生产/委外补料：回写实发/实退后立即审核（部分领退同样审核）；
-     * 生产/委外补料额外走 WorkflowAudit；收料通知单仍走「已审核通知 → 新建入库」。
+     * 生产/委外领退补：回写实发/实退后立即审核。
      * 销售发货通知见 {@link #isAuditedSourcePushBill()}（扫已审核 → 下推出库）。
      */
     public boolean isUnauditedWorkflowBill() {
@@ -194,6 +208,13 @@ public enum NoticeBillType {
                 || this == OTHER_IN
                 || this == OTHER_OUT
                 || this == PURCHASE_RETURN;
+    }
+
+    /**
+     * 列表仅拉未出库数量不等于 0 的已审核源单（销售发货通知）。
+     */
+    public boolean isOpenRemainOutQtyListBill() {
+        return this == SALES_DELIVERY;
     }
 
     /**

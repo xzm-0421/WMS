@@ -9,9 +9,11 @@ import com.wms.common.result.PageResult;
 import com.wms.integration.kingdee.KingdeeCloudService;
 import com.wms.integration.kingdee.dto.KingdeeSecUserVo;
 import com.wms.system.dto.*;
+import com.wms.system.entity.SysRole;
 import com.wms.system.entity.SysUser;
 import com.wms.system.entity.SysUserKingdeeMap;
 import com.wms.system.entity.SysUserRole;
+import com.wms.system.mapper.SysRoleMapper;
 import com.wms.system.mapper.SysUserMapper;
 import com.wms.system.mapper.SysUserRoleMapper;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class SysUserService {
 
     private final SysUserMapper userMapper;
     private final SysUserRoleMapper userRoleMapper;
+    private final SysRoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
     private final SysUserKingdeeMapService userKingdeeMapService;
     private final KingdeeCloudService kingdeeCloudService;
@@ -144,6 +147,10 @@ public class SysUserService {
         SysUserDto dto = new SysUserDto();
         BeanUtils.copyProperties(user, dto);
         dto.setRoleIds(userRoleMapper.selectRoleIdsByUserId(user.getId()));
+        dto.setRoleNames(roleMapper.selectRolesByUserId(user.getId()).stream()
+                .map(SysRole::getRoleName)
+                .filter(StringUtils::hasText)
+                .toList());
         SysUserKingdeeMap map = userKingdeeMapService.findByExternalUserId(String.valueOf(user.getId()));
         if (map != null) {
             dto.setKdUserNumber(map.getKdUserNumber());

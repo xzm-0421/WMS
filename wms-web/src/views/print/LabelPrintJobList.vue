@@ -48,6 +48,10 @@ const createForm = reactive<LabelPrintCreateRequest>({
   materialCode: '',
   batchNo: '',
   productionDate: '',
+  labelFormat: 'FACTORY',
+  partnerName: '',
+  boardNo: '',
+  packageNo: '',
   quantity: undefined,
   unitCode: '',
   priceUnitCode: '',
@@ -89,6 +93,10 @@ function resetCreateForm() {
     materialCode: '',
     batchNo: '',
     productionDate: '',
+    labelFormat: 'FACTORY',
+    partnerName: '',
+    boardNo: '',
+    packageNo: '',
     quantity: undefined,
     unitCode: '',
     priceUnitCode: '',
@@ -455,6 +463,21 @@ onMounted(load)
         <el-form-item label="批次号">
           <el-input v-model="createForm.batchNo" />
         </el-form-item>
+        <el-form-item label="标签类型">
+          <el-radio-group v-model="createForm.labelFormat">
+            <el-radio-button :value="'FACTORY'">厂内</el-radio-button>
+            <el-radio-button :value="'INCOMING'">来料</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="createForm.labelFormat === 'INCOMING' ? '供应商简称' : '客户简称'">
+          <el-input v-model="createForm.partnerName" placeholder="选填，用简称" />
+        </el-form-item>
+        <el-form-item v-if="createForm.labelFormat !== 'INCOMING'" label="板号">
+          <el-input v-model="createForm.boardNo" placeholder="选填" />
+        </el-form-item>
+        <el-form-item v-else label="包装号">
+          <el-input v-model="createForm.packageNo" placeholder="选填" />
+        </el-form-item>
         <el-form-item label="生产日期">
           <el-date-picker
             v-model="createForm.productionDate"
@@ -502,7 +525,7 @@ onMounted(load)
         <el-form-item label="打印份数">
           <el-input-number v-model="createForm.copies" :min="1" :max="99" style="width: 100%" />
         </el-form-item>
-        <div class="form-tip">默认宽 110mm × 高 80mm。打印选「纵向」；驱动纸张设 宽110×高80mm；缩放选实际大小。</div>
+        <div class="form-tip">默认标签：宽 100mm × 高 70mm。驱动 USER 建「宽100 × 高70」；打印选「纵向」、缩放 100%、边距无。打印预览应只有 1 页且内容铺满标签，不要用「适合页面」缩放。</div>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -541,7 +564,7 @@ onMounted(load)
             <el-option label="Code39" value="CODE39" />
           </el-select>
         </el-form-item>
-        <div class="form-tip">默认宽 110mm × 高 80mm。打印选「纵向」；驱动纸张设 宽110×高80mm；缩放选实际大小。</div>
+        <div class="form-tip">默认标签：宽 100mm × 高 70mm。驱动 USER 建「宽100 × 高70」；打印选「纵向」、缩放 100%、边距无。打印预览应只有 1 页且内容铺满标签，不要用「适合页面」缩放。</div>
       </el-form>
       <template #footer>
         <el-button @click="settingsVisible = false">取消</el-button>

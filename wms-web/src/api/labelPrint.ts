@@ -16,6 +16,14 @@ export interface LabelPrintJob {
   specification?: string
   batchNo?: string
   productionDate?: string
+  /** FACTORY 厂内 / INCOMING 来料 */
+  labelFormat?: string
+  /** 客户简称（厂内）或供应商简称（来料） */
+  partnerName?: string
+  /** 板号（厂内） */
+  boardNo?: string
+  /** 包装号（来料） */
+  packageNo?: string
   quantity?: number
   /** 入库单位 */
   unitCode?: string
@@ -44,6 +52,10 @@ export interface LabelPrintCreateRequest {
   materialCode: string
   batchNo?: string
   productionDate?: string
+  labelFormat?: string
+  partnerName?: string
+  boardNo?: string
+  packageNo?: string
   quantity?: number
   /** 入库单位 */
   unitCode?: string

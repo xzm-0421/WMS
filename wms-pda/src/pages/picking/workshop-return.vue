@@ -27,6 +27,8 @@
             class="input"
             placeholder="可选，如 PI2026..."
             :disabled="submitting"
+            @focus="pauseScanAutoFocus"
+            @blur="resumeScanAutoFocus"
           />
         </view>
         <view class="field">
@@ -36,6 +38,8 @@
             class="input"
             placeholder="请输入仓库"
             :disabled="submitting"
+            @focus="pauseScanAutoFocus"
+            @blur="resumeScanAutoFocus"
           />
         </view>
         <view class="field">
@@ -45,6 +49,8 @@
             class="input mono"
             placeholder="扫码或手输"
             :disabled="submitting"
+            @focus="pauseScanAutoFocus"
+            @blur="resumeScanAutoFocus"
           />
         </view>
         <view class="field">
@@ -54,6 +60,8 @@
             class="input mono"
             placeholder="可选"
             :disabled="submitting"
+            @focus="pauseScanAutoFocus"
+            @blur="resumeScanAutoFocus"
           />
         </view>
       </view>
@@ -70,6 +78,7 @@
             type="text"
             inputmode="decimal"
             :disabled="submitting"
+            @focus="pauseScanAutoFocus"
             @blur="normalizeQty"
           />
           <button class="qty-step" :disabled="submitting" @click="adjustQty(1)">＋</button>
@@ -128,6 +137,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import ScanSearchBar from '@/components/ScanSearchBar.vue'
 import { submitWorkshopReturn } from '@/api/picking.js'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 
 const reasonOptions = ['余料退库', '多领退回', '换料退库', '质量退回']
 
@@ -155,6 +165,7 @@ function toast(title) {
 }
 
 function normalizeQty() {
+  resumeScanAutoFocus()
   let n = Number(qtyText.value)
   if (Number.isNaN(n) || n <= 0) n = 1
   qtyText.value = String(Math.round(n * 1000) / 1000)

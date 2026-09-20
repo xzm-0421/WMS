@@ -12,6 +12,7 @@ import com.wms.integration.kingdee.KingdeeInStockEntryLink;
 import com.wms.integration.kingdee.KingdeePickMtrlActualQtyBuilder;
 import com.wms.integration.kingdee.KingdeePickMtrlRequest;
 import com.wms.integration.kingdee.KingdeePrdInStockRequest;
+import com.wms.integration.kingdee.KingdeePurMrbActualQtyBuilder;
 import com.wms.integration.kingdee.KingdeeReturnMtrlActualQtyBuilder;
 import com.wms.integration.kingdee.KingdeePurchaseInStockRequest;
 import com.wms.integration.kingdee.KingdeeReceiveBillSourceResolver;
@@ -589,6 +590,8 @@ public class PdaReceiveSubmitBatchService {
         }
 
         List<KingdeePrdInStockRequest.Line> lines = new ArrayList<>();
+        Map<String, String> moWorkShopCache = new HashMap<>();
+        Map<String, String> stockCache = new HashMap<>();
         for (PdaInboundRecord record : records) {
             if (record == null || record.getQuantity() == null
                     || record.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
@@ -611,19 +614,19 @@ public class PdaReceiveSubmitBatchService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "生产汇报单内码(FID)缺失，无法建立关联反写", "MISSING_MORPT_BILL_ID");
             }
-            String warehouse = firstNonBlank(record.getErpStockCode(), record.getWarehouseCode(),
-                    kdLine.getStockWarehouseCode());
+            String warehouse = resolvePrdInStockWarehouse(record, kdLine, stockCache);
             if (!StringUtils.hasText(warehouse)) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "第" + record.getSourceLineNo() + "行缺少仓库编码", "MISSING_WAREHOUSE");
+                        "第" + record.getSourceLineNo() + "行缺少仓库编码（已跳过未分配仓）", "MISSING_WAREHOUSE");
             }
+            String workShop = resolvePrdInStockWorkShop(kdLine, batch, morpt, moWorkShopCache);
             lines.add(KingdeePrdInStockRequest.Line.builder()
                     .materialCode(record.getMaterialCode())
                     .materialName(record.getMaterialName())
                     .unitCode(record.getUnitCode())
                     .mustQty(record.getQuantity())
                     .realQty(record.getQuantity())
-                    .workShopCode(firstNonBlank(batch.getSupplierCode(), morpt.getSupplierCode()))
+                    .workShopCode(workShop)
                     .warehouseCode(warehouse)
                     .locationCode(record.getLocationCode())
                     .batchNo(record.getBatchNo())
@@ -646,10 +649,63 @@ public class PdaReceiveSubmitBatchService {
         return KingdeePrdInStockRequest.builder()
                 .batchNo(batch.getBatchNo())
                 .billDate(LocalDate.now())
-                .workShopCode(firstNonBlank(batch.getSupplierCode(), morpt.getSupplierCode()))
+                .workShopCode(null)
                 .note("WMS PDA 汇报入库 " + morptBillNo)
                 .lines(lines)
                 .build();
+    }
+
+    /**
+     * 生产入库车间必须与生产订单行一致。优先查 PRD_MO 分录，再回退汇报单车间，最后才用配置兜底。
+     */
+    private String resolvePrdInStockWorkShop(KingdeeReceiveBillLineVo kdLine,
+                                            PdaReceiveSubmitBatch batch,
+                                            KingdeeReceiveBillVo morpt,
+                                            Map<String, String> moWorkShopCache) {
+        String cacheKey = (kdLine.getMoId() != null ? kdLine.getMoId() : "") + "|"
+                + firstNonBlank(kdLine.getMoBillNo(), "") + "|"
+                + (kdLine.getMoEntryId() != null ? kdLine.getMoEntryId() : "") + "|"
+                + (kdLine.getMoEntrySeq() != null ? kdLine.getMoEntrySeq() : "");
+        String fromMo = moWorkShopCache.get(cacheKey);
+        if (fromMo == null && !moWorkShopCache.containsKey(cacheKey)) {
+            fromMo = kingdeeCloudService.resolveMoWorkShopNumber(
+                    kdLine.getMoId(), kdLine.getMoBillNo(), kdLine.getMoEntryId(), kdLine.getMoEntrySeq());
+            moWorkShopCache.put(cacheKey, fromMo);
+        }
+        return firstNonBlank(fromMo, kdLine.getWorkShopCode(),
+                batch.getSupplierCode(), morpt.getSupplierCode(),
+                kingdeeCloudProperties.getPrdInStockWorkShopNumber());
+    }
+
+    private String resolvePrdInStockWarehouse(PdaInboundRecord record, KingdeeReceiveBillLineVo kdLine,
+                                              Map<String, String> stockCache) {
+        String assigned = erpWarehouseResolver.firstAssigned(
+                record.getErpStockCode(), record.getWarehouseCode(),
+                kdLine != null ? kdLine.getStockWarehouseCode() : null);
+        if (StringUtils.hasText(assigned)) {
+            return assigned;
+        }
+        if (kdLine == null) {
+            return null;
+        }
+        if (StringUtils.hasText(kdLine.getMaterialCode())) {
+            String materialKey = "M:" + kdLine.getMaterialCode().trim();
+            String fromMaterial = stockCache.computeIfAbsent(materialKey,
+                    key -> kingdeeCloudService.resolveMaterialDefaultStockNumber(kdLine.getMaterialCode()));
+            assigned = erpWarehouseResolver.firstAssigned(fromMaterial);
+            if (StringUtils.hasText(assigned)) {
+                return assigned;
+            }
+        }
+        String moKey = "MO:" + (kdLine.getMoId() != null ? kdLine.getMoId() : "") + ":"
+                + firstNonBlank(kdLine.getMoBillNo(), "") + ":"
+                + (kdLine.getMoEntryId() != null ? kdLine.getMoEntryId() : "") + ":"
+                + (kdLine.getMoEntrySeq() != null ? kdLine.getMoEntrySeq() : "");
+        String fromMo = stockCache.computeIfAbsent(moKey,
+                key -> kingdeeCloudService.resolveMoStockNumber(
+                        kdLine.getMoId(), kdLine.getMoBillNo(),
+                        kdLine.getMoEntryId(), kdLine.getMoEntrySeq()));
+        return erpWarehouseResolver.firstAssigned(fromMo);
     }
 
     private void rollbackCreateInboundSubmittedQty(PdaReceiveSubmitBatch batch,
@@ -1001,7 +1057,45 @@ public class PdaReceiveSubmitBatchService {
     }
 
     /**
-     * 其他入/出库、采购退料：对已存在的未审核单据 Submit + Audit/WorkflowAudit；
+     * PDA 采购退料：回写金蝶实退数量 FRMREALQTY 后 Submit + Audit。
+     * <p>此前与其他入/出库共用「仅提交审核」链路，导致金蝶实退保持建单时的原数量。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> syncPurMrbActualQtyBatch(String batchNo) {
+        String bizLabel = "采购退料";
+        PdaReceiveSubmitBatch batch = requireBatch(batchNo, bizLabel);
+        if ("SUCCESS".equals(batch.getErpSyncStatus()) && StringUtils.hasText(batch.getErpBillNo())) {
+            return buildSyncResponse(batchNo, batch.getLineCount() != null ? batch.getLineCount() : 0, 0, batch);
+        }
+        String billNo = batch.getBillNo().trim();
+        KingdeeReceiveBillVo kdBill = requireKingdeeBill(NoticeBillType.PURCHASE_RETURN, billNo, bizLabel);
+        List<PdaReceiveScanLine> scanLines = loadScanLines(NoticeBillType.PURCHASE_RETURN, billNo);
+        List<KingdeePurMrbActualQtyBuilder.Line> qtyLines = buildReturnActualQtyLines(kdBill, scanLines).stream()
+                .map(l -> new KingdeePurMrbActualQtyBuilder.Line(l.getEntryId(), l.getActualQty()))
+                .toList();
+        if (qtyLines.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "未找到可回写的" + bizLabel + "分录（缺少金蝶分录内码）");
+        }
+        boolean hasReturned = qtyLines.stream()
+                .anyMatch(l -> l.getActualQty() != null && l.getActualQty().compareTo(BigDecimal.ZERO) > 0);
+        if (!hasReturned) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "没有已确认的" + bizLabel + "数量可回写");
+        }
+
+        KingdeeSyncResult result;
+        try {
+            result = kingdeeCloudService.savePurMrbActualQtyThenAudit(
+                    kingdeeCloudProperties.getPurMrbFormId(), kdBill.getBillId(), billNo, qtyLines, true);
+        } catch (BusinessException ex) {
+            result = KingdeeSyncResult.builder().success(false).message(ex.getMessage()).build();
+        }
+        return finishQtyAuditSync(batch, batchNo, result, qtyLines.size(), bizLabel + "实退",
+                ErpSyncLogService.SOURCE_PDA_OUTBOUND);
+    }
+
+    /**
+     * 其他入/出库：对已存在的未审核单据 Submit + Audit/WorkflowAudit；
      * 销售发货通知：对已审核单据下推销售出库并审核。
      */
     @Transactional(rollbackFor = Exception.class)
@@ -1041,7 +1135,8 @@ public class PdaReceiveSubmitBatchService {
                 Long billId = kdBill != null ? kdBill.getBillId() : null;
                 List<KingdeeSalOutStockEntryFill> fills = buildSalesOutStockEntryFills(batch, kdBill);
                 result = kingdeeCloudService.pushSalesDeliveryToOutStockThenAudit(
-                        batch.getBillNo().trim(), billId, fills);
+                        batch.getBillNo().trim(), billId, fills,
+                        findPushedOutStockNo(batch.getBillNo().trim()));
             } else {
                 result = kingdeeCloudService.submitAndAuditExistingBill(
                         formId, batch.getBillNo().trim(), null,
@@ -1086,12 +1181,46 @@ public class PdaReceiveSubmitBatchService {
             batch.setErpSyncStatus("FAILED");
             batch.setErpSyncMessage(ErpSyncLogService.truncateMessage(
                     KingdeeResponseMessageFormatter.format(result.getMessage())));
+            // 已下推出的销售出库单号：仅保存真实单号，避免把内码/占位号写成 erpBillNo 导致下次 View(Number) 报「编码值不存在」
+            if (StringUtils.hasText(result.getBillNo())
+                    && !result.getBillNo().trim().equalsIgnoreCase(batch.getBillNo().trim())
+                    && !result.getBillNo().trim().matches("^\\d{6,}$")
+                    && !result.getBillNo().trim().regionMatches(true, 0, "KD-", 0, 3)) {
+                batch.setErpBillNo(result.getBillNo().trim());
+            }
         }
         batchMapper.updateById(batch);
         return buildSyncResponse(batchNo,
                 result.isSuccess() ? lineCount : 0,
                 result.isSuccess() ? 0 : Math.max(lineCount, 1),
                 batch);
+    }
+
+    /**
+     * 查同一发货通知此前已下推出的销售出库单号（含同步失败留下的暂存单）。
+     * 用于重试时复用，避免在金蝶堆积多张重复的暂存销售出库单。
+     */
+    private String findPushedOutStockNo(String deliveryBillNo) {
+        List<PdaReceiveSubmitBatch> batches = batchMapper.selectList(
+                new LambdaQueryWrapper<PdaReceiveSubmitBatch>()
+                        .eq(PdaReceiveSubmitBatch::getBillType, NoticeBillType.SALES_DELIVERY.getCode())
+                        .eq(PdaReceiveSubmitBatch::getBillNo, deliveryBillNo)
+                        .isNotNull(PdaReceiveSubmitBatch::getErpBillNo)
+                        .orderByDesc(PdaReceiveSubmitBatch::getId));
+        for (PdaReceiveSubmitBatch history : batches) {
+            String erpBillNo = history.getErpBillNo();
+            if (!StringUtils.hasText(erpBillNo) || erpBillNo.trim().equalsIgnoreCase(deliveryBillNo)) {
+                continue;
+            }
+            String candidate = erpBillNo.trim();
+            // 跳过误存的内码 / 占位单号
+            if (candidate.matches("^\\d{6,}$") || candidate.regionMatches(true, 0, "KD-", 0, 3)) {
+                continue;
+            }
+            // 已审核成功的单不再复用，避免对已完成的出库单重复提交审核
+            return "SUCCESS".equals(history.getErpSyncStatus()) ? null : candidate;
+        }
+        return null;
     }
 
     private String resolveAuditFormId(NoticeBillType billType) {
@@ -1157,14 +1286,32 @@ public class PdaReceiveSubmitBatchService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Web「同步至金蝶」：按批次单据类型分发，禁止一律走生产领料。
+     */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> syncOutboundBatchToErp(String batchNo) {
         PdaReceiveSubmitBatch batch = batchMapper.selectOne(new LambdaQueryWrapper<PdaReceiveSubmitBatch>()
                 .eq(PdaReceiveSubmitBatch::getBatchNo, batchNo));
-        if (batch != null && "OUTSOURCE_ISSUE".equalsIgnoreCase(batch.getBillType())) {
-            return syncSubPickMtrlBatch(batchNo, null);
+        if (batch == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "提交批次不存在");
         }
-        return syncPickMtrlBatch(batchNo, null);
+        NoticeBillType billType = NoticeBillType.fromCode(batch.getBillType());
+        if (billType == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的单据类型: " + batch.getBillType());
+        }
+        return switch (billType) {
+            case SALES_DELIVERY, OTHER_OUT -> syncAuditExistingBillBatch(batchNo);
+            case PURCHASE_RETURN -> syncPurMrbActualQtyBatch(batchNo);
+            case OUTSOURCE_ISSUE -> syncSubPickMtrlBatch(batchNo, null);
+            case OUTSOURCE_FEED -> syncSubFeedMtrlBatch(batchNo);
+            case PRODUCTION_FEED -> syncFeedMtrlBatch(batchNo);
+            case PRODUCTION_ISSUE -> syncPickMtrlBatch(batchNo, null);
+            case PRODUCTION_RET_STOCK -> syncPrdRetStockBatch(batchNo);
+            default -> throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "该出库类型暂不支持从 Web 同步: " + billType.getLabel()
+                            + "（" + billType.getCode() + "）");
+        };
     }
 
     private List<KingdeePickMtrlRequest.Line> buildPickMtrlLinesFromTransactions(PdaReceiveSubmitBatch batch) {
@@ -1432,10 +1579,9 @@ public class PdaReceiveSubmitBatchService {
                 }
             }
         }
-        String defaultStock = firstNonBlank(
+        String defaultStock = erpWarehouseResolver.firstAssigned(
                 kingdeeCloudProperties.getSalesOutStockDefaultWarehouseNumber(),
-                kingdeeCloudProperties.getStockInDefaultWarehouseNumber(),
-                "CK004");
+                kingdeeCloudProperties.getStockInDefaultWarehouseNumber());
         List<KingdeeSalOutStockEntryFill> fills = new ArrayList<>();
         List<String> missingStock = new ArrayList<>();
         List<String> missingLot = new ArrayList<>();
@@ -1457,13 +1603,12 @@ public class PdaReceiveSubmitBatchService {
             String lot = BatchNoNormalizer.normalize(firstNonBlank(
                     scan.getBatchNo(),
                     kdLine != null ? kdLine.getBatchNo() : null));
-            String stock = erpWarehouseResolver.resolve(
-                    null,
-                    firstNonBlank(
-                            scan.getErpStockCode(),
-                            kdLine != null ? kdLine.getStockWarehouseCode() : null,
-                            kdBill != null ? kdBill.getWarehouseCode() : null,
-                            defaultStock));
+            // 优先扫码行/发货通知分录仓；占位仓 CK004 等会被 firstAssigned 跳过
+            String stock = erpWarehouseResolver.firstAssigned(
+                    scan.getErpStockCode(),
+                    kdLine != null ? kdLine.getStockWarehouseCode() : null,
+                    kdBill != null ? kdBill.getWarehouseCode() : null,
+                    defaultStock);
             String material = firstNonBlank(scan.getMaterialCode(),
                     kdLine != null ? kdLine.getMaterialCode() : null);
             if (!StringUtils.hasText(stock)) {
@@ -1555,8 +1700,9 @@ public class PdaReceiveSubmitBatchService {
             kingdeeUserName = approverMap.getKdUserNumber();
         }
 
-        // 分批领料：未领满只回写实发，领满后再审核，避免首批审核后无法继续改数
-        boolean auditAfterSave = isScanQtyFullySubmitted(scanLines);
+        // 提交即审核的单据（生产领料）本次提交多少就审核多少；
+        // 其余分批领料未领满只回写实发，领满后再审核，避免首批审核后无法继续改数
+        boolean auditAfterSave = billType.isSubmitThenAuditBill() || isScanQtyFullySubmitted(scanLines);
         KingdeeSyncResult result;
         try {
             result = kingdeeCloudService.savePickMtrlActualQtyThenAudit(

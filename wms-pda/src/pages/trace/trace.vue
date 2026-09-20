@@ -150,7 +150,7 @@ const TXN_LABELS = {
   PRODUCTION_IN: '生产汇报入库',
   OTHER_IN: '其他入库',
   SALES_OUT: '销售出库',
-  PRODUCTION_OUT: '生产领料',
+  PRODUCTION_OUT: '生产备料',
   PRODUCTION_FEED: '生产补料',
   OUTSOURCE_FEED: '委外补料',
   OTHER_OUT: '其他出库',

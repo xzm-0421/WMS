@@ -41,15 +41,15 @@
 
         <view class="field">
           <text class="label">库位</text>
-          <input v-model="scanForm.locationCode" class="input" placeholder="可扫库位码或手输" />
+          <input v-model="scanForm.locationCode" class="input" placeholder="可扫库位码或手输" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
         </view>
         <view class="field">
           <text class="label">物料</text>
-          <input v-model="scanForm.materialCode" class="input" placeholder="扫码自动带出" />
+          <input v-model="scanForm.materialCode" class="input" placeholder="扫码自动带出" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
         </view>
         <view class="field">
           <text class="label">批次</text>
-          <input v-model="scanForm.batchNo" class="input" placeholder="可选" />
+          <input v-model="scanForm.batchNo" class="input" placeholder="可选" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
         </view>
         <view class="field qty-field">
           <text class="label">实盘数量</text>
@@ -76,7 +76,7 @@
           <text class="meta">库位 {{ line.locationCode }} · 批次 {{ line.batchNo || '-' }}</text>
           <text class="meta">账面 {{ formatQty(line.bookQty) }} · {{ lineStatusLabel(line.lineStatus) }}</text>
           <view class="row">
-            <input v-model="line._actual" class="qty-input" type="text" inputmode="decimal" placeholder="实盘数量" />
+            <input v-model="line._actual" class="qty-input" type="text" inputmode="decimal" placeholder="实盘数量" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
             <button size="mini" type="primary" :disabled="busy" @click="submitLine(line)">提交</button>
           </view>
         </view>
@@ -85,19 +85,19 @@
 
       <view v-else-if="mode === 'gain'" class="form-card">
         <text class="section-tip">扫码可自动填充库位/物料/批次</text>
-        <input v-model="gainForm.locationCode" class="input" placeholder="库位" />
-        <input v-model="gainForm.materialCode" class="input" placeholder="物料编码" />
-        <input v-model="gainForm.batchNo" class="input" placeholder="批次号" />
-        <input v-model="gainForm.actualQty" class="input" type="text" inputmode="decimal" placeholder="盘盈数量" />
-        <input v-model="gainForm.remark" class="input" placeholder="备注" />
+        <input v-model="gainForm.locationCode" class="input" placeholder="库位" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
+        <input v-model="gainForm.materialCode" class="input" placeholder="物料编码" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
+        <input v-model="gainForm.batchNo" class="input" placeholder="批次号" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
+        <input v-model="gainForm.actualQty" class="input" type="text" inputmode="decimal" placeholder="盘盈数量" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
+        <input v-model="gainForm.remark" class="input" placeholder="备注" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
         <button class="primary-btn" type="primary" :loading="busy" @click="submitGain">提交盘盈</button>
       </view>
 
       <view v-else class="form-card">
         <text class="section-tip">扫码可自动填充后确认无库存（实盘 0）</text>
-        <input v-model="emptyForm.locationCode" class="input" placeholder="库位" />
-        <input v-model="emptyForm.materialCode" class="input" placeholder="物料编码" />
-        <input v-model="emptyForm.batchNo" class="input" placeholder="批次号(可选)" />
+        <input v-model="emptyForm.locationCode" class="input" placeholder="库位" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
+        <input v-model="emptyForm.materialCode" class="input" placeholder="物料编码" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
+        <input v-model="emptyForm.batchNo" class="input" placeholder="批次号(可选)" @focus="pauseScanAutoFocus" @blur="resumeScanAutoFocus" />
         <button class="warn-btn" type="warn" :loading="busy" @click="submitEmpty">确认无库存</button>
       </view>
 
@@ -115,6 +115,7 @@ import { ref, reactive, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import CompactScanBox from '@/components/CompactScanBox.vue'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 import {
   completeStockcheck,
   confirmEmptyStockcheck,

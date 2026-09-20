@@ -7,8 +7,10 @@ spring:
   datasource:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
     url: jdbc:sqlserver://${SQLSERVER_HOST:localhost}:${SQLSERVER_PORT:1433};databaseName=${SQLSERVER_DB:wms};encrypt=true;trustServerCertificate=true
-    username: ${SQLSERVER_USER:sa}
-    password: ${SQLSERVER_PASSWORD:sa@2019}
+#    username: ${SQLSERVER_USER:sa}
+#    password: ${SQLSERVER_PASSWORD:sa@2019}
+    username: ${SQLSERVER_USER:wms}
+    password: ${SQLSERVER_PASSWORD:dbUser$8088!Kd}
   flyway:
     enabled: true
     locations: classpath:db/migration/sqlserver
@@ -24,12 +26,16 @@ wms:
     detail-local-prefer-seconds: 120
     app-update:
       enabled: true
-      version-name: "1.0.0"
-      version-code: 100
+      # 须大于手机上已安装 APK 的 versionCode（见 wms-pda/src/manifest.json）才会提示更新
+      version-name: "1.0.4"
+      version-code: 104
       force: false
-      package-type: wgt
-      download-url: "/pda-update/wms-pda.wgt"
-      changelog: "功能优化与问题修复"
+      package-type: apk
+      # 相对站点根即可；PDA 会拼成 http://服务器:9980/pda-update/wms-pda.apk
+      # 切勿在服务端写成 HBuilder/DCloud 地址；也勿让客户端用 openURL 打开相对路径
+      # 文件放在「启动 jar 时的工作目录」下 pda-update/wms-pda.apk（与 jar 同级建 pda-update 文件夹）
+      download-url: "/pda-update/wms-pda.apk"
+      changelog: "修复在线更新误开 HBuilder 网页；改为应用内下载安装 APK"
 
 logging:
   level:
@@ -38,6 +44,27 @@ logging:
 
 kingdee:
   cloud:
+    enabled: true
+    mock-enabled: false
     # 金蝶标签打印：对外根地址与可选 API Key（详见 docs/金蝶标签打印对接说明.md）
-    print-api-key: ${KINGDEE_PRINT_API_KEY:}
-    print-public-base-url: ${WMS_PUBLIC_BASE_URL:}
+    print-api-key: "pr-kYJRwbOZz3QsXN5S3P5"
+    print-public-base-url: http://192.168.0.212:9980
+#    print-public-base-url: http://10.0.1.253:9980
+#    base-url: http://10.0.1.177/K3Cloud
+#    acct-id: 6a82bc99a6e77e
+    base-url: http://192.168.0.134/k3cloud
+    acct-id: 6a6bfc83694892
+    username: cloudee
+    password: "jd123456."
+    mes-process-form-id: ENG_Process
+    mes-equipment-form-id: ENG_Equipment
+    mes-route-form-id: ENG_ROUTE
+    mes-op-plan-form-id: PRD_PROCESSCHEDULE
+    mes-op-plan-alt-form-id: SFC_OperationPlanning
+    mes-report-form-id: SFC_OperationReport
+    mes-transfer-form-id: SFC_TransferDirect
+
+mes:
+  master-data-poll-enabled: true
+  plan-poll-enabled: true
+  default-over-receive-ratio: 0

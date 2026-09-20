@@ -10,7 +10,7 @@ export const DICT_LABELS = {
   },
   outboundType: {
     SALES: '销售出库',
-    PRODUCTION: '生产领料',
+    PRODUCTION: '生产备料',
     SAMPLE: '样品出库',
     GIFT: '赠品出库',
     BORROW: '借还出库',

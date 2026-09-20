@@ -9,7 +9,7 @@
         v-model="innerValue"
         class="scan-input"
         type="text"
-        :focus="focused"
+        :focus="nativeFocus"
         :disabled="disabled"
         :placeholder="placeholder"
         confirm-type="done"
@@ -30,6 +30,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onActivated, onUnmounted } from 'vue'
 import { useScannerInput } from '@/composables/useScannerInput.js'
+import { resumeScanAutoFocus, useScanAutoFocusPaused } from '@/utils/scanFocusGuard.js'
 
 const props = defineProps({
   placeholder: { type: String, default: '扫描条码自动录入' },
@@ -61,7 +62,6 @@ function clearLocalTimers() {
 const {
   innerValue,
   focused,
-  focusInput,
   focusInputOnce,
   resetInputState,
   onInput,
@@ -72,6 +72,9 @@ const {
   emit('scan', code)
 }, { getDisabled: () => props.disabled })
 
+const scanPaused = useScanAutoFocusPaused()
+const nativeFocus = computed(() => !!(focused.value && !props.disabled && !scanPaused.value))
+
 const statusText = computed(() => {
   if (props.disabled) return '处理中，请稍候...'
   if (ready.value) return '扫码枪已就绪，扫描后自动录入'
@@ -79,6 +82,7 @@ const statusText = computed(() => {
 })
 
 function handleFocus() {
+  resumeScanAutoFocus()
   onFocus()
   ready.value = true
 }
@@ -89,6 +93,7 @@ function handleBlur() {
 }
 
 function clearInput() {
+  resumeScanAutoFocus()
   resetInputState()
   focusInputOnce()
 }
@@ -103,14 +108,18 @@ watch(
 )
 
 onMounted(() => {
+  resumeScanAutoFocus()
   if (props.autoFocus && !mounted) {
     mounted = true
-    safeTimeout(focusInputOnce, 400)
+    safeTimeout(() => {
+      if (!scanPaused.value) focusInputOnce()
+    }, 400)
   }
 })
 
 onActivated(() => {
-  if (props.autoFocus && !props.disabled) {
+  resumeScanAutoFocus()
+  if (props.autoFocus && !props.disabled && !scanPaused.value) {
     safeTimeout(focusInputOnce, 300)
   }
 })

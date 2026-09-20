@@ -13,6 +13,7 @@ import {
   type SysUser,
   type KingdeeSecUser,
 } from '@/api/user'
+import { getRoles, type SysRole } from '@/api/role'
 
 const loading = ref(false)
 const tableData = ref<SysUser[]>([])
@@ -31,6 +32,7 @@ const form = reactive<SysUser>({
   password: '',
   kdUserNumber: '',
   kdUserId: undefined,
+  roleIds: [],
 })
 
 const resetDialogVisible = ref(false)
@@ -41,6 +43,7 @@ const pickerVisible = ref(false)
 const pickerLoading = ref(false)
 const pickerKeyword = ref('')
 const pickerRows = ref<KingdeeSecUser[]>([])
+const roleOptions = ref<SysRole[]>([])
 
 const kdDisplay = computed(() => {
   if (form.kdUserId && form.kdUserNumber) {
@@ -61,6 +64,7 @@ function resetForm() {
     password: '',
     kdUserNumber: '',
     kdUserId: undefined,
+    roleIds: [],
   })
   editingId.value = null
 }
@@ -90,6 +94,7 @@ function handleEdit(row: SysUser) {
     password: '',
     kdUserNumber: row.kdUserNumber || '',
     kdUserId: row.kdUserId ?? undefined,
+    roleIds: [...(row.roleIds ?? [])],
   })
   dialogTitle.value = '编辑用户'
   dialogVisible.value = true
@@ -165,7 +170,15 @@ function clearKingdeeUser() {
   form.kdUserNumber = ''
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  try {
+    const res = await getRoles({ current: 1, size: 200, status: 1 })
+    roleOptions.value = res.records ?? []
+  } catch {
+    roleOptions.value = []
+  }
+  await loadData()
+})
 </script>
 
 <template>
@@ -193,6 +206,12 @@ onMounted(loadData)
         </template>
       </el-table-column>
       <el-table-column prop="phone" label="手机" width="140" />
+      <el-table-column label="角色" min-width="160">
+        <template #default="{ row }">
+          <span v-if="row.roleNames?.length">{{ row.roleNames.join('、') }}</span>
+          <span v-else style="color: #909399">未设置</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="email" label="邮箱" min-width="180" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
@@ -228,6 +247,23 @@ onMounted(loadData)
       </el-form-item>
       <el-form-item label="姓名" required>
         <el-input v-model="form.realName" />
+      </el-form-item>
+      <el-form-item label="角色">
+        <el-select
+          v-model="form.roleIds"
+          multiple
+          clearable
+          filterable
+          placeholder="不选则不在移动端显示角色"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in roleOptions"
+            :key="item.id"
+            :label="item.roleName"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="金蝶用户">
         <el-input :model-value="kdDisplay" readonly placeholder="点击右侧按钮选择金蝶用户">

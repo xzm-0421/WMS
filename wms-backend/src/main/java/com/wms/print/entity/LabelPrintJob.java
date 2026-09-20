@@ -29,6 +29,14 @@ public class LabelPrintJob {
     private String specification;
     private String batchNo;
     private String productionDate;
+    /** FACTORY 厂内标签 / INCOMING 来料标签 */
+    private String labelFormat;
+    /** 客户简称（厂内）或供应商简称（来料） */
+    private String partnerName;
+    /** 板号（厂内） */
+    private String boardNo;
+    /** 包装号（来料） */
+    private String packageNo;
     private BigDecimal quantity;
     /** 入库单位（库存单位） */
     private String unitCode;

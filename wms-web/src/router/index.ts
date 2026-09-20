@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { MENU_PERMISSIONS } from '@/utils/permission'
+import { canAccessPath, MENU_PERMISSIONS } from '@/utils/permission'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -125,6 +125,76 @@ const router = createRouter({
           component: () => import('@/views/report/OverviewView.vue'),
           meta: { title: '报表概览', permission: MENU_PERMISSIONS['/report/overview'] },
         },
+        {
+          path: 'mes/materials',
+          name: 'MesMaterials',
+          component: () => import('@/views/mes/MaterialList.vue'),
+          meta: { title: '物料管理', permission: MENU_PERMISSIONS['/mes/materials'] },
+        },
+        {
+          path: 'mes/boms',
+          name: 'MesBoms',
+          component: () => import('@/views/mes/BomList.vue'),
+          meta: { title: 'BOM管理', permission: MENU_PERMISSIONS['/mes/boms'] },
+        },
+        {
+          path: 'mes/process',
+          name: 'MesProcess',
+          component: () => import('@/views/mes/ProcessList.vue'),
+          meta: { title: '工序管理', permission: MENU_PERMISSIONS['/mes/process'] },
+        },
+        {
+          path: 'mes/equipment',
+          name: 'MesEquipment',
+          component: () => import('@/views/mes/EquipmentList.vue'),
+          meta: { title: '设备管理', permission: MENU_PERMISSIONS['/mes/equipment'] },
+        },
+        {
+          path: 'mes/routes',
+          name: 'MesRoutes',
+          component: () => import('@/views/mes/RouteList.vue'),
+          meta: { title: '工艺路线', permission: MENU_PERMISSIONS['/mes/routes'] },
+        },
+        {
+          path: 'mes/master',
+          redirect: '/mes/materials',
+        },
+        {
+          path: 'mes/plans',
+          name: 'MesPlans',
+          component: () => import('@/views/mes/OpPlanList.vue'),
+          meta: { title: '工序计划', permission: MENU_PERMISSIONS['/mes/plans'] },
+        },
+        {
+          path: 'mes/report',
+          name: 'MesReport',
+          component: () => import('@/views/mes/ReportSubmit.vue'),
+          meta: { title: '工序报工', permission: MENU_PERMISSIONS['/mes/report'] },
+        },
+        {
+          path: 'mes/transfer',
+          name: 'MesTransfer',
+          component: () => import('@/views/mes/TransferSubmit.vue'),
+          meta: { title: '工序转移', permission: MENU_PERMISSIONS['/mes/transfer'] },
+        },
+        {
+          path: 'mes/rework',
+          name: 'MesRework',
+          component: () => import('@/views/mes/ReworkView.vue'),
+          meta: { title: '不良与返工', permission: MENU_PERMISSIONS['/mes/rework'] },
+        },
+        {
+          path: 'mes/reports',
+          name: 'MesReports',
+          component: () => import('@/views/mes/ReportList.vue'),
+          meta: { title: '报工记录', permission: MENU_PERMISSIONS['/mes/reports'] },
+        },
+        {
+          path: 'mes/sync',
+          name: 'MesSync',
+          component: () => import('@/views/mes/SyncCenter.vue'),
+          meta: { title: '同步中心', permission: MENU_PERMISSIONS['/mes/sync'] },
+        },
       ],
     },
   ],
@@ -151,7 +221,7 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
   const permission = to.meta.permission as string | undefined
-  if (permission && !userStore.hasPermission(permission)) {
+  if (permission && !canAccessPath(to.path, userStore.permissions, userStore.roles)) {
     ElMessage.warning('无访问权限')
     next('/dashboard')
     return

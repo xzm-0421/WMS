@@ -7,6 +7,7 @@
         :disabled="busy"
         :placeholder="typeConfig.searchPlaceholder"
         action-text="打开"
+        :bill-scan="true"
         @scan="onScan"
         @search="onSearch"
       />
@@ -37,7 +38,7 @@
       <view v-if="!notices.length && !loading" class="empty">
         <text class="empty-icon">📋</text>
         <text class="empty-text">暂无{{ typeConfig.label }}</text>
-        <text class="empty-hint">可直接扫描单据二维码进入明细</text>
+        <text class="empty-hint">{{ typeConfig.emptyHint || '可直接扫描单据二维码进入明细' }}</text>
       </view>
       <view v-if="loading && !notices.length" class="loading-tip">加载中...</view>
       <view v-else-if="notices.length" class="loading-tip end-tip">共 {{ notices.length }} 条</view>

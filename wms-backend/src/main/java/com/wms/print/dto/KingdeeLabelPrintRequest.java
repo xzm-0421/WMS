@@ -31,6 +31,17 @@ public class KingdeeLabelPrintRequest {
     private String specification;
     private String batchNo;
     private String productionDate;
+    /**
+     * 标签版式：FACTORY 厂内 / INCOMING 来料。
+     * 不传时：金蝶推送默认来料，期初/手工默认厂内。
+     */
+    private String labelFormat;
+    /** 客户简称（厂内）或供应商简称（来料） */
+    private String partnerName;
+    /** 板号（厂内） */
+    private String boardNo;
+    /** 包装号（来料） */
+    private String packageNo;
     private BigDecimal quantity;
     /** 入库单位 */
     private String unitCode;

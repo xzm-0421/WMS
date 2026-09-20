@@ -31,14 +31,14 @@ import { listNoticeBillTypes } from '@/constants/noticeBillTypes.js'
 const types = ref(listNoticeBillTypes('OUTBOUND'))
 
 function hubDesc(item) {
-  if (item.code === 'PRODUCTION_ISSUE') return '扫未审核领料单 · 核对物料 · 提交审核'
+  if (item.code === 'PRODUCTION_ISSUE') return '拉未审核领料单 · 扫码填数量 · 提交并审核'
   if (item.code === 'PRODUCTION_FEED') return '扫未审核补料单 · 核对物料 · 工作流审批'
   if (item.code === 'OUTSOURCE_FEED') return '扫未审核委外补料单 · 核对物料 · 工作流审批'
   if (item.code === 'PRODUCTION_RET_STOCK') return '扫未审核退库单 · 核对物料 · 提交审核'
   if (item.code === 'OUTSOURCE_ISSUE') return '扫未审核委外领料单 · 核对物料 · 提交审核'
   if (item.code === 'OTHER_OUT' || item.code === 'SALES_DELIVERY') {
     return item.code === 'SALES_DELIVERY'
-      ? '扫已审核发货通知 · 确认后下推销售出库并审核'
+      ? '扫未出库发货通知 · 确认后下推销售出库并审核'
       : '扫未审核其他出库单 · 核对物料 · 提交审核'
   }
   if (item.code === 'PURCHASE_RETURN') {

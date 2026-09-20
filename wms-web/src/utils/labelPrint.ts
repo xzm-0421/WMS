@@ -1,7 +1,11 @@
 import QRCode from 'qrcode'
 import type { LabelPrintJob } from '@/api/labelPrint'
 import { markLabelJobOpened, markLabelJobPrinted, syncLabelJobMaterial } from '@/api/labelPrint'
-import { DEFAULT_LABEL_PAPER } from '@/config/printConfig'
+import {
+  DEFAULT_LABEL_PAPER,
+  FACTORY_LABEL_COMPANY_NAME,
+  type MaterialLabelFormat,
+} from '@/config/printConfig'
 import { formatDate } from '@/utils/format'
 
 export interface DirectLabelPrintOptions {
@@ -49,31 +53,64 @@ function escapeHtml(value: unknown): string {
     .replace(/"/g, '&quot;')
 }
 
+function displayText(value: unknown, fallback = '-'): string {
+  const text = String(value ?? '').trim()
+  return text || fallback
+}
+
 function buildQtyDisplay(job: LabelPrintJob): string {
-  if (job.quantity == null) return job.unitCode || ''
+  if (job.quantity == null) return job.unitCode || '-'
   const qty = Number(job.quantity)
   const text = Number.isFinite(qty) ? String(qty) : String(job.quantity)
   return job.unitCode ? `${text} ${job.unitCode}` : text
 }
 
+/** 厂内 FACTORY / 来料 INCOMING；未指定时金蝶推送来料，其余厂内 */
+export function resolveMaterialLabelFormat(job: LabelPrintJob): MaterialLabelFormat {
+  const raw = String(job.labelFormat || '').trim()
+  if (raw === 'FACTORY' || raw === '厂内' || raw === '厂内标签') return 'FACTORY'
+  if (raw === 'INCOMING' || raw === '来料' || raw === '来料标签') return 'INCOMING'
+  if (String(job.sourceType || '').toUpperCase() === 'KINGDEE') return 'INCOMING'
+  return 'FACTORY'
+}
+
+function fieldCell(label: string, value: string): string {
+  return `<div class="cell"><span class="k">${escapeHtml(label)}</span><span class="v">${escapeHtml(value)}</span></div>`
+}
+
 function buildSingleLabelInnerHtml(job: LabelPrintJob, qrDataUrl: string): string {
+  const format = resolveMaterialLabelFormat(job)
   const prodDate = job.productionDate ? formatDate(job.productionDate) : formatDate(new Date())
+  const partnerLabel = format === 'FACTORY' ? '客户名称' : '供应商名称'
+  const auxLabel = format === 'FACTORY' ? '板号' : '包装号'
+  const auxValue = format === 'FACTORY'
+    ? displayText(job.boardNo)
+    : displayText(job.packageNo)
+
+  const titleHtml = format === 'FACTORY'
+    ? `<div class="label-title-block">
+         <div class="company">${escapeHtml(FACTORY_LABEL_COMPANY_NAME)}</div>
+         <div class="title">物料标签</div>
+       </div>`
+    : `<div class="label-title-block incoming">
+         <div class="title">物料标签</div>
+       </div>`
+
   return `
-      <div class="label-title">物料标签</div>
+      ${titleHtml}
       <div class="label-main">
-        <div class="label-fields">
-          <div class="field-row"><span class="label">物料编码</span><span class="value">${escapeHtml(job.materialCode)}</span></div>
-          <div class="field-row"><span class="label">物料名称</span><span class="value">${escapeHtml(job.materialName || '-')}</span></div>
-          <div class="field-row"><span class="label">规格型号</span><span class="value">${escapeHtml(job.specification || '-')}</span></div>
-          <div class="field-row split">
-            <span><span class="label">批次号</span><span class="value">${escapeHtml(job.batchNo || '-')}</span></span>
-            <span><span class="label">生产日期</span><span class="value">${escapeHtml(prodDate)}</span></span>
-          </div>
-          <div class="field-row"><span class="label">数量</span><span class="value qty">${escapeHtml(buildQtyDisplay(job))}</span></div>
+        <div class="field-grid">
+          ${fieldCell(partnerLabel, displayText(job.partnerName))}
+          ${fieldCell('生产日期', displayText(prodDate))}
+          ${fieldCell('物料编码', displayText(job.materialCode))}
+          ${fieldCell('数量', displayText(buildQtyDisplay(job)))}
+          ${fieldCell('物料名称', displayText(job.materialName))}
+          ${fieldCell('规格型号', displayText(job.specification))}
+          ${fieldCell('批次号', displayText(job.batchNo))}
+          ${fieldCell(auxLabel, auxValue)}
         </div>
         <div class="label-qr">
           <img src="${qrDataUrl}" alt="qr" />
-          <div class="qr-hint">扫码追溯</div>
         </div>
       </div>`
 }
@@ -83,7 +120,7 @@ async function buildLabelItems(
   options?: DirectLabelPrintOptions,
   paperHeightMm?: number,
 ): Promise<LabelItem[]> {
-  const qrPx = Math.min(512, Math.max(180, Math.round((paperHeightMm || 80) * 8)))
+  const qrPx = Math.min(512, Math.max(180, Math.round((paperHeightMm || 70) * 8)))
   const items: LabelItem[] = []
   for (const job of jobs) {
     const barcode = job.barcodeContent?.trim() || job.materialCode
@@ -102,12 +139,12 @@ async function buildLabelItems(
 }
 
 function labelStyles(contentWidthMm: number, contentHeightMm: number): string {
-  const baseFontMm = Math.min(3.8, Math.max(1.6, contentHeightMm * 0.048))
-  const padY = Math.max(0.8, contentHeightMm * 0.035)
-  const padX = Math.max(1.0, contentWidthMm * 0.022)
-  const qrBoxMm = Math.min(contentHeightMm * 0.55, contentWidthMm * 0.3, contentHeightMm * 0.7)
-  const qrImgMm = qrBoxMm * 0.9
-  const mainGapMm = Math.max(0.8, contentWidthMm * 0.018)
+  const baseFontMm = Math.min(3.2, Math.max(1.8, contentHeightMm * 0.042))
+  const padY = Math.max(1.2, contentHeightMm * 0.04)
+  const padX = Math.max(1.4, contentWidthMm * 0.025)
+  const qrBoxMm = Math.min(contentHeightMm * 0.48, contentWidthMm * 0.28, 30)
+  const qrImgMm = qrBoxMm * 0.92
+  const mainGapMm = Math.max(1.0, contentWidthMm * 0.02)
 
   return `
   .label-sheet {
@@ -120,13 +157,26 @@ function labelStyles(contentWidthMm: number, contentHeightMm: number): string {
     background: #fff;
     box-sizing: border-box;
     font-size: ${baseFontMm.toFixed(3)}mm;
+    color: #000;
   }
-  .label-title {
-    font-size: 1.3em;
-    font-weight: bold;
-    line-height: 1.1;
-    margin-bottom: 0.25em;
+  .label-title-block {
     flex-shrink: 0;
+    margin-bottom: 0.35em;
+    line-height: 1.15;
+  }
+  .label-title-block .company {
+    font-size: 0.95em;
+    font-weight: bold;
+    letter-spacing: 0.02em;
+  }
+  .label-title-block .title {
+    font-size: 1.35em;
+    font-weight: bold;
+    margin-top: 0.1em;
+  }
+  .label-title-block.incoming .title {
+    font-size: 1.55em;
+    text-align: left;
   }
   .label-main {
     flex: 1;
@@ -135,75 +185,60 @@ function labelStyles(contentWidthMm: number, contentHeightMm: number): string {
     min-height: 0;
     align-items: stretch;
   }
-  .label-fields {
+  .field-grid {
     flex: 1;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15em;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    column-gap: 1.2mm;
+    row-gap: 0.35mm;
+    align-content: stretch;
   }
-  .field-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    line-height: 1.15;
+  .cell {
+    min-width: 0;
     min-height: 0;
-  }
-  .field-row.split {
-    flex-direction: row;
-    gap: 0.6em;
-  }
-  .field-row.split > span {
-    flex: 1;
-    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0;
+    justify-content: center;
+    border-bottom: 0.12mm solid #ddd;
+    padding-bottom: 0.15mm;
   }
-  .field-row .label {
-    color: #666;
-    font-size: 0.6em;
+  .cell .k {
+    color: #555;
+    font-size: 0.62em;
     line-height: 1.1;
+    flex-shrink: 0;
   }
-  .field-row .value {
-    font-size: 0.92em;
+  .cell .v {
+    font-size: 0.95em;
     font-weight: bold;
-    word-break: break-all;
     line-height: 1.15;
+    word-break: break-all;
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
-  .field-row .value.qty {
-    color: #1a8c44;
-    font-size: 1.05em;
-    -webkit-line-clamp: 1;
-  }
   .label-qr {
     width: ${qrBoxMm.toFixed(2)}mm;
     flex-shrink: 0;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
+    align-self: center;
   }
   .label-qr img {
     width: ${qrImgMm.toFixed(2)}mm;
     height: ${qrImgMm.toFixed(2)}mm;
     display: block;
-  }
-  .qr-hint {
-    font-size: 0.5em;
-    color: #999;
-    margin-top: 0.2em;
-    text-align: center;
-    line-height: 1.1;
   }`
 }
 
-/** 按标签真实尺寸直打（默认 110×80mm），打印对话框选「纵向」；驱动纸张宽110×高80。 */
+/** 按标签真实尺寸直打（默认宽100mm × 高70mm）。
+ * 驱动纸张：宽100 × 高70；打印选「纵向」、缩放 100%、边距无。
+ * @page 必须写死宽×高（勿 size:auto，否则会落到 A4，内容缩小居中并可能拆成多页）。
+ * 勿加 portrait/landscape，方向交给打印对话框。 */
 function buildSinglePrintHtml(
   items: LabelItem[],
   labelWidthMm: number,
@@ -213,10 +248,6 @@ function buildSinglePrintHtml(
   const pageWidthMm = labelWidthMm
   const pageHeightMm = labelHeightMm
 
-  const printScript = autoPrint
-    ? `window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};
-       window.onafterprint=function(){setTimeout(function(){window.close();},500);};`
-    : ''
   const pagesHtml = items
     .map((item, index) => {
       const breakClass = index < items.length - 1 ? ' has-break' : ''
@@ -224,12 +255,33 @@ function buildSinglePrintHtml(
     })
     .join('')
 
+  const toolbarHtml = `
+  <div class="print-toolbar no-print">
+    <div class="tip">请确认：纸张 <strong>USER ${pageWidthMm}×${pageHeightMm}mm</strong>、布局 <strong>纵向</strong>、缩放 <strong>100%</strong>、边距 <strong>无</strong>。<br/>
+    预览应为横版（宽${pageWidthMm}×高${pageHeightMm}）；一页一张标签。</div>
+    <div class="actions">
+      <button type="button" class="primary" id="btn-print">打印</button>
+    </div>
+  </div>`
+
+  const printScript = `
+    (function(){
+      try { localStorage.removeItem('wms_label_print_rot'); } catch(e) {}
+      function doPrint(){ window.focus(); window.print(); }
+      window.addEventListener('DOMContentLoaded', function(){
+        var bp = document.getElementById('btn-print');
+        if (bp) bp.addEventListener('click', doPrint);
+        ${autoPrint ? 'setTimeout(doPrint, 400);' : ''}
+      });
+      window.onafterprint = function(){ setTimeout(function(){ window.close(); }, 500); };
+    })();`
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>标签 ${labelWidthMm}×${labelHeightMm}mm</title>
 <style>
   @page {
-    size: ${pageWidthMm}mm ${pageHeightMm}mm portrait;
+    size: ${pageWidthMm}mm ${pageHeightMm}mm;
     margin: 0;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -248,8 +300,8 @@ function buildSinglePrintHtml(
     overflow: hidden;
     page-break-inside: avoid;
     break-inside: avoid;
-    page-break-after: auto;
-    break-after: auto;
+    page-break-after: avoid;
+    break-after: avoid;
   }
   .print-page.has-break {
     page-break-after: always;
@@ -257,41 +309,68 @@ function buildSinglePrintHtml(
   }
   ${labelStyles(pageWidthMm, pageHeightMm)}
   @media print {
+    .no-print { display: none !important; }
     html, body {
       width: ${pageWidthMm}mm !important;
-      height: auto !important;
+      height: ${pageHeightMm}mm !important;
       margin: 0 !important;
       padding: 0 !important;
+      display: block !important;
+      min-height: 0 !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     .print-page {
       width: ${pageWidthMm}mm !important;
       height: ${pageHeightMm}mm !important;
+      max-width: ${pageWidthMm}mm !important;
       max-height: ${pageHeightMm}mm !important;
       overflow: hidden !important;
+      position: relative !important;
+      top: 0 !important;
+      left: 0 !important;
     }
   }
   @media screen {
-    html { background: #e8e8e8; width: auto; }
+    html { background: #e8e8e8; width: auto; height: auto; }
     body {
       width: auto;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       gap: 12px;
       padding: 16px;
     }
+    .print-toolbar {
+      width: min(920px, 100%);
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      font-size: 13px;
+      color: #333;
+      line-height: 1.5;
+    }
+    .print-toolbar .actions { margin-top: 10px; }
+    .print-toolbar button.primary {
+      border: none;
+      background: #1d4ed8;
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
     .print-page {
+      flex-shrink: 0;
       box-shadow: 0 2px 12px rgba(0,0,0,.12);
       background: #fff;
     }
   }
 </style>
 <script>${printScript}</script>
-</head><body>${pagesHtml}</body></html>`
+</head><body>${toolbarHtml}${pagesHtml}</body></html>`
 }
 
 function openPrintWindow(html: string): Window | null {

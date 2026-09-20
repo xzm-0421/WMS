@@ -95,6 +95,7 @@ public class AuthService {
         info.put("username", user.getUsername());
         info.put("realName", user.getRealName());
         info.put("roles", user.getRoles());
+        info.put("roleNames", roleNamesOf(user));
         info.put("permissions", user.getPermissions());
         info.put("warehouseScope", user.getWarehouseScope());
         info.put("dataScope", user.getDataScope());
@@ -125,6 +126,7 @@ public class AuthService {
         userInfo.put("username", user.getUsername());
         userInfo.put("realName", user.getRealName());
         userInfo.put("roles", user.getRoles());
+        userInfo.put("roleNames", roleNamesOf(user));
         if (mobile) {
             List<String> scope = user.getWarehouseScope();
             userInfo.put("warehouseCode", scope == null || scope.isEmpty() ? null : scope.get(0));
@@ -176,6 +178,11 @@ public class AuthService {
         } else {
             memoryCaptcha.remove(key);
         }
+    }
+
+    private static List<String> roleNamesOf(LoginUser user) {
+        List<String> names = user.getRoleNames();
+        return names == null ? List.of() : names;
     }
 
     private LoginUser currentUser() {

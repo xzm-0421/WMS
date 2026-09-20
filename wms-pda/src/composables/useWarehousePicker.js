@@ -1,6 +1,8 @@
 import { ref, reactive, watch, onMounted } from 'vue'
 import { listWarehouses } from '@/api/warehouse.js'
 
+const UNASSIGNED_NAME = '未分配'
+
 export function useWarehousePicker(props, emit) {
   const mode = ref('auto')
   const loading = ref(false)
@@ -19,12 +21,32 @@ export function useWarehousePicker(props, emit) {
     return `${item.warehouseCode}${erp} · ${item.warehouseName || item.warehouseCode}`
   }
 
+  function isPlaceholder(code, name) {
+    const value = (code || '').trim()
+    const title = (name || '').trim()
+    if (!value) return true
+    if (title.includes(UNASSIGNED_NAME)) return true
+    return false
+  }
+
   function applySuggest(code, name) {
     const value = (code || '').trim()
-    recommended.warehouseCode = value
-    recommended.erpWarehouseCode = value
-    recommended.warehouseName = name || value
-    recommended.label = value ? `${value}${name ? ` · ${name}` : ''}` : '-'
+    const picked = warehouseOptions.value.find(
+      (w) => w.warehouseCode === value || w.erpWarehouseCode === value,
+    )
+    const displayName = name || picked?.warehouseName || ''
+    if (isPlaceholder(value, displayName)) {
+      recommended.warehouseCode = ''
+      recommended.erpWarehouseCode = ''
+      recommended.warehouseName = ''
+      recommended.label = '提交时按物料/生产订单仓库分配'
+      emitChange()
+      return
+    }
+    recommended.warehouseCode = picked?.warehouseCode || value
+    recommended.erpWarehouseCode = picked?.erpWarehouseCode || value
+    recommended.warehouseName = displayName
+    recommended.label = picked?.label || `${value}${displayName ? ` · ${displayName}` : ''}`
     emitChange()
   }
 
@@ -33,13 +55,17 @@ export function useWarehousePicker(props, emit) {
     try {
       const page = await listWarehouses()
       const records = page?.records || page?.list || []
-      warehouseOptions.value = records.map((item) => ({
-        warehouseCode: item.warehouseCode,
-        erpWarehouseCode: item.erpWarehouseCode || item.warehouseCode,
-        warehouseName: item.warehouseName || item.warehouseCode,
-        label: formatLabel(item),
-      }))
-      if (mode.value === 'manual' && manualIndex.value < 0 && warehouseOptions.value.length) {
+      warehouseOptions.value = records
+        .filter((item) => !isPlaceholder(item.erpWarehouseCode || item.warehouseCode, item.warehouseName))
+        .map((item) => ({
+          warehouseCode: item.warehouseCode,
+          erpWarehouseCode: item.erpWarehouseCode || item.warehouseCode,
+          warehouseName: item.warehouseName || item.warehouseCode,
+          label: formatLabel(item),
+        }))
+      if (mode.value === 'auto') {
+        applySuggest(props.suggestCode, props.suggestName)
+      } else if (manualIndex.value < 0 && warehouseOptions.value.length) {
         const suggest = (props.suggestCode || '').trim()
         const idx = warehouseOptions.value.findIndex(
           (w) => w.warehouseCode === suggest || w.erpWarehouseCode === suggest,
@@ -109,13 +135,10 @@ export function useWarehousePicker(props, emit) {
         applySuggest(props.suggestCode, props.suggestName)
       }
     },
-    { immediate: true },
   )
 
   onMounted(() => {
-    if (mode.value === 'manual') {
-      loadWarehouseList()
-    }
+    loadWarehouseList()
   })
 
   return {

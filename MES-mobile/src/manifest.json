@@ -1,0 +1,39 @@
+{
+    "name" : "mes移动端",
+    "appid" : "__UNI__MESMOBILE01",
+    "description" : "手机移动端",
+    "versionName" : "1.0.1",
+    "versionCode" : 101,
+    "transformPx" : false,
+    "app-plus" : {
+        "usingComponents" : true,
+        "splashscreen" : {
+            "alwaysShowBeforeRender" : true,
+            "waiting" : true,
+            "autoclose" : true,
+            "delay" : 0
+        },
+        "modules" : {},
+        "distribute" : {
+            "android" : {
+                "permissions" : [
+                    "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+                    "<uses-permission android:name=\"android.permission.CAMERA\"/>"
+                ]
+            },
+            "ios" : {
+                "dSYMs" : false
+            }
+        }
+    },
+    "h5" : {
+        "title" : "mes移动端",
+        "router" : {
+            "mode" : "hash"
+        },
+        "devServer" : {
+            "port" : 5176
+        }
+    },
+    "vueVersion" : "3"
+}

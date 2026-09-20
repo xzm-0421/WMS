@@ -48,6 +48,20 @@ export const STATUS_LABEL: Record<string, string> = {
   KINGDEE: '金蝶云星空',
   MANUAL: '手工创建',
   FREE: '空闲',
+  NOT_SYNCED: '未同步',
+  SYNCED: '已同步',
+  MANUAL_REQUIRED: '待人工介入',
+  STALE: '长期未同步',
+  RELEASED: '已下达',
+  PAUSED: '已暂停',
+  RUNNING: '生产中',
+  REWORKING: '返工中',
+  SECONDARY: '二次返工',
+  DONE: '已完成',
+  NORMAL: '正常',
+  REWORK: '返工',
+  ONLINE: '在线',
+  OFFLINE: '离线',
 }
 
 export const STATUS_TYPE: Record<string, StatusTagType> = {
@@ -92,6 +106,20 @@ export const STATUS_TYPE: Record<string, StatusTagType> = {
   KINGDEE: 'info',
   MANUAL: 'info',
   FREE: 'success',
+  NOT_SYNCED: 'info',
+  SYNCED: 'success',
+  MANUAL_REQUIRED: 'danger',
+  STALE: 'warning',
+  RELEASED: '',
+  PAUSED: 'warning',
+  RUNNING: '',
+  REWORKING: 'warning',
+  SECONDARY: 'danger',
+  DONE: 'success',
+  NORMAL: '',
+  REWORK: 'warning',
+  ONLINE: 'success',
+  OFFLINE: 'danger',
 }
 
 export interface StatusLabelOptions {

@@ -83,6 +83,11 @@ public class PdaErpSyncAsyncService {
         run(batchNo, null, () -> submitBatchService.syncAuditExistingBillBatch(batchNo));
     }
 
+    @Async("erpSyncExecutor")
+    public void syncPurMrbActualQty(String batchNo) {
+        run(batchNo, NoticeBillType.PURCHASE_RETURN, () -> submitBatchService.syncPurMrbActualQtyBatch(batchNo));
+    }
+
     private void run(String batchNo, NoticeBillType billType, Runnable action) {
         String typeCode = billType != null ? billType.getCode() : "AUDIT_EXISTING";
         try {

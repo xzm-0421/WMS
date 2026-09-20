@@ -35,6 +35,8 @@
           inputmode="decimal"
           placeholder="输入实盘数"
           :disabled="busy"
+          @focus="pauseScanAutoFocus"
+          @blur="resumeScanAutoFocus"
           @confirm="submitMatched"
         />
         <button class="mini-btn" type="primary" size="mini" :loading="busy" @click="submitMatched">
@@ -89,6 +91,8 @@
             inputmode="decimal"
             placeholder="实盘"
             :disabled="busy"
+            @focus="pauseScanAutoFocus"
+            @blur="resumeScanAutoFocus"
           />
           <button size="mini" type="primary" :disabled="busy" @click="submitLine(line)">改</button>
         </view>
@@ -110,6 +114,7 @@ import { ref, computed, nextTick } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import ScanSearchBar from '@/components/ScanSearchBar.vue'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 import { useBillExclusiveLock, isBillLockedError } from '@/composables/useBillExclusiveLock.js'
 import {
   getStockCountDetail,

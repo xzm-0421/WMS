@@ -56,7 +56,8 @@ export const NOTICE_BILL_TYPES = {
     direction: 'OUTBOUND',
     icon: '🚚',
     color: '#ef4444',
-    searchPlaceholder: '扫码或搜索已审核发货通知单号',
+    searchPlaceholder: '扫码或搜索未出库发货通知单号',
+    emptyHint: '仅列出未出库数量不为 0 的已审核发货通知，也可扫码进入明细',
   },
   PRODUCTION_ISSUE: {
     code: 'PRODUCTION_ISSUE',
@@ -64,7 +65,7 @@ export const NOTICE_BILL_TYPES = {
     direction: 'OUTBOUND',
     icon: '🔧',
     color: '#f97316',
-    searchPlaceholder: '扫码或搜索生产领料单号/车间',
+    searchPlaceholder: '扫码或搜索审核中的领料单号/车间',
   },
   PRODUCTION_FEED: {
     code: 'PRODUCTION_FEED',

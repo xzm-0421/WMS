@@ -14,6 +14,7 @@ export interface SysUser {
   /** 金蝶用户 Id FUserID */
   kdUserId?: number | null
   roleIds?: number[]
+  roleNames?: string[]
   password?: string
 }
 

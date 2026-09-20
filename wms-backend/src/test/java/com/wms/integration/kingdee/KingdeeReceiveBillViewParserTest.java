@@ -88,6 +88,31 @@ class KingdeeReceiveBillViewParserTest {
     }
 
     @Test
+    void parsesCreatorFromPickMtrlView() throws Exception {
+        String json = """
+                {
+                  "FBillNo": "SCL260801001",
+                  "FDocumentStatus": "B",
+                  "FCreatorId": {
+                    "FNumber": "zhangsan",
+                    "FName": [{"Key": 2052, "Value": "张三"}]
+                  },
+                  "FEntity": [{
+                    "FSeq": 1,
+                    "FMaterialId": {"FNumber": "MAT001", "FName": [{"Key": 2052, "Value": "物料A"}]},
+                    "FUnitId": {"FNumber": "PCS"},
+                    "FAppQty": 10
+                  }]
+                }
+                """;
+        KingdeeReceiveBillVo bill = KingdeeReceiveBillViewParser.parse(objectMapper.readTree(json));
+        assertNotNull(bill);
+        assertEquals("zhangsan", bill.getCreatorKdUserNumber());
+        assertEquals("张三", bill.getCreatorName());
+        assertEquals("B", bill.getDocumentStatus());
+    }
+
+    @Test
     void fallsBackToNonFPrefixFields() throws Exception {
         String json = """
                 {

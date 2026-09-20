@@ -50,6 +50,8 @@ public class KingdeeReceiveBillLineVo {
     private Long moEntryId;
     /** 生产订单行号 FMoEntrySeq */
     private Integer moEntrySeq;
+    /** 车间编码（汇报分录 FWorkShopId1 / 头 FWorkShopId） */
+    private String workShopCode;
     /** 用料清单编号（头单号） */
     private String ppBomBillNo;
     /** 用料清单分录内码 FPPBomEntryId / FEntryID */

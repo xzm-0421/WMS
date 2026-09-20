@@ -7,6 +7,7 @@
         :disabled="busy"
         placeholder="扫码或搜索委外领料单号/供应商"
         action-text="打开"
+        :bill-scan="true"
         @scan="onScan"
         @search="onSearch"
       />

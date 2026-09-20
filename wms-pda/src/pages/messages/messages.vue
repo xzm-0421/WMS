@@ -39,10 +39,15 @@ async function loadData() {
 }
 
 async function readOne(msg) {
-  if (!msg.isRead) {
+  if (!msg.isRead && msg.messageId) {
     await markMessageRead(msg.messageId)
     msg.isRead = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
+  if (msg.bizType === 'PRODUCTION_ISSUE' && msg.bizNo) {
+    uni.navigateTo({
+      url: `/pages/picking/production-issue-scan?billNo=${encodeURIComponent(msg.bizNo)}`,
+    })
   }
 }
 

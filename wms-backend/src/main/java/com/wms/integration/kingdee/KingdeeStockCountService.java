@@ -46,6 +46,9 @@ public class KingdeeStockCountService {
         if (kingdeeCloudService.isEnabled()) {
             return pageFromKingdee(keyword, current, size);
         }
+        if (!kingdeeCloudService.isMockEnabled()) {
+            return PageResult.of(List.of(), 0, current, size);
+        }
         return pageMock(keyword, current, size);
     }
 
@@ -56,6 +59,9 @@ public class KingdeeStockCountService {
         String no = billNo.trim();
         if (kingdeeCloudService.isEnabled()) {
             return getFromKingdee(no);
+        }
+        if (!kingdeeCloudService.isMockEnabled()) {
+            return null;
         }
         return getMock(no);
     }

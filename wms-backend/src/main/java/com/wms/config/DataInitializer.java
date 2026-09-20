@@ -1,18 +1,22 @@
 package com.wms.config;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.wms.auth.service.AuthService;
 import com.wms.system.entity.SysUser;
 import com.wms.system.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+/**
+ * 默认管理员与演示主数据初始化。权限码由 {@link PermissionInitializer} 负责，此处不再重复插入。
+ */
 @Slf4j
 @Component
+@Order(2)
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
@@ -38,6 +42,7 @@ public class DataInitializer implements CommandLineRunner {
                 userMapper.updateById(update);
                 log.info("Admin password hash synchronized for default login");
             }
+            ensureSuperAdminRole(existing.getId());
             return;
         }
         log.info("Initializing default admin user...");
@@ -53,19 +58,44 @@ public class DataInitializer implements CommandLineRunner {
         admin.setCreateBy("system");
         userMapper.insert(admin);
 
-        jdbcTemplate.update("INSERT INTO sys_role (role_code, role_name, description, data_scope, status) VALUES (?, ?, ?, ?, ?)",
-                "SUPER_ADMIN", "超级管理员", "系统全部功能", 1, 1);
-        jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?, ?)", admin.getId(), 1L);
+        ensureSuperAdminRole(admin.getId());
+    }
 
-        String[] perms = {"system:user:list", "system:user:add", "inbound:list", "outbound:list", "inventory:list"};
-        for (String code : perms) {
+    /**
+     * 确保超级管理员角色存在、绑定 admin，并挂上全部权限（权限行已由 PermissionInitializer 写入）。
+     */
+    private void ensureSuperAdminRole(Long adminUserId) {
+        Integer roleCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_role WHERE role_code = 'SUPER_ADMIN'", Integer.class);
+        if (roleCount == null || roleCount == 0) {
             jdbcTemplate.update(
-                    "INSERT INTO sys_permission (permission_code, permission_name, module, status) VALUES (?, ?, ?, 1)",
-                    code, code, code.split(":")[0]);
-            jdbcTemplate.update(
-                    "INSERT INTO sys_role_permission (role_id, permission_id) SELECT 1, id FROM sys_permission WHERE permission_code = ?",
-                    code);
+                    "INSERT INTO sys_role (role_code, role_name, description, data_scope, status) VALUES (?, ?, ?, ?, ?)",
+                    "SUPER_ADMIN", "超级管理员", "系统全部功能", 1, 1);
         }
+
+        Long roleId = jdbcTemplate.queryForObject(
+                "SELECT id FROM sys_role WHERE role_code = 'SUPER_ADMIN'", Long.class);
+        if (roleId == null || adminUserId == null) {
+            return;
+        }
+
+        Integer userRoleCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_user_role WHERE user_id = ? AND role_id = ?",
+                Integer.class, adminUserId, roleId);
+        if (userRoleCount == null || userRoleCount == 0) {
+            jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?, ?)", adminUserId, roleId);
+        }
+
+        jdbcTemplate.update("""
+                INSERT INTO sys_role_permission (role_id, permission_id)
+                SELECT r.id, p.id FROM sys_role r
+                CROSS JOIN sys_permission p
+                WHERE r.role_code = 'SUPER_ADMIN' AND p.deleted = 0
+                AND NOT EXISTS (
+                    SELECT 1 FROM sys_role_permission rp
+                    WHERE rp.role_id = r.id AND rp.permission_id = p.id
+                )
+                """);
     }
 
     private void initDemoData() {

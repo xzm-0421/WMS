@@ -12,7 +12,7 @@
       <view class="order-info">
         <text class="order-no">{{ detail.billNo }}</text>
         <text class="order-sub">{{ detail.supplierName || detail.supplierCode || '-' }}</text>
-        <text v-if="detail.erpBillNo" class="order-erp">生产领料单 {{ detail.erpBillNo }}</text>
+        <text v-if="detail.creatorName" class="order-erp">建单人 {{ detail.creatorName }}</text>
       </view>
       <view class="order-stat-wrap">
         <text class="order-stat">{{ checkedCount }}/{{ lines.length }} 已勾</text>
@@ -74,6 +74,7 @@
               :disabled="updatingLineNo === line.lineNo"
               placeholder="0"
               @input="onQtyInput(line, $event)"
+              @focus="pauseScanAutoFocus"
               @blur="onQtyBlur(line)"
               @confirm="onQtyBlur(line)"
             />
@@ -114,6 +115,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import CompactScanBox from '@/components/CompactScanBox.vue'
 import useProductionIssueScan from '@/composables/useProductionIssueScan.js'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 import { sanitizeDecimalInput } from '@/utils/decimalInput.js'
 import { qtyDecimalScale, formatQtyInput } from '@/utils/formatQty.js'
 import useWindowedLines from '@/utils/useWindowedLines.js'
@@ -177,6 +179,7 @@ function onQtyInput(line, e) {
 }
 
 async function onQtyBlur(line) {
+  resumeScanAutoFocus()
   const raw = qtyDrafts[line.lineNo]
   const num = raw === '' || raw == null ? 0 : Number(raw)
   if (Number.isNaN(num) || num < 0) {
@@ -220,7 +223,7 @@ async function onSubmit() {
 
 onLoad((options) => {
   billNo.value = decodeURIComponent(options?.billNo || '')
-  uni.setNavigationBarTitle({ title: '领料确认' })
+  uni.setNavigationBarTitle({ title: '生产领料确认' })
 })
 
 onShow(async () => {

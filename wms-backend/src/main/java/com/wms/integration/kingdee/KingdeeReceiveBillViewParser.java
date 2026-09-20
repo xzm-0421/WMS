@@ -40,7 +40,7 @@ public final class KingdeeReceiveBillViewParser {
                                 "FRetcustId", "FCustomerID", "FCustomerId"),
                         refName(billNode, "F_YVZR_Base_qtr")))
                 .documentStatus(firstText(billNode, "FDocumentStatus", "DocumentStatus"))
-                .warehouseCode(refNumber(billNode, "FStockId0", "FStockOrgId", "StockOrgId", "FStockId", "StockId"))
+                .warehouseCode(refNumber(billNode, "FStockId0", "FStockId", "StockId"))
                 .billId(parseLong(firstText(billNode, "FID", "Id")))
                 .businessType(firstText(billNode, "FBusinessType", "BusinessType"))
                 .billTypeNumber(refNumber(billNode, "FBillTypeID", "BillTypeID", "FBillType", "BillType"))
@@ -49,6 +49,8 @@ public final class KingdeeReceiveBillViewParser {
                         firstText(billNode, "FMOBillNO", "FMoBillNo", "MoBillNo"),
                         firstText(billNode, "FSubReqBillNo", "SubReqBillNo")))
                 .parentMaterialCode(refNumber(billNode, "FMaterialId", "MaterialId", "FParentMaterialId"))
+                .creatorKdUserNumber(refNumber(billNode, "FCreatorId", "CreatorId"))
+                .creatorName(refName(billNode, "FCreatorId", "CreatorId"))
                 .build();
         List<KingdeeReceiveBillLineVo> lines = parseMaterialLines(billNode);
         for (KingdeeReceiveBillLineVo line : lines) {
@@ -92,7 +94,7 @@ public final class KingdeeReceiveBillViewParser {
         int idx = 0;
         for (JsonNode entry : entries) {
             idx++;
-            KingdeeReceiveBillLineVo line = mapEntryLine(entry, idx);
+            KingdeeReceiveBillLineVo line = mapEntryLine(billNode, entry, idx);
             if (line != null) {
                 lines.add(line);
             }
@@ -100,7 +102,7 @@ public final class KingdeeReceiveBillViewParser {
         return lines;
     }
 
-    private static KingdeeReceiveBillLineVo mapEntryLine(JsonNode entry, int fallbackSeq) {
+    private static KingdeeReceiveBillLineVo mapEntryLine(JsonNode billNode, JsonNode entry, int fallbackSeq) {
         String materialCode = refNumber(entry,
                 "FMaterialId", "FMaterialID", "FMATERIALID", "MaterialId", "MaterialID");
         if (!StringUtils.hasText(materialCode)) {
@@ -231,6 +233,9 @@ public final class KingdeeReceiveBillViewParser {
                 .moEntryId(parseLong(firstText(entry, "FMoEntryId", "MoEntryId")))
                 .moEntrySeq(parseInt(firstText(entry, "FMoEntrySeq", "MoEntrySeq"), 0) > 0
                         ? parseInt(firstText(entry, "FMoEntrySeq", "MoEntrySeq"), 0) : null)
+                .workShopCode(firstNonBlank(
+                        refNumber(entry, "FWorkShopId1", "FWorkShopID", "FWorkShopId", "WorkShopId1"),
+                        billNode == null ? "" : refNumber(billNode, "FWorkShopId", "WorkShopId", "FWorkShopID")))
                 .ppBomEntryId(parseLong(firstNonBlank(
                         firstText(entry, "FPPBomEntryId", "PPBomEntryId", "FPPbomEntryId"),
                         entryId == null ? null : String.valueOf(entryId))))

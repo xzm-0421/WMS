@@ -94,7 +94,10 @@ export function createNoticeBillScan(billType, messages = {}) {
         const cached = cacheGet(cacheKey)
         if (cached) {
           applyDetail(cached)
-          // 缓存命中仍须续租/抢占校验，避免多人同时操作
+          if (cached.lockRequired === false) {
+            billLock.stop()
+            return cached
+          }
           try {
             await heartbeatNoticeBillLock(billType, billNo.value)
             billLock.start()
@@ -113,7 +116,11 @@ export function createNoticeBillScan(billType, messages = {}) {
         applyDetail(data)
         cacheSet(cacheKey, data, DETAIL_CACHE_TTL_MS)
         lastLoadAt = Date.now()
-        billLock.start()
+        if (data?.lockRequired === false) {
+          billLock.stop()
+        } else {
+          billLock.start()
+        }
         return data
       } catch (e) {
         if (isBillLockedError(e)) {

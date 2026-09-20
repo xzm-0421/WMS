@@ -77,6 +77,8 @@
           inputmode="decimal"
           placeholder="输入移库数量"
           :disabled="busy"
+          @focus="pauseScanAutoFocus"
+          @blur="resumeScanAutoFocus"
         />
         <text class="unit">{{ form.unitCode || '' }}</text>
       </view>
@@ -133,6 +135,7 @@ import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { onLoad, onShow, onHide } from '@dcloudio/uni-app'
 import ScanSearchBar from '@/components/ScanSearchBar.vue'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 import { queryInventoryPost, transferStock } from '@/api/mobile.js'
 import { resolveBarcode } from '@/utils/scan.js'
 

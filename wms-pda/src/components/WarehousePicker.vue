@@ -9,7 +9,7 @@
       <view class="wh-display">
         <text class="wh-label">物料仓库</text>
         <text class="wh-code">{{ recommended.label || '-' }}</text>
-        <text class="wh-hint">按收料分录物料仓库自动分配</text>
+        <text class="wh-hint">按物料仓库或生产订单仓库自动分配，跳过未分配仓</text>
       </view>
     </view>
 

@@ -153,9 +153,8 @@
               placeholder="0"
 
               @input="onQtyInput(line, $event)"
-
+              @focus="pauseScanAutoFocus"
               @blur="onQtyBlur(line)"
-
               @confirm="onQtyBlur(line)"
 
             />
@@ -174,6 +173,7 @@
               :disabled="updatingLineNo === line.lineNo"
               placeholder="0"
               @input="onAuxQtyInput(line, $event)"
+              @focus="pauseScanAutoFocus"
               @blur="onAuxQtyBlur(line)"
               @confirm="onAuxQtyBlur(line)"
             />
@@ -256,6 +256,7 @@ import LocationPicker from '@/components/LocationPicker.vue'
 import useReceiveNoticeScan from '@/composables/useReceiveNoticeScan.js'
 
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 import { sanitizeDecimalInput } from '@/utils/decimalInput.js'
 import { qtyDecimalScale, formatQtyInput } from '@/utils/formatQty.js'
 
@@ -460,6 +461,7 @@ function onAuxQtyInput(line, e) {
   auxQtyDrafts[line.lineNo] = sanitizeDecimalInput(e.detail.value, qtyDecimalScale(autoUnitOf(line)))
 }
 async function onAuxQtyBlur(line) {
+  resumeScanAutoFocus()
   const kg = Number(auxQtyDrafts[line.lineNo] || 0)
   if (Number.isNaN(kg) || kg < 0) {
     auxQtyDrafts[line.lineNo] = formatQtyInput(autoPendingQty(line), autoUnitOf(line))
@@ -494,6 +496,7 @@ function onQtyInput(line, e) {
   }
 }
 async function onQtyBlur(line) {
+  resumeScanAutoFocus()
   const raw = qtyDrafts[line.lineNo]
   const pcs = raw === '' || raw == null ? 0 : Number(raw)
   if (Number.isNaN(pcs) || pcs < 0) {

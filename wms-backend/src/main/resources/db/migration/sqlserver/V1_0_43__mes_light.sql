@@ -1,0 +1,230 @@
+-- 轻MES：基础资料、工序计划、报工/转移、返工、运行状态（Web 端先行，不含 PDA）
+
+CREATE TABLE mes_process (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    process_code        VARCHAR(50)  NOT NULL,
+    process_name        VARCHAR(100) NOT NULL,
+    dept_code           VARCHAR(50),
+    dept_name           VARCHAR(100),
+    report_flag         INT          NOT NULL DEFAULT 1,
+    transfer_flag       INT          NOT NULL DEFAULT 1,
+    inspect_flag        INT          NOT NULL DEFAULT 0,
+    over_receive_ratio  DECIMAL(10,4),
+    status              INT          NOT NULL DEFAULT 1,
+    sync_status         VARCHAR(20)  NOT NULL DEFAULT 'SYNCED',
+    last_sync_time      DATETIME2,
+    fail_reason         NVARCHAR(500),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_process_code UNIQUE (process_code)
+);
+
+CREATE TABLE mes_equipment (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    equipment_code      VARCHAR(50)  NOT NULL,
+    equipment_name      VARCHAR(100) NOT NULL,
+    process_code        VARCHAR(50),
+    spec_model          VARCHAR(200),
+    status              INT          NOT NULL DEFAULT 1,
+    sync_status         VARCHAR(20)  NOT NULL DEFAULT 'SYNCED',
+    last_sync_time      DATETIME2,
+    fail_reason         NVARCHAR(500),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_equipment_code UNIQUE (equipment_code)
+);
+
+CREATE TABLE mes_route (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    product_code        VARCHAR(50)  NOT NULL,
+    product_name        VARCHAR(200),
+    version_no          VARCHAR(50)  NOT NULL,
+    over_receive_ratio  DECIMAL(10,4),
+    status              INT          NOT NULL DEFAULT 1,
+    sync_status         VARCHAR(20)  NOT NULL DEFAULT 'SYNCED',
+    last_sync_time      DATETIME2,
+    fail_reason         NVARCHAR(500),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_route_product_ver UNIQUE (product_code, version_no)
+);
+
+CREATE TABLE mes_route_op (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    route_id            BIGINT       NOT NULL,
+    product_code        VARCHAR(50)  NOT NULL,
+    version_no          VARCHAR(50)  NOT NULL,
+    seq_no              INT          NOT NULL,
+    process_code        VARCHAR(50)  NOT NULL,
+    process_name        VARCHAR(100),
+    std_hours           DECIMAL(18,4),
+    inspect_flag        INT          NOT NULL DEFAULT 0,
+    rework_join_flag    INT          NOT NULL DEFAULT 0,
+    work_center_code    VARCHAR(50),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0
+);
+
+CREATE INDEX ix_mes_route_op_route ON mes_route_op (route_id, seq_no);
+CREATE INDEX ix_mes_route_op_product ON mes_route_op (product_code, version_no);
+
+CREATE TABLE mes_op_plan (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    plan_key            VARCHAR(120) NOT NULL,
+    erp_bill_no         VARCHAR(50),
+    erp_entry_id        BIGINT,
+    mo_no               VARCHAR(50)  NOT NULL,
+    product_code        VARCHAR(50),
+    product_name        VARCHAR(200),
+    process_code        VARCHAR(50)  NOT NULL,
+    process_name        VARCHAR(100),
+    seq_no              INT,
+    plan_qty            DECIMAL(18,4) NOT NULL DEFAULT 0,
+    reported_qty        DECIMAL(18,4) NOT NULL DEFAULT 0,
+    rework_reported_qty DECIMAL(18,4) NOT NULL DEFAULT 0,
+    over_receive_ratio  DECIMAL(10,4),
+    plan_start          DATE,
+    plan_end            DATE,
+    erp_status          VARCHAR(20),
+    plan_status         VARCHAR(20)  NOT NULL DEFAULT 'RELEASED',
+    sync_status         VARCHAR(20)  NOT NULL DEFAULT 'SYNCED',
+    last_sync_time      DATETIME2,
+    fail_reason         NVARCHAR(500),
+    change_reject_reason NVARCHAR(500),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_op_plan_key UNIQUE (plan_key)
+);
+
+CREATE INDEX ix_mes_op_plan_mo ON mes_op_plan (mo_no, process_code);
+
+CREATE TABLE mes_report (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    report_no           VARCHAR(40)  NOT NULL,
+    mo_no               VARCHAR(50)  NOT NULL,
+    process_code        VARCHAR(50)  NOT NULL,
+    process_name        VARCHAR(100),
+    plan_id             BIGINT,
+    report_type         VARCHAR(20)  NOT NULL,
+    qty                 DECIMAL(18,4) NOT NULL,
+    weight_kg           DECIMAL(18,4),
+    equipment_code      VARCHAR(50),
+    equipment_name      VARCHAR(100),
+    operator_id         VARCHAR(50),
+    operator_name       VARCHAR(50),
+    remark              NVARCHAR(500),
+    defect_no           VARCHAR(40),
+    report_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    sync_status         VARCHAR(30)  NOT NULL DEFAULT 'PENDING',
+    sync_time           DATETIME2,
+    erp_bill_no         VARCHAR(50),
+    fail_reason         NVARCHAR(1000),
+    retry_count         INT          NOT NULL DEFAULT 0,
+    next_retry_time     DATETIME2,
+    cancel_reason       NVARCHAR(500),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_report_no UNIQUE (report_no)
+);
+
+CREATE INDEX ix_mes_report_sync ON mes_report (sync_status, next_retry_time);
+CREATE INDEX ix_mes_report_mo ON mes_report (mo_no, report_time);
+
+CREATE TABLE mes_transfer (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    transfer_no         VARCHAR(40)  NOT NULL,
+    mo_no               VARCHAR(50)  NOT NULL,
+    from_process_code   VARCHAR(50)  NOT NULL,
+    from_process_name   VARCHAR(100),
+    to_process_code     VARCHAR(50)  NOT NULL,
+    to_process_name     VARCHAR(100),
+    qty                 DECIMAL(18,4) NOT NULL,
+    auto_flag           INT          NOT NULL DEFAULT 0,
+    operator_id         VARCHAR(50),
+    operator_name       VARCHAR(50),
+    remark              NVARCHAR(500),
+    transfer_time       DATETIME2    NOT NULL DEFAULT GETDATE(),
+    sync_status         VARCHAR(30)  NOT NULL DEFAULT 'PENDING',
+    sync_time           DATETIME2,
+    erp_bill_no         VARCHAR(50),
+    fail_reason         NVARCHAR(1000),
+    retry_count         INT          NOT NULL DEFAULT 0,
+    next_retry_time     DATETIME2,
+    cancel_reason       NVARCHAR(500),
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_transfer_no UNIQUE (transfer_no)
+);
+
+CREATE INDEX ix_mes_transfer_sync ON mes_transfer (sync_status, next_retry_time);
+
+CREATE TABLE mes_defect (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    defect_no           VARCHAR(40)  NOT NULL,
+    mo_no               VARCHAR(50)  NOT NULL,
+    source_process_code VARCHAR(50)  NOT NULL,
+    source_process_name VARCHAR(100),
+    defect_qty          DECIMAL(18,4) NOT NULL,
+    defect_type         VARCHAR(50)  NOT NULL,
+    defect_desc         NVARCHAR(500),
+    owner_name          VARCHAR(50),
+    rework_status       VARCHAR(20)  NOT NULL DEFAULT 'REWORKING',
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0,
+    CONSTRAINT uk_mes_defect_no UNIQUE (defect_no)
+);
+
+CREATE INDEX ix_mes_defect_mo ON mes_defect (mo_no);
+
+CREATE TABLE mes_rework_op (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    defect_no           VARCHAR(40)  NOT NULL,
+    seq_no              INT          NOT NULL,
+    process_code        VARCHAR(50)  NOT NULL,
+    process_name        VARCHAR(100),
+    plan_qty            DECIMAL(18,4) NOT NULL,
+    reported_qty        DECIMAL(18,4) NOT NULL DEFAULT 0,
+    op_status           VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    create_by           VARCHAR(50)  NOT NULL DEFAULT 'system',
+    create_time         DATETIME2    NOT NULL DEFAULT GETDATE(),
+    update_by           VARCHAR(50),
+    update_time         DATETIME2,
+    deleted             INT          NOT NULL DEFAULT 0
+);
+
+CREATE INDEX ix_mes_rework_op_defect ON mes_rework_op (defect_no, seq_no);
+
+CREATE TABLE mes_runtime (
+    id                  INT          NOT NULL PRIMARY KEY,
+    network_status      VARCHAR(20)  NOT NULL DEFAULT 'OFFLINE',
+    fail_streak         INT          NOT NULL DEFAULT 0,
+    last_check_time     DATETIME2,
+    last_online_time    DATETIME2,
+    last_error          NVARCHAR(1000)
+);
+
+INSERT INTO mes_runtime (id, network_status) VALUES (1, 'OFFLINE');

@@ -12,7 +12,7 @@
     <input
       class="search-input"
       type="text"
-      :focus="focused"
+      :focus="nativeFocus"
       :disabled="disabled"
       :value="innerValue"
       :placeholder="placeholder"
@@ -30,8 +30,9 @@
 </template>
 
 <script setup>
-import { watch, onMounted, onActivated, onUnmounted } from 'vue'
+import { computed, watch, onMounted, onActivated, onUnmounted } from 'vue'
 import { useScannerInput } from '@/composables/useScannerInput.js'
+import { resumeScanAutoFocus, useScanAutoFocusPaused } from '@/utils/scanFocusGuard.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -39,6 +40,8 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   autoFocus: { type: Boolean, default: true },
   actionText: { type: String, default: '搜索' },
+  /** 兼容旧页面属性，扫码逻辑已统一，不再单独拦截按键 */
+  billScan: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'scan', 'search'])
@@ -74,8 +77,14 @@ const {
     emit('update:modelValue', code)
     emit('scan', code)
   },
-  { getDisabled: () => props.disabled },
+  {
+    getDisabled: () => props.disabled,
+    getBillScan: () => props.billScan,
+  },
 )
+
+const scanPaused = useScanAutoFocusPaused()
+const nativeFocus = computed(() => !!(focused.value && !props.disabled && !scanPaused.value))
 
 watch(
   () => props.modelValue,
@@ -90,6 +99,7 @@ watch(innerValue, (v) => {
 })
 
 function handleFocus() {
+  resumeScanAutoFocus()
   onFocus()
 }
 
@@ -98,6 +108,7 @@ function handleBlur() {
 }
 
 function focusInput() {
+  resumeScanAutoFocus()
   if (!props.disabled) focusInputOnce()
 }
 
@@ -126,14 +137,17 @@ watch(
 )
 
 onMounted(() => {
+  resumeScanAutoFocus()
   if (props.autoFocus && !mounted) {
     mounted = true
-    safeTimeout(focusInputOnce, 400)
+    safeTimeout(focusInputOnce, 200)
+    if (props.billScan) safeTimeout(focusInputOnce, 600)
   }
 })
 
 onActivated(() => {
-  if (props.autoFocus && !props.disabled) safeTimeout(focusInputOnce, 300)
+  resumeScanAutoFocus()
+  if (props.autoFocus && !props.disabled && !scanPaused.value) safeTimeout(focusInputOnce, 300)
 })
 
 onUnmounted(() => {

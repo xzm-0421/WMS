@@ -27,7 +27,9 @@ public class SysPermissionService {
             Map.entry("qc", "质检管理"),
             Map.entry("production", "生产对接"),
             Map.entry("barcode", "条码管理"),
-            Map.entry("report", "报表分析")
+            Map.entry("print", "标签打印"),
+            Map.entry("report", "报表分析"),
+            Map.entry("mes", "轻MES")
     );
 
     private final SysPermissionMapper permissionMapper;

@@ -136,6 +136,10 @@ public class LabelPrintJobService {
             req.setUnitCode(trimToNull(row.getUnitCode()));
             req.setPriceUnitCode(trimToNull(row.getPriceUnitCode()));
             req.setCopies(row.getCopies() != null && row.getCopies() > 0 ? row.getCopies() : 1);
+            req.setLabelFormat(trimToNull(row.getLabelFormat()));
+            req.setPartnerName(trimToNull(row.getPartnerName()));
+            req.setBoardNo(trimToNull(row.getBoardNo()));
+            req.setPackageNo(trimToNull(row.getPackageNo()));
             req.setBarcodeType("QR");
             LabelPrintJob job = buildJob(req, "OPENING", user, false);
             jobMapper.insert(job);
@@ -168,6 +172,10 @@ public class LabelPrintJobService {
             row.setUnitCode(vo.getUnitCode());
             row.setPriceUnitCode(vo.getPriceUnitCode());
             row.setCopies(vo.getCopies());
+            row.setLabelFormat(vo.getLabelFormat());
+            row.setPartnerName(vo.getPartnerName());
+            row.setBoardNo(vo.getBoardNo());
+            row.setPackageNo(vo.getPackageNo());
             rows.add(row);
         }
         EasyExcel.write(outputStream, OpeningStockExcelRow.class).sheet("期初库存").doWrite(rows);
@@ -209,6 +217,10 @@ public class LabelPrintJobService {
         rows.add(List.of("入库单位", "否", "库存/入库单位；不填则取物料主数据单位"));
         rows.add(List.of("计价单位", "否", "计价单位，如 KG"));
         rows.add(List.of("打印份数", "否", "正整数，默认 1"));
+        rows.add(List.of("标签类型", "否", "填「厂内」或「来料」；空则默认厂内标签"));
+        rows.add(List.of("客户/供应商", "否", "厂内填客户简称，来料填供应商简称"));
+        rows.add(List.of("板号", "否", "厂内标签用；可与批次组合展示"));
+        rows.add(List.of("包装号", "否", "来料标签用"));
         rows.add(List.of("使用提示", "-", "请保留「期初库存」表头行；从第 2 行起填写；可删除示例行后再导入"));
         return rows;
     }
@@ -293,12 +305,45 @@ public class LabelPrintJobService {
         header.put("FQtyDisplay", buildQtyDisplay(job, material.unitCode()));
         header.put("FBarCode", job.getBarcodeContent());
         header.put("FBarcodeType", job.getBarcodeType());
+        header.put("FLabelFormat", job.getLabelFormat());
+        header.put("FPartnerName", job.getPartnerName());
+        header.put("FBoardNo", job.getBoardNo());
+        header.put("FPackageNo", job.getPackageNo());
+        header.put("FCompanyName", "东莞市艾迪富精密金属科技有限公司");
         header.put("FPageWidth", job.getLabelWidthMm());
         header.put("FPageHeight", job.getLabelHeightMm());
         header.put("FCopies", job.getCopies());
         header.put("FSourceBillNo", job.getSourceBillNo());
         header.put("FJobId", job.getJobId());
         return PrintDocumentHelper.document(jobId, "t_bd_material", null, header, java.util.List.of(), null);
+    }
+
+    /**
+     * 厂内 FACTORY / 来料 INCOMING。未指定时：金蝶推送默认来料，其余默认厂内。
+     */
+    private static String resolveLabelFormat(String raw, String sourceType) {
+        String normalized = normalizeLabelFormat(raw);
+        if (normalized != null) {
+            return normalized;
+        }
+        if ("KINGDEE".equalsIgnoreCase(sourceType)) {
+            return "INCOMING";
+        }
+        return "FACTORY";
+    }
+
+    private static String normalizeLabelFormat(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String text = raw.trim();
+        if ("FACTORY".equalsIgnoreCase(text) || "厂内".equals(text) || "厂内标签".equals(text)) {
+            return "FACTORY";
+        }
+        if ("INCOMING".equalsIgnoreCase(text) || "来料".equals(text) || "来料标签".equals(text)) {
+            return "INCOMING";
+        }
+        return null;
     }
 
     public LabelPrintJobVo syncMaterial(String jobId) {
@@ -359,13 +404,17 @@ public class LabelPrintJobService {
         job.setSpecification(material.specification());
         job.setBatchNo(req.getBatchNo());
         job.setProductionDate(normalizeProductionDate(req.getProductionDate()));
+        job.setLabelFormat(resolveLabelFormat(req.getLabelFormat(), sourceType));
+        job.setPartnerName(trimToNull(req.getPartnerName()));
+        job.setBoardNo(trimToNull(req.getBoardNo()));
+        job.setPackageNo(trimToNull(req.getPackageNo()));
         job.setQuantity(req.getQuantity());
         job.setUnitCode(StringUtils.hasText(req.getUnitCode()) ? req.getUnitCode().trim() : material.unitCode());
         job.setPriceUnitCode(trimToNull(req.getPriceUnitCode()));
         job.setBarcodeContent(barcode);
         job.setBarcodeType(normalizeBarcodeType(req.getBarcodeType()));
-        job.setLabelWidthMm(req.getLabelWidthMm() != null ? req.getLabelWidthMm() : new BigDecimal("110"));
-        job.setLabelHeightMm(req.getLabelHeightMm() != null ? req.getLabelHeightMm() : new BigDecimal("80"));
+        job.setLabelWidthMm(req.getLabelWidthMm() != null ? req.getLabelWidthMm() : new BigDecimal("100"));
+        job.setLabelHeightMm(req.getLabelHeightMm() != null ? req.getLabelHeightMm() : new BigDecimal("70"));
         job.setCopies(req.getCopies() != null && req.getCopies() > 0 ? req.getCopies() : 1);
         job.setStatus("PENDING");
         if (user != null) {

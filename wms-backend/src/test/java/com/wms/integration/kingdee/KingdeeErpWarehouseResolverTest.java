@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -27,7 +28,16 @@ class KingdeeErpWarehouseResolverTest {
     void preferReceiveLineWarehouse() {
         KingdeeCloudProperties props = new KingdeeCloudProperties();
         resolver = new KingdeeErpWarehouseResolver(warehouseMapper, props);
-        assertEquals("CK004", resolver.resolve("WH01", "CK004"));
+        assertEquals("CK008", resolver.resolve("WH01", "CK008"));
+    }
+
+    @Test
+    void skipUnassignedLineWarehouse() {
+        KingdeeCloudProperties props = new KingdeeCloudProperties();
+        resolver = new KingdeeErpWarehouseResolver(warehouseMapper, props);
+        assertNull(resolver.resolve(null, "CK004"));
+        assertNull(resolver.firstAssigned("CK004", "", "CK004"));
+        assertEquals("CK011", resolver.firstAssigned("CK004", "CK011"));
     }
 
     @Test

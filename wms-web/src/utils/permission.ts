@@ -48,6 +48,18 @@ export const MENU_PERMISSIONS: Record<string, string> = {
 
   '/report/overview': 'report:view',
 
+  '/mes/materials': 'mes:material:list',
+  '/mes/boms': 'mes:bom:list',
+  '/mes/process': 'mes:process:list',
+  '/mes/equipment': 'mes:equipment:list',
+  '/mes/routes': 'mes:route:list',
+  '/mes/plans': 'mes:plan:list',
+  '/mes/report': 'mes:report:submit',
+  '/mes/transfer': 'mes:transfer:submit',
+  '/mes/rework': 'mes:rework:view',
+  '/mes/reports': 'mes:report:list',
+  '/mes/sync': 'mes:sync:panel',
+
 }
 
 
@@ -84,7 +96,14 @@ export function canAccessPath(
 
   const code = MENU_PERMISSIONS[path]
 
-  return hasPermission(permissions, roles, code)
+  if (hasPermission(permissions, roles, code)) {
+    return true
+  }
+  if (path === '/mes/process' || path === '/mes/equipment' || path === '/mes/routes'
+    || path === '/mes/materials' || path === '/mes/boms') {
+    return hasPermission(permissions, roles, 'mes:master:list')
+  }
+  return false
 
 }
 

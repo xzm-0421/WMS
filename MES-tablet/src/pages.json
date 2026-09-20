@@ -1,0 +1,34 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "custom",
+        "pageOrientation": "landscape"
+      }
+    },
+    {
+      "path": "pages/station/station",
+      "style": {
+        "navigationBarTitleText": "现场作业",
+        "navigationStyle": "custom",
+        "pageOrientation": "landscape"
+      }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": {
+        "navigationBarTitleText": "系统设置",
+        "pageOrientation": "landscape",
+        "backgroundColor": "#f1f5f9"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "MES-tablet",
+    "navigationBarBackgroundColor": "#0f766e",
+    "backgroundColor": "#f1f5f9"
+  }
+}

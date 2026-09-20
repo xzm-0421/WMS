@@ -25,6 +25,12 @@ public class PdaReceiveScanSession {
     private String warehouseCode;
     /** NEW / SCANNING / COMPLETED（部分或全部提交、可处理余量全 0 均为已完成，列表不展示） */
     private String status;
+    /** 金蝶建单人编码 */
+    private String creatorKdUserNumber;
+    /** 金蝶建单人姓名 */
+    private String creatorKdUserName;
+    /** 映射后的 WMS 用户 Id */
+    private String creatorWmsUserId;
     private Integer totalLines;
     private Integer checkedLines;
     private Integer submittedLines;

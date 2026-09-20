@@ -361,6 +361,14 @@ export const DS_MATERIAL: DataSource = {
     ['FBaseUnit', '基本单位', 'string'],
     ['FBarCode', '条形码', 'string'],
     ['FMaterialGroup', '物料分类', 'string'],
+    ['FLot', '批次号', 'string'],
+    ['FProductionDate', '生产日期', 'string'],
+    ['FQtyDisplay', '数量显示', 'string'],
+    ['FCompanyName', '公司名称', 'string'],
+    ['FPartnerName', '客户/供应商', 'string'],
+    ['FBoardNo', '板号', 'string'],
+    ['FPackageNo', '包装号', 'string'],
+    ['FLabelFormat', '标签类型', 'string'],
   ]),
 }
 

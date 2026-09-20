@@ -28,6 +28,10 @@ public class KingdeeReceiveBillVo {
     private String moBillNo;
     /** 产品编码（用料清单产品） */
     private String parentMaterialCode;
+    /** 金蝶建单人编码 FCreatorId.FNumber */
+    private String creatorKdUserNumber;
+    /** 金蝶建单人姓名 */
+    private String creatorName;
     private Integer totalLines;
     private Integer pendingLines;
     private List<KingdeeReceiveBillLineVo> lines;

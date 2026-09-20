@@ -7,6 +7,7 @@
         :disabled="loading"
         placeholder="扫盘点二维码或搜索单号"
         action-text="搜索"
+        :bill-scan="true"
         @scan="onScan"
         @search="onSearch"
       />

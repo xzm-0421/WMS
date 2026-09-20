@@ -10,7 +10,7 @@
     <input
       class="scan-input"
       type="text"
-      :focus="focused"
+      :focus="nativeFocus"
       :disabled="disabled"
       :value="innerValue"
       placeholder=""
@@ -27,8 +27,9 @@
 </template>
 
 <script setup>
-import { watch, onMounted, onActivated, onUnmounted } from 'vue'
+import { computed, watch, onMounted, onActivated, onUnmounted } from 'vue'
 import { useScannerInput } from '@/composables/useScannerInput.js'
+import { resumeScanAutoFocus, useScanAutoFocusPaused } from '@/utils/scanFocusGuard.js'
 
 const props = defineProps({
   disabled: { type: Boolean, default: false },
@@ -66,9 +67,13 @@ const {
   onFocus,
 } = useScannerInput((code) => {
   emit('scan', code)
-})
+}, { getDisabled: () => props.disabled })
+
+const scanPaused = useScanAutoFocusPaused()
+const nativeFocus = computed(() => !!(focused.value && !props.disabled && !scanPaused.value))
 
 function handleFocus() {
+  resumeScanAutoFocus()
   onFocus()
 }
 
@@ -77,6 +82,7 @@ function handleBlur() {
 }
 
 function onTap() {
+  resumeScanAutoFocus()
   if (!props.disabled) focusInputOnce()
 }
 
@@ -90,14 +96,18 @@ watch(
 )
 
 onMounted(() => {
+  resumeScanAutoFocus()
   if (props.autoFocus && !mounted) {
     mounted = true
-    safeTimeout(focusInputOnce, 400)
+    safeTimeout(() => {
+      if (!scanPaused.value) focusInputOnce()
+    }, 400)
   }
 })
 
 onActivated(() => {
-  if (props.autoFocus && !props.disabled) {
+  resumeScanAutoFocus()
+  if (props.autoFocus && !props.disabled && !scanPaused.value) {
     safeTimeout(focusInputOnce, 300)
   }
 })

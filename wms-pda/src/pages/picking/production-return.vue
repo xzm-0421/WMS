@@ -7,6 +7,7 @@
         :disabled="busy"
         placeholder="扫码或搜索生产退料单号/车间"
         action-text="打开"
+        :bill-scan="true"
         @scan="onScan"
         @search="onSearch"
       />

@@ -1,6 +1,7 @@
 package com.wms.noticebill.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
 import com.wms.config.WmsPdaProperties;
 import com.wms.integration.kingdee.*;
@@ -34,6 +35,9 @@ public class KingdeeConfigurableNoticeBillService {
 
     public PageResult<KingdeeReceiveBillVo> pageBills(NoticeBillType billType, String keyword, long current, long size) {
         if (!kingdeeCloudService.isEnabled()) {
+            if (!kingdeeCloudService.isMockEnabled()) {
+                return PageResult.of(List.of(), 0, current, size);
+            }
             return PageResult.of(mockBills(billType), mockBills(billType).size(), current, size);
         }
         List<KingdeeReceiveBillVo> all = billType.isUseInspectionFilter()
@@ -66,6 +70,9 @@ public class KingdeeConfigurableNoticeBillService {
             if (bill != null && isAllowedDocumentStatus(billType, bill)) {
                 return bill;
             }
+        }
+        if (!kingdeeCloudService.isMockEnabled()) {
+            return null;
         }
         return mockBills(billType).stream()
                 .filter(b -> no.equalsIgnoreCase(b.getBillNo())
@@ -115,6 +122,14 @@ public class KingdeeConfigurableNoticeBillService {
         if (viewBill.getBillId() == null || viewBill.getBillId() <= 0) {
             viewBill.setBillId(queryBill.getBillId());
         }
+        if (!StringUtils.hasText(viewBill.getCreatorKdUserNumber())
+                && StringUtils.hasText(queryBill.getCreatorKdUserNumber())) {
+            viewBill.setCreatorKdUserNumber(queryBill.getCreatorKdUserNumber());
+        }
+        if (!StringUtils.hasText(viewBill.getCreatorName())
+                && StringUtils.hasText(queryBill.getCreatorName())) {
+            viewBill.setCreatorName(queryBill.getCreatorName());
+        }
         if (viewBill.getLines() == null || queryBill.getLines() == null) {
             return viewBill;
         }
@@ -162,7 +177,7 @@ public class KingdeeConfigurableNoticeBillService {
         return null;
     }
 
-    /** 未审核工作流单据仅允许 A/B；已审源单下推仅允许 C；其它类型不限制（列表已按状态过滤） */
+    /** 未审核工作流单据允许 Z/A/B/D；已审源单下推仅允许 C；其它类型不限制（列表已按状态过滤） */
     private boolean isAllowedDocumentStatus(NoticeBillType billType, KingdeeReceiveBillVo bill) {
         if (billType == null || bill == null) {
             return true;
@@ -176,121 +191,17 @@ public class KingdeeConfigurableNoticeBillService {
         if (billType.isAuditedSourcePushBill()) {
             return "C".equals(s);
         }
-        if (!billType.isUnauditedWorkflowBill()) {
-            return true;
+        if (billType.isSubmittedInProcessListBill() || billType.isUnauditedWorkflowBill()) {
+            return isUnauditedDocumentStatus(s);
         }
-        return "A".equals(s) || "B".equals(s);
+        return true;
     }
 
     /**
      * 从单据二维码/条码中提取单号。支持：纯单号、JSON（billNo/FBillNo 等）、URL、前缀、混杂文本中的单号。
      */
     public String parseBillNo(String barcode) {
-        if (!StringUtils.hasText(barcode)) {
-            return "";
-        }
-        String raw = barcode.trim()
-                .replace("\uFEFF", "")
-                .replaceAll("[\\r\\n\\t]", "");
-        String fromJson = extractBillNoFromJson(raw);
-        if (StringUtils.hasText(fromJson)) {
-            return fromJson.trim().toUpperCase();
-        }
-        String fromUrl = extractBillNoFromUrl(raw);
-        if (StringUtils.hasText(fromUrl)) {
-            return fromUrl.trim().toUpperCase();
-        }
-        if (raw.regionMatches(true, 0, "SCT:", 0, 4)
-                || raw.regionMatches(true, 0, "SCL:", 0, 4)
-                || raw.regionMatches(true, 0, "SCR:", 0, 4)
-                || raw.regionMatches(true, 0, "STK:", 0, 4)
-                || raw.regionMatches(true, 0, "SCB:", 0, 4)
-                || raw.regionMatches(true, 0, "RETURN:", 0, 7)
-                || raw.regionMatches(true, 0, "BILL:", 0, 5)
-                || raw.regionMatches(true, 0, "PRD_INSTOCK:", 0, 12)
-                || raw.regionMatches(true, 0, "PRD_INSTOCK=", 0, 12)) {
-            return raw.replaceFirst("(?i)^(SCT|SCL|SCR|STK|SCB|RETURN|BILL|PRD_INSTOCK)[:：=]", "")
-                    .trim()
-                    .toUpperCase();
-        }
-        if (raw.matches("(?i)[A-Z]{2,8}\\d{6,}")) {
-            return raw.toUpperCase();
-        }
-        var matcher = java.util.regex.Pattern.compile("(?i)([A-Z]{2,8}\\d{6,})").matcher(raw);
-        if (matcher.find()) {
-            return matcher.group(1).toUpperCase();
-        }
-        return raw;
-    }
-
-    private String extractBillNoFromJson(String raw) {
-        if (raw == null || raw.isEmpty()) {
-            return null;
-        }
-        String text = raw.trim();
-        int brace = text.indexOf('{');
-        if (brace < 0) {
-            return null;
-        }
-        text = text.substring(brace);
-        try {
-            JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(text);
-            String found = findBillNoInJson(node);
-            if (StringUtils.hasText(found)) {
-                return found;
-            }
-        } catch (Exception ignored) {
-            // not json
-        }
-        return null;
-    }
-
-    private String findBillNoInJson(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (node.isObject()) {
-            for (String key : new String[]{
-                    "billNo", "BillNo", "FBillNo", "billno", "bill_no",
-                    "orderNo", "OrderNo", "FNumber", "number", "Number",
-                    "BillNO", "FBILLNO"
-            }) {
-                if (node.has(key) && StringUtils.hasText(node.get(key).asText())) {
-                    return node.get(key).asText().trim();
-                }
-            }
-            var fields = node.fields();
-            while (fields.hasNext()) {
-                var entry = fields.next();
-                String nested = findBillNoInJson(entry.getValue());
-                if (StringUtils.hasText(nested)) {
-                    return nested;
-                }
-            }
-        } else if (node.isArray()) {
-            for (JsonNode child : node) {
-                String nested = findBillNoInJson(child);
-                if (StringUtils.hasText(nested)) {
-                    return nested;
-                }
-            }
-        }
-        return null;
-    }
-
-    private String extractBillNoFromUrl(String raw) {
-        if (raw == null || raw.isEmpty()) {
-            return null;
-        }
-        if (!raw.contains("=") && !raw.contains("?")) {
-            return null;
-        }
-        var matcher = java.util.regex.Pattern.compile(
-                "(?i)(?:billno|fbillno|orderno|number|bill_no)=([A-Za-z0-9_\\-]+)").matcher(raw);
-        if (matcher.find()) {
-            return matcher.group(1).trim();
-        }
-        return null;
+        return KingdeeBillNoParser.parse(barcode);
     }
 
     private List<KingdeeReceiveBillVo> pageWithInspection(NoticeBillType billType, String keyword) {
@@ -323,13 +234,12 @@ public class KingdeeConfigurableNoticeBillService {
     }
 
     private List<KingdeeReceiveBillVo> pageApproved(NoticeBillType billType, String keyword) {
-        List<List<String>> rows = kingdeeCloudService.executeBillQuery(
-                resolveFormId(billType),
-                resolveListFieldKeys(billType),
-                buildFilter(billType, keyword),
-                "FBillNo",
-                0,
-                resolveListQueryLimit());
+        String formId = resolveFormId(billType);
+        String filter = buildListFilter(billType, keyword);
+        String fieldKeys = resolveListFieldKeys(billType);
+        List<List<String>> rows = queryApprovedListRows(billType, formId, fieldKeys, filter, keyword);
+        log.info("Kingdee list billType={} formId={} filter={} rows={}",
+                billType.getCode(), formId, filter, rows.size());
         Map<String, KingdeeReceiveBillVo> bills = new LinkedHashMap<>();
         Map<String, Integer> lineCounts = new LinkedHashMap<>();
         for (List<String> row : rows) {
@@ -341,6 +251,9 @@ public class KingdeeConfigurableNoticeBillService {
                 continue;
             }
             String no = billNo.trim();
+            if (billType.isOpenRemainOutQtyListBill() && !isNonZeroRemainOutQty(cell(row, 6))) {
+                continue;
+            }
             lineCounts.merge(no, 1, Integer::sum);
             bills.putIfAbsent(no, KingdeeReceiveBillVo.builder()
                     .billNo(no)
@@ -349,6 +262,8 @@ public class KingdeeConfigurableNoticeBillService {
                     .documentStatus(cell(row, 3))
                     .billDate(parseDate(cell(row, 4)))
                     .warehouseCode("WH01")
+                    .creatorKdUserNumber(billType.isOpenRemainOutQtyListBill() ? null : cell(row, 6))
+                    .creatorName(billType.isOpenRemainOutQtyListBill() ? null : cell(row, 7))
                     .totalLines(0)
                     .build());
         }
@@ -358,9 +273,14 @@ public class KingdeeConfigurableNoticeBillService {
         return new ArrayList<>(bills.values());
     }
 
+    /** 生产领料列表表头字段：不依赖分录，避免无分录单在 ExecuteBillQuery 中消失 */
+    private String resolvePickMtrlHeaderListFieldKeys() {
+        return "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate";
+    }
+
     private String resolveListFieldKeys(NoticeBillType billType) {
         if (billType == NoticeBillType.PRODUCTION_ISSUE) {
-            return properties.getPickMtrlLineCountFieldKeys();
+            return resolvePickMtrlHeaderListFieldKeys();
         }
         if (billType == NoticeBillType.PRODUCTION_FEED) {
             return properties.getFeedMtrlLineCountFieldKeys();
@@ -656,7 +576,7 @@ public class KingdeeConfigurableNoticeBillService {
 
     /**
      * 生产领料单 Query 回退：FieldKeys 见 pickMtrlDetailFieldKeys。
-     * 索引约定：数量 10=实发 11=申请 12=基本实发。
+     * 索引约定：数量 10=实发 11=申请 12=基本实发；25/26=建单人编码/姓名。
      */
     private KingdeeReceiveBillVo buildPickMtrlFromDetailRows(List<List<String>> rows, String billNo) {
         if (rows == null || rows.isEmpty()) {
@@ -681,6 +601,8 @@ public class KingdeeConfigurableNoticeBillService {
                         .moBillNo(firstNonBlank(cell(row, 5), cell(row, 18)))
                         .parentMaterialCode(firstNonBlank(cell(row, 6), cell(row, 22)))
                         .warehouseCode(firstNonBlank(cell(row, 17), "CK004"))
+                        .creatorKdUserNumber(cell(row, 25))
+                        .creatorName(cell(row, 26))
                         .lines(new ArrayList<>())
                         .build();
             }
@@ -830,7 +752,7 @@ public class KingdeeConfigurableNoticeBillService {
                         .supplierCode(cell(row, 3))
                         .supplierName(cell(row, 4))
                         .moBillNo(firstNonBlank(cell(row, 5), cell(row, 16)))
-                        .warehouseCode(firstNonBlank(cell(row, 15), "CK004"))
+                        .warehouseCode(cell(row, 15))
                         .documentStatus("C")
                         .lines(new ArrayList<>())
                         .build();
@@ -880,6 +802,7 @@ public class KingdeeConfigurableNoticeBillService {
                     .moId(parseLong(cell(row, 17)))
                     .moEntryId(parseLong(cell(row, 18)))
                     .moEntrySeq(parseInt(cell(row, 19)) > 0 ? parseInt(cell(row, 19)) : null)
+                    .workShopCode(firstNonBlank(cell(row, 3), bill.getSupplierCode()))
                     .receivedQty(BigDecimal.ZERO)
                     .build());
         }
@@ -914,7 +837,7 @@ public class KingdeeConfigurableNoticeBillService {
                         .supplierCode(cell(row, 3))
                         .supplierName(cell(row, 4))
                         .moBillNo(firstNonBlank(cell(row, 5), cell(row, 16)))
-                        .warehouseCode(firstNonBlank(cell(row, 15), "CK004"))
+                        .warehouseCode(cell(row, 15))
                         .lines(new ArrayList<>())
                         .build();
             }
@@ -1217,16 +1140,85 @@ public class KingdeeConfigurableNoticeBillService {
         return lineCounts.getOrDefault(line.getBillNo().trim(), 0);
     }
 
+    /**
+     * 金蝶未审核：暂存 Z / 创建 A / 审核中 B / 重新审核 D。
+     * 使用 or 而非 in，兼容部分账套 FilterString 对 in 解析失败导致 0 行。
+     */
+    private static String unauditedDocumentStatusFilter() {
+        return "(FDocumentStatus='Z' or FDocumentStatus='A' or FDocumentStatus='B' or FDocumentStatus='D')";
+    }
+
+    private static boolean isUnauditedDocumentStatus(String status) {
+        if (!StringUtils.hasText(status)) {
+            return true;
+        }
+        String s = status.trim().toUpperCase();
+        return "Z".equals(s) || "A".equals(s) || "B".equals(s) || "D".equals(s);
+    }
+
+    private static boolean isSearchKeyword(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return false;
+        }
+        String raw = keyword.trim();
+        if (raw.startsWith("{") || raw.contains("://") || raw.length() > 64) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 列表过滤。销售发货通知在已审核基础上只保留未出库数量不等于 0 的分录所在单据。
+     * 明细扫码打开仍走 {@link #buildFilter}，不因已出完而无法查单。
+     */
+    private String buildListFilter(NoticeBillType billType, String keyword) {
+        String filter = buildFilter(billType, keyword);
+        if (billType != null && billType.isOpenRemainOutQtyListBill()) {
+            filter += " and FRemainOutQty<>0";
+        }
+        return filter;
+    }
+
+    private List<List<String>> queryApprovedListRows(NoticeBillType billType, String formId, String fieldKeys,
+                                                     String filter, String keyword) {
+        try {
+            return kingdeeCloudService.executeBillQuery(
+                    formId, fieldKeys, filter, "FBillNo", 0, resolveListQueryLimit());
+        } catch (BusinessException ex) {
+            if (billType == null || !billType.isOpenRemainOutQtyListBill()) {
+                throw ex;
+            }
+            log.warn("Kingdee remain-qty list filter failed, fallback Java filter billType={} msg={}",
+                    billType.getCode(), ex.getMessage());
+            return kingdeeCloudService.executeBillQuery(
+                    formId, fieldKeys, buildFilter(billType, keyword), "FBillNo", 0, resolveListQueryLimit());
+        }
+    }
+
+    static boolean isNonZeroRemainOutQty(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            // 金蝶 Filter 已限制；字段未返回时不误杀
+            return true;
+        }
+        try {
+            return new BigDecimal(raw.trim()).compareTo(BigDecimal.ZERO) != 0;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private String buildFilter(NoticeBillType billType, String keyword) {
-        // 未审核工作流：创建/审核中；发货通知等扫已审核源单：仅已审核
-        String filter = billType.isUnauditedWorkflowBill()
-                ? "FDocumentStatus in ('A','B')"
-                : "FDocumentStatus='C'";
+        String filter;
+        if (billType.isSubmittedInProcessListBill() || billType.isUnauditedWorkflowBill()) {
+            filter = unauditedDocumentStatusFilter();
+        } else {
+            filter = "FDocumentStatus='C'";
+        }
         if (StringUtils.hasText(billType.getExtraFilter())) {
             filter += " and " + billType.getExtraFilter();
         }
-        if (StringUtils.hasText(keyword)) {
-            String kw = escapeFilter(keyword);
+        if (isSearchKeyword(keyword)) {
+            String kw = escapeFilter(keyword.trim());
             if (billType == NoticeBillType.PRODUCTION_ISSUE
                     || billType == NoticeBillType.PRODUCTION_FEED
                     || billType == NoticeBillType.PRODUCTION_RETURN
@@ -1540,7 +1532,9 @@ public class KingdeeConfigurableNoticeBillService {
                 .supplierName("一车间")
                 .moBillNo("MO20260715001")
                 .parentMaterialCode("FG-TEST-001")
-                .documentStatus("A")
+                .documentStatus("B")
+                .creatorKdUserNumber("admin")
+                .creatorName("管理员")
                 .warehouseCode("CK004")
                 .totalLines(2)
                 .lines(List.of(

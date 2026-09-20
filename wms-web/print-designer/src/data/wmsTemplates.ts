@@ -552,16 +552,17 @@ export const WMS_DOC_TEMPLATE_DEFS: DocTemplateDef[] = [
 ]
 
 /**
- * 金蝶云星空物料标签（110×80mm，左文右码）
+ * 金蝶云星空物料标签 — 厂内版式（100×70mm）
+ * 抬头公司名 + 客户/生产日期/编码/数量/名称/规格/批次/板号，右侧二维码
  */
 export function createKingdeeMaterialLabelTemplate(): PrintTemplate {
   const main = 't_bd_material'
   const labelStyle = {
-    fontSize: 9,
+    fontSize: 7,
     fontFamily: 'Microsoft YaHei, SimSun, sans-serif',
     fontWeight: 'normal' as const,
     textAlign: 'left' as const,
-    color: '#888888',
+    color: '#555555',
     backgroundColor: 'transparent',
     borderWidth: 0,
     borderColor: 'transparent',
@@ -580,81 +581,108 @@ export function createKingdeeMaterialLabelTemplate(): PrintTemplate {
 
   return {
     id: 'tpl-kingdee-material-label',
-    name: '金蝶物料标签',
+    name: '金蝶物料标签（厂内）',
     category: 'baseData',
     businessObjectId: main,
-    pageSettings: { width: 110, height: 80, marginTop: 3, marginRight: 3, marginBottom: 3, marginLeft: 3, showGrid: false, gridSize: 5, snapToGrid: false },
+    pageSettings: { width: 100, height: 70, marginTop: 2, marginRight: 2, marginBottom: 2, marginLeft: 2, showGrid: false, gridSize: 5, snapToGrid: false },
     elements: [
       {
-        id: uuidv4(), type: 'text', x: 5, y: 4, width: 60, height: 9, zIndex: 1, locked: true,
-        text: '物料标签', fontSize: 14, fontFamily: 'Microsoft YaHei, SimHei, sans-serif',
+        id: uuidv4(), type: 'data-field', x: 3, y: 2, width: 66, height: 5, zIndex: 1, locked: true,
+        fontSize: 9, ...valueStyle,
+        fieldBinding: bind(main, '物料', 'FCompanyName', '公司名称'),
+      },
+      {
+        id: uuidv4(), type: 'text', x: 3, y: 7, width: 66, height: 6, zIndex: 2, locked: true,
+        text: '物料标签', fontSize: 12, fontFamily: 'Microsoft YaHei, SimHei, sans-serif',
         fontWeight: 'bold', textAlign: 'left', color: '#000000',
       },
+      { id: uuidv4(), type: 'text', x: 3, y: 15, width: 32, height: 3.5, zIndex: 3, locked: true, text: '客户名称', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 18.5, width: 32, height: 5, zIndex: 4, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FPartnerName', '客户名称') },
+      { id: uuidv4(), type: 'text', x: 36, y: 15, width: 32, height: 3.5, zIndex: 5, locked: true, text: '生产日期', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 18.5, width: 32, height: 5, zIndex: 6, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FProductionDate', '生产日期') },
+      { id: uuidv4(), type: 'text', x: 3, y: 25, width: 32, height: 3.5, zIndex: 7, locked: true, text: '物料编码', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 28.5, width: 32, height: 5, zIndex: 8, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FNumber', '物料编码') },
+      { id: uuidv4(), type: 'text', x: 36, y: 25, width: 32, height: 3.5, zIndex: 9, locked: true, text: '数量', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 28.5, width: 32, height: 5, zIndex: 10, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FQtyDisplay', '数量') },
+      { id: uuidv4(), type: 'text', x: 3, y: 35, width: 32, height: 3.5, zIndex: 11, locked: true, text: '物料名称', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 38.5, width: 32, height: 5, zIndex: 12, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FName', '物料名称') },
+      { id: uuidv4(), type: 'text', x: 36, y: 35, width: 32, height: 3.5, zIndex: 13, locked: true, text: '规格型号', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 38.5, width: 32, height: 5, zIndex: 14, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FModel', '规格型号') },
+      { id: uuidv4(), type: 'text', x: 3, y: 45, width: 32, height: 3.5, zIndex: 15, locked: true, text: '批次号', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 48.5, width: 32, height: 5, zIndex: 16, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FLot', '批次号') },
+      { id: uuidv4(), type: 'text', x: 36, y: 45, width: 32, height: 3.5, zIndex: 17, locked: true, text: '板号', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 48.5, width: 32, height: 5, zIndex: 18, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FBoardNo', '板号') },
       {
-        id: uuidv4(), type: 'text', x: 5, y: 14, width: 60, height: 5, zIndex: 2, locked: true,
-        text: '物料编码', ...labelStyle,
-      },
-      {
-        id: uuidv4(), type: 'data-field', x: 5, y: 19, width: 60, height: 7, zIndex: 3, locked: true,
-        fontSize: 12, ...valueStyle,
-        fieldBinding: bind(main, '物料', 'FNumber', '物料编码'),
-      },
-      {
-        id: uuidv4(), type: 'text', x: 5, y: 27, width: 60, height: 5, zIndex: 4, locked: true,
-        text: '物料名称', ...labelStyle,
-      },
-      {
-        id: uuidv4(), type: 'data-field', x: 5, y: 32, width: 60, height: 7, zIndex: 5, locked: true,
-        fontSize: 11, ...valueStyle,
-        fieldBinding: bind(main, '物料', 'FName', '物料名称'),
-      },
-      {
-        id: uuidv4(), type: 'text', x: 5, y: 40, width: 60, height: 5, zIndex: 6, locked: true,
-        text: '规格型号', ...labelStyle,
-      },
-      {
-        id: uuidv4(), type: 'data-field', x: 5, y: 45, width: 60, height: 6, zIndex: 7, locked: true,
-        fontSize: 10, ...valueStyle,
-        fieldBinding: bind(main, '物料', 'FModel', '规格型号'),
-      },
-      {
-        id: uuidv4(), type: 'text', x: 5, y: 52, width: 28, height: 5, zIndex: 8, locked: true,
-        text: '批次号', ...labelStyle,
-      },
-      {
-        id: uuidv4(), type: 'text', x: 35, y: 52, width: 30, height: 5, zIndex: 9, locked: true,
-        text: '生产日期', ...labelStyle,
-      },
-      {
-        id: uuidv4(), type: 'data-field', x: 5, y: 57, width: 28, height: 6, zIndex: 10, locked: true,
-        fontSize: 10, ...valueStyle,
-        fieldBinding: bind(main, '物料', 'FLot', '批次号'),
-      },
-      {
-        id: uuidv4(), type: 'data-field', x: 35, y: 57, width: 30, height: 6, zIndex: 11, locked: true,
-        fontSize: 10, ...valueStyle,
-        fieldBinding: bind(main, '物料', 'FProductionDate', '生产日期'),
-      },
-      {
-        id: uuidv4(), type: 'text', x: 5, y: 64, width: 14, height: 5, zIndex: 12, locked: true,
-        text: '数量', ...labelStyle,
-      },
-      {
-        id: uuidv4(), type: 'data-field', x: 18, y: 63, width: 47, height: 7, zIndex: 13, locked: true,
-        fontSize: 12, fontFamily: 'Microsoft YaHei, SimHei, sans-serif', fontWeight: 'bold',
-        textAlign: 'left', color: '#1a8c44',
-        backgroundColor: 'transparent', borderWidth: 0, borderColor: 'transparent', borderStyle: 'none',
-        fieldBinding: bind(main, '物料', 'FQtyDisplay', '数量'),
-      },
-      {
-        id: uuidv4(), type: 'barcode', x: 72, y: 12, width: 30, height: 30, zIndex: 15, locked: true,
+        id: uuidv4(), type: 'barcode', x: 70, y: 14, width: 26, height: 26, zIndex: 20, locked: true,
         barcodeType: 'qr', barcodeValue: 'QR',
         fieldBinding: bind(main, '物料', 'FBarCode', '二维码'),
       },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+/**
+ * 金蝶云星空物料标签 — 来料版式（100×70mm）
+ * 供应商/生产日期/编码/数量/名称/规格/批次/包装号，右侧二维码
+ */
+export function createKingdeeIncomingMaterialLabelTemplate(): PrintTemplate {
+  const main = 't_bd_material'
+  const labelStyle = {
+    fontSize: 7,
+    fontFamily: 'Microsoft YaHei, SimSun, sans-serif',
+    fontWeight: 'normal' as const,
+    textAlign: 'left' as const,
+    color: '#555555',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderStyle: 'none' as const,
+  }
+  const valueStyle = {
+    fontFamily: 'Microsoft YaHei, SimHei, sans-serif',
+    fontWeight: 'bold' as const,
+    textAlign: 'left' as const,
+    color: '#000000',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderStyle: 'none' as const,
+  }
+
+  return {
+    id: 'tpl-kingdee-incoming-material-label',
+    name: '金蝶物料标签（来料）',
+    category: 'baseData',
+    businessObjectId: main,
+    pageSettings: { width: 100, height: 70, marginTop: 2, marginRight: 2, marginBottom: 2, marginLeft: 2, showGrid: false, gridSize: 5, snapToGrid: false },
+    elements: [
       {
-        id: uuidv4(), type: 'text', x: 72, y: 44, width: 30, height: 6, zIndex: 16, locked: true,
-        text: '扫码追溯', fontSize: 9, fontFamily: 'Microsoft YaHei, SimSun, sans-serif',
-        fontWeight: 'normal', textAlign: 'center', color: '#999999',
+        id: uuidv4(), type: 'text', x: 3, y: 3, width: 66, height: 8, zIndex: 1, locked: true,
+        text: '物料标签', fontSize: 14, fontFamily: 'Microsoft YaHei, SimHei, sans-serif',
+        fontWeight: 'bold', textAlign: 'left', color: '#000000',
+      },
+      { id: uuidv4(), type: 'text', x: 3, y: 14, width: 32, height: 3.5, zIndex: 2, locked: true, text: '供应商名称', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 17.5, width: 32, height: 5, zIndex: 3, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FPartnerName', '供应商名称') },
+      { id: uuidv4(), type: 'text', x: 36, y: 14, width: 32, height: 3.5, zIndex: 4, locked: true, text: '生产日期', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 17.5, width: 32, height: 5, zIndex: 5, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FProductionDate', '生产日期') },
+      { id: uuidv4(), type: 'text', x: 3, y: 24, width: 32, height: 3.5, zIndex: 6, locked: true, text: '物料编码', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 27.5, width: 32, height: 5, zIndex: 7, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FNumber', '物料编码') },
+      { id: uuidv4(), type: 'text', x: 36, y: 24, width: 32, height: 3.5, zIndex: 8, locked: true, text: '数量', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 27.5, width: 32, height: 5, zIndex: 9, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FQtyDisplay', '数量') },
+      { id: uuidv4(), type: 'text', x: 3, y: 34, width: 32, height: 3.5, zIndex: 10, locked: true, text: '物料名称', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 37.5, width: 32, height: 5, zIndex: 11, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FName', '物料名称') },
+      { id: uuidv4(), type: 'text', x: 36, y: 34, width: 32, height: 3.5, zIndex: 12, locked: true, text: '规格型号', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 37.5, width: 32, height: 5, zIndex: 13, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FModel', '规格型号') },
+      { id: uuidv4(), type: 'text', x: 3, y: 44, width: 32, height: 3.5, zIndex: 14, locked: true, text: '批次号', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 3, y: 47.5, width: 32, height: 5, zIndex: 15, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FLot', '批次号') },
+      { id: uuidv4(), type: 'text', x: 36, y: 44, width: 32, height: 3.5, zIndex: 16, locked: true, text: '包装号', ...labelStyle },
+      { id: uuidv4(), type: 'data-field', x: 36, y: 47.5, width: 32, height: 5, zIndex: 17, locked: true, fontSize: 9, ...valueStyle, fieldBinding: bind(main, '物料', 'FPackageNo', '包装号') },
+      {
+        id: uuidv4(), type: 'barcode', x: 70, y: 14, width: 26, height: 26, zIndex: 20, locked: true,
+        barcodeType: 'qr', barcodeValue: 'QR',
+        fieldBinding: bind(main, '物料', 'FBarCode', '二维码'),
       },
     ],
     createdAt: now,
@@ -667,4 +695,5 @@ export const PRESET_TEMPLATES = [
   createMaterialLabelTemplate(),
   createBarcodeLabelTemplate(),
   createKingdeeMaterialLabelTemplate(),
+  createKingdeeIncomingMaterialLabelTemplate(),
 ]

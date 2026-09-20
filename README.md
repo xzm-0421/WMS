@@ -1,6 +1,6 @@
 # WMS 仓储管理系统
 
-企业制造仓储管理系统（WMS），包含 Web 管理后台、PDA 移动端、Java 后端 API。
+企业制造仓储管理系统（WMS），包含 Web 管理后台、PDA 仓储终端、工业平板作业端、手机移动端、Java 后端 API。
 
 ## 项目结构
 
@@ -8,7 +8,9 @@
 WMS/
 ├── wms-backend/     # Spring Boot 3.2 后端 API
 ├── wms-web/         # Vue 3 + Element Plus 管理后台
-├── wms-pda/         # uni-app PDA 移动端
+├── wms-pda/         # uni-app PDA 仓储移动端
+├── MES-tablet/      # uni-app MES 工业平板作业端（独立于 PDA）
+├── MES-mobile/      # uni-app 星运维手机移动端（独立于 PDA / 平板）
 ├── wms-deploy/      # Docker Compose + Nginx 部署
 ├── WMS开发设计文档.md
 └── docs/            # 原始需求文档
@@ -21,7 +23,7 @@ WMS/
 | JDK | **17+** | 已配置：`D:\java\jdk-17` |
 | Maven | 3.9+ | 编译后端必需 |
 | Node.js | 18+ | 前端开发 |
-| HBuilderX | 最新版 | PDA 开发 |
+| HBuilderX | 最新版 | PDA / 工业平板 / 手机端开发 |
 | Docker | 24+ | 生产部署（可选） |
 
 ### 环境变量（建议配置）
@@ -101,13 +103,41 @@ npm run dev
 - 访问: http://localhost:5173
 - 已配置 API 代理到 9980
 
-### 3. PDA 移动端
+### 3. PDA 仓储移动端
 
 1. 用 **HBuilderX** 打开 `wms-pda` 目录
 2. 修改 `utils/config.js` 中的 `baseUrl` 为电脑局域网 IP
 3. 运行到 Android 设备或模拟器
 
-### 4. Docker 生产部署
+H5 调试：`cd wms-pda && npm run dev:h5`，访问 http://localhost:5174
+
+### 4. MES-tablet 工业平板端
+
+独立工程，**不是** PDA 菜单，也不是 Web 管理页。登录后直接进入横屏现场作业（称重 / 标签打印骨架）。
+
+```bash
+cd MES-tablet
+npm install
+npm run dev:h5
+```
+
+- 访问: http://localhost:5175
+- 真机：HBuilderX 打开 `MES-tablet`，修改 `src/utils/config.js` 中的 `baseUrl`
+
+### 5. MES-mobile 手机端
+
+独立工程，**不是** PDA，也不是工业平板。按「星运维」设计稿绘制登录 / 首页 / 服务 / 我的 / 修改密码。
+
+```bash
+cd MES-mobile
+npm install
+npm run dev:h5
+```
+
+- 访问: http://localhost:5176（建议手机宽度预览）
+- 真机：HBuilderX 打开 `MES-mobile`
+
+### 6. Docker 生产部署
 
 ```bash
 cd wms-deploy

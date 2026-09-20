@@ -1,19 +1,36 @@
 import { ref, onUnmounted } from 'vue'
+import { onShow, onHide } from '@dcloudio/uni-app'
+import {
+  isScanAutoFocusPaused,
+  resumeScanAutoFocus,
+} from '@/utils/scanFocusGuard.js'
+import {
+  bindPlusKey,
+  bindAndroidScanBroadcast,
+  keyCodeToChar,
+} from '@/utils/pdaHardwareScan.js'
+
+let scannerSeq = 0
+let activeScannerSeq = 0
 
 /**
  * PDA 扫码枪输入：Enter 提交 + 停顿自动提交。
- * 支持全局键盘楔入：输入框未聚焦时也能收到扫码并写入/提交。
- * 注意：单据二维码（JSON/长串）往往超过 400ms，不能再用「短连扫窗口」限制。
+ *
+ * 单据列表（getBillScan=true）：停顿后有内容即打开；并监听 plus.key / 厂商广播，
+ * 避免「设备已扫到码、页面无反应」。
  *
  * @param {(code: string) => void} onSubmit
- * @param {{ getDisabled?: () => boolean, globalCapture?: boolean }} [options]
+ * @param {{ getDisabled?: () => boolean, globalCapture?: boolean, getBillScan?: () => boolean, billScan?: boolean }} [options]
  */
 export function useScannerInput(onSubmit, options = {}) {
   const getDisabled = typeof options.getDisabled === 'function' ? options.getDisabled : () => false
   const globalCapture = options.globalCapture !== false
+  const isBillScan = () => {
+    if (typeof options.getBillScan === 'function') return !!options.getBillScan()
+    return !!options.billScan
+  }
 
   const innerValue = ref('')
-  /** 保持 true，避免反复 toggle 导致与扫码枪抢焦点 */
   const focused = ref(false)
 
   let scanTimer = null
@@ -21,10 +38,15 @@ export function useScannerInput(onSubmit, options = {}) {
   let refocusTimer = null
   let focusOnceTimer = null
   let destroyed = false
-  /** 全局楔入缓冲（失焦时用） */
   let wedgeBuffer = ''
   let wedgeFirstKeyTime = 0
   let wedgeTimer = null
+  let lastInputAt = 0
+  let pageActive = true
+  const myScannerSeq = ++scannerSeq
+  activeScannerSeq = myScannerSeq
+  let unbindPlus = () => {}
+  let unbindBroadcast = () => {}
 
   function clearTimer() {
     if (scanTimer) {
@@ -53,26 +75,34 @@ export function useScannerInput(onSubmit, options = {}) {
     }
   }
 
-  /**
-   * 温和聚焦：已聚焦时不操作；失焦后延迟一次恢复，并防抖
-   */
-  function focusInput() {
-    if (destroyed || focused.value) return
-    if (refocusTimer) clearTimeout(refocusTimer)
-    refocusTimer = setTimeout(() => {
-      refocusTimer = null
-      if (!destroyed) focused.value = true
-    }, 120)
+  function canAutoFocusScan() {
+    return !destroyed && !getDisabled() && !isScanAutoFocusPaused() && !isOtherEditableActive()
   }
 
-  /** 首次进入页面时调用，只做一次 false→true */
+  function focusInput() {
+    if (!canAutoFocusScan()) return
+    focusInputOnce()
+  }
+
+  /**
+   * 每次进入页面都必须 false→true 拨一次 :focus。
+   * uni-app 的 :focus 只有变化时才会真正聚焦；已是 true 时不拨，扫码枪打不到框。
+   */
   function focusInputOnce() {
-    if (destroyed || focused.value) return
+    if (destroyed || getDisabled() || isScanAutoFocusPaused()) return
+    if (isOtherEditableActive()) return
+    if (refocusTimer) {
+      clearTimeout(refocusTimer)
+      refocusTimer = null
+    }
+    if (focusOnceTimer) {
+      clearTimeout(focusOnceTimer)
+      focusOnceTimer = null
+    }
     focused.value = false
-    if (focusOnceTimer) clearTimeout(focusOnceTimer)
     focusOnceTimer = setTimeout(() => {
       focusOnceTimer = null
-      if (!destroyed) focused.value = true
+      if (canAutoFocusScan()) focused.value = true
     }, 80)
   }
 
@@ -93,25 +123,47 @@ export function useScannerInput(onSubmit, options = {}) {
     onSubmit(code)
   }
 
+  function looksLikeBillNo(text) {
+    const t = String(text || '').trim()
+    if (t.length < 6 || t.length > 64) return false
+    if (/\s/.test(t)) return false
+    if (/^[A-Za-z]{1,12}\d{4,}[A-Za-z0-9\-_]*$/.test(t)) return true
+    if (/^[A-Za-z0-9][A-Za-z0-9\-_]{5,63}$/.test(t) && /\d/.test(t)) return true
+    return false
+  }
+
   function shouldAutoSubmit(text, elapsedMs) {
     if (!text || text.length < 3) return false
-    // JSON / URL 单据码：停顿即提交
     const t = text.trim()
+    if (isBillScan() && t.length >= 4) return true
     if ((t.startsWith('{') && t.includes('}')) || /billno|fbillno|formid/i.test(t)) {
       return true
     }
     if (/^https?:\/\//i.test(t) || t.includes('://')) {
       return true
     }
-    // 扫码枪：总时长可超过 400ms，但平均每字符很快；或内容已足够长
+    if (looksLikeBillNo(t)) {
+      return true
+    }
     const avg = text.length > 0 ? elapsedMs / text.length : elapsedMs
     if (avg <= 100 && text.length >= 3) return true
     if (text.length >= 8 && elapsedMs <= 3000) return true
     return false
   }
 
+  function idleDelayMs(text) {
+    const len = String(text || '').length
+    if (isBillScan()) return Math.min(900, Math.max(350, 280 + len * 3))
+    return 200
+  }
+
+  function inputIsLive() {
+    return Date.now() - lastInputAt < 120
+  }
+
   function onInput(e) {
     if (destroyed) return
+    lastInputAt = Date.now()
     const val = e.detail?.value ?? innerValue.value
     innerValue.value = val
 
@@ -125,7 +177,7 @@ export function useScannerInput(onSubmit, options = {}) {
     const elapsed = now - firstKeyTime
 
     clearTimer()
-    // 统一用短防抖：最后一字符后停顿即判定扫码结束（兼容长短码）
+    const delay = idleDelayMs(val)
     scanTimer = setTimeout(() => {
       scanTimer = null
       if (destroyed) return
@@ -135,7 +187,7 @@ export function useScannerInput(onSubmit, options = {}) {
         submitValue(innerValue.value)
       }
       firstKeyTime = 0
-    }, 200)
+    }, delay)
   }
 
   function onConfirm() {
@@ -149,20 +201,11 @@ export function useScannerInput(onSubmit, options = {}) {
     if (destroyed) return
     clearTimer()
     focused.value = false
-    // 失焦后温和回焦，保证下次扫码无需再点输入框；数量等其它输入框聚焦时不抢
     if (refocusTimer) clearTimeout(refocusTimer)
     refocusTimer = setTimeout(() => {
       refocusTimer = null
-      if (destroyed || getDisabled() || focused.value) return
-      if (isOtherEditableActive()) return
-      focused.value = false
-      if (focusOnceTimer) clearTimeout(focusOnceTimer)
-      focusOnceTimer = setTimeout(() => {
-        focusOnceTimer = null
-        if (!destroyed && !getDisabled() && !isOtherEditableActive()) {
-          focused.value = true
-        }
-      }, 40)
+      if (!canAutoFocusScan() || focused.value) return
+      focusInputOnce()
     }, 280)
   }
 
@@ -176,16 +219,16 @@ export function useScannerInput(onSubmit, options = {}) {
     const cls = el.className || ''
     const classStr = typeof cls === 'string' ? cls : String(cls)
     return classStr.includes('search-input') || classStr.includes('scan-input')
+      || classStr.includes('compact-scan') || classStr.includes('scan-search')
   }
 
-  /** 其它可编辑框（数量等）获得焦点时，不抢扫码枪按键 */
   function isOtherEditableActive() {
     if (typeof document === 'undefined') return false
     const el = document.activeElement
     if (!el) return false
     const tag = (el.tagName || '').toUpperCase()
-    if (tag === 'TEXTAREA') return true
-    if (tag === 'INPUT') {
+    if (tag === 'TEXTAREA' || tag === 'UNI-TEXTAREA') return true
+    if (tag === 'INPUT' || tag === 'UNI-INPUT') {
       if (isScanInputEl(el)) return false
       const type = (el.getAttribute?.('type') || el.type || 'text').toLowerCase()
       if (['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'hidden', 'range'].includes(type)) {
@@ -197,8 +240,17 @@ export function useScannerInput(onSubmit, options = {}) {
     return false
   }
 
+  function pushWedgeChar(ch) {
+    const now = Date.now()
+    if (!wedgeFirstKeyTime) wedgeFirstKeyTime = now
+    wedgeBuffer += ch
+    innerValue.value = wedgeBuffer
+    scheduleWedgeSubmit()
+  }
+
   function scheduleWedgeSubmit() {
     clearWedgeTimer()
+    const delay = idleDelayMs(wedgeBuffer)
     wedgeTimer = setTimeout(() => {
       wedgeTimer = null
       if (destroyed || getDisabled()) return
@@ -209,21 +261,22 @@ export function useScannerInput(onSubmit, options = {}) {
         submitValue(text)
       }
       wedgeFirstKeyTime = 0
-    }, 200)
+    }, delay)
   }
 
-  function onGlobalKeydown(e) {
-    if (destroyed || getDisabled() || !globalCapture) return
-    // 扫码框已聚焦：交给 input/@confirm，避免重复提交
-    if (focused.value) return
-    if (isOtherEditableActive()) return
+  function isCurrentScanner() {
+    return pageActive && activeScannerSeq === myScannerSeq
+  }
 
-    const key = e.key
+  function handleScanKey(key, evt) {
+    if (destroyed || !isCurrentScanner() || getDisabled() || !globalCapture) return
+    if (isScanAutoFocusPaused() || isOtherEditableActive()) return
     if (!key) return
 
     if (key === 'Enter') {
-      e.preventDefault?.()
-      e.stopPropagation?.()
+      evt?.preventDefault?.()
+      evt?.stopPropagation?.()
+      clearTimer()
       clearWedgeTimer()
       const text = (wedgeBuffer || innerValue.value || '').trim()
       wedgeBuffer = ''
@@ -235,34 +288,65 @@ export function useScannerInput(onSubmit, options = {}) {
       return
     }
 
+    if (inputIsLive()) return
+
     if (key === 'Escape' || key === 'Tab' || key === 'Backspace' || key === 'Delete') {
       if (key === 'Backspace' && wedgeBuffer) {
-        e.preventDefault?.()
+        evt?.preventDefault?.()
         wedgeBuffer = wedgeBuffer.slice(0, -1)
         innerValue.value = wedgeBuffer
       }
       return
     }
 
-    // 可打印单字符（扫码枪楔入）
-    if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      e.preventDefault?.()
-      e.stopPropagation?.()
-      const now = Date.now()
-      if (!wedgeFirstKeyTime) wedgeFirstKeyTime = now
-      wedgeBuffer += key
-      innerValue.value = wedgeBuffer
-      scheduleWedgeSubmit()
+    if (key.length === 1) {
+      evt?.preventDefault?.()
+      evt?.stopPropagation?.()
+      pushWedgeChar(key)
     }
   }
+
+  function onGlobalKeydown(e) {
+    if (!e?.key) return
+    if (e.ctrlKey || e.altKey || e.metaKey) return
+    handleScanKey(e.key, e)
+  }
+
+  function onPlusKeydown(e) {
+    if (inputIsLive()) return
+    const mapped = keyCodeToChar(e?.keyCode)
+    if (!mapped) return
+    handleScanKey(mapped, null)
+  }
+
+  function onBroadcastCode(code) {
+    if (destroyed || !isCurrentScanner() || getDisabled()) return
+    if (isScanAutoFocusPaused() || isOtherEditableActive()) return
+    submitValue(code)
+  }
+
+  onShow(() => {
+    pageActive = true
+    activeScannerSeq = myScannerSeq
+  })
+  onHide(() => {
+    pageActive = false
+    wedgeBuffer = ''
+    wedgeFirstKeyTime = 0
+    clearWedgeTimer()
+  })
 
   if (globalCapture && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('keydown', onGlobalKeydown, true)
   }
+  unbindPlus = bindPlusKey(onPlusKeydown)
+  unbindBroadcast = bindAndroidScanBroadcast(onBroadcastCode)
 
   onUnmounted(() => {
     destroyed = true
     clearAllTimers()
+    unbindPlus()
+    unbindBroadcast()
     if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
       window.removeEventListener('keydown', onGlobalKeydown, true)
     }
@@ -271,6 +355,7 @@ export function useScannerInput(onSubmit, options = {}) {
   return {
     innerValue,
     focused,
+    wantFocus: focused,
     focusInput,
     focusInputOnce,
     resetInputState,
@@ -279,5 +364,6 @@ export function useScannerInput(onSubmit, options = {}) {
     onBlur,
     onFocus,
     submitValue,
+    resumeScanAutoFocus,
   }
 }

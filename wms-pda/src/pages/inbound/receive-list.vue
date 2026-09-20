@@ -6,6 +6,7 @@
         v-model="keyword"
         :disabled="loading"
         placeholder="扫码或搜索收料通知单号/供应商"
+        :bill-scan="true"
         @scan="onScan"
         @search="onSearch"
       />

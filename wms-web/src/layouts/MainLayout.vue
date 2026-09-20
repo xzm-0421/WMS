@@ -12,12 +12,13 @@ import {
   Odometer,
   Setting,
   TrendCharts,
+  Cpu,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const defaultOpeneds = ref(['system', 'base', 'warehouse', 'inventory', 'dashboard'])
+const defaultOpeneds = ref(['system', 'base', 'warehouse', 'inventory', 'dashboard', 'mes'])
 
 const activeMenu = computed(() => route.path)
 
@@ -74,6 +75,24 @@ const menus = [
     children: [
       { path: '/inventory/list', title: '实时库存', permission: MENU_PERMISSIONS['/inventory/list'] },
       { path: '/inventory/sample-plans', title: '库存抽检', permission: MENU_PERMISSIONS['/inventory/sample-plans'] },
+    ],
+  },
+  {
+    index: 'mes',
+    title: '轻MES',
+    icon: Cpu,
+    children: [
+      { path: '/mes/materials', title: '物料管理', permission: MENU_PERMISSIONS['/mes/materials'] },
+      { path: '/mes/boms', title: 'BOM管理', permission: MENU_PERMISSIONS['/mes/boms'] },
+      { path: '/mes/process', title: '工序管理', permission: MENU_PERMISSIONS['/mes/process'] },
+      { path: '/mes/equipment', title: '设备管理', permission: MENU_PERMISSIONS['/mes/equipment'] },
+      { path: '/mes/routes', title: '工艺路线', permission: MENU_PERMISSIONS['/mes/routes'] },
+      { path: '/mes/plans', title: '工序计划', permission: MENU_PERMISSIONS['/mes/plans'] },
+      { path: '/mes/report', title: '工序报工', permission: MENU_PERMISSIONS['/mes/report'] },
+      { path: '/mes/transfer', title: '工序转移', permission: MENU_PERMISSIONS['/mes/transfer'] },
+      { path: '/mes/rework', title: '不良与返工', permission: MENU_PERMISSIONS['/mes/rework'] },
+      { path: '/mes/reports', title: '报工记录', permission: MENU_PERMISSIONS['/mes/reports'] },
+      { path: '/mes/sync', title: '同步中心', permission: MENU_PERMISSIONS['/mes/sync'] },
     ],
   },
   {

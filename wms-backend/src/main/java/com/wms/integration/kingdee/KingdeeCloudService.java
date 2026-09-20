@@ -39,6 +39,27 @@ public class KingdeeCloudService {
     }
 
     /**
+     * 轻量探测 ERP 是否可达（用于 MES 离线判定）。
+     */
+    public boolean ping() {
+        if (!properties.isEnabled()) {
+            return false;
+        }
+        try {
+            login();
+            return true;
+        } catch (Exception e) {
+            log.warn("Kingdee ping failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** 是否向 PDA 返回内存模拟单据（仅本地联调） */
+    public boolean isMockEnabled() {
+        return properties.isMockEnabled();
+    }
+
+    /**
      * 金蝶 View 接口按内码查看单据详情。
      */
     public JsonNode viewBillById(String formId, long billId) {
@@ -106,6 +127,100 @@ public class KingdeeCloudService {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR,
                     "金蝶单据查看失败(" + formId + "): " + e.getMessage());
         }
+    }
+
+    /**
+     * 读取生产订单分录车间编码，供生产入库 FWorkShopId1 与 MO 行校验一致。
+     */
+    public String resolveMoWorkShopNumber(Long moId, String moBillNo, Long moEntryId, Integer moEntrySeq) {
+        JsonNode billNode = viewMoBill(moId, moBillNo);
+        if (billNode == null) {
+            return null;
+        }
+        String workShop = KingdeeMoWorkShopParser.resolve(billNode, moEntryId, moEntrySeq);
+        if (!StringUtils.hasText(workShop)) {
+            log.warn("生产订单未解析到车间 moId={} moBillNo={} moEntryId={} moEntrySeq={}",
+                    moId, moBillNo, moEntryId, moEntrySeq);
+        }
+        return workShop;
+    }
+
+    /**
+     * 读取生产订单分录仓库，供生产入库自动分配（跳过单据空仓/占位仓）。
+     */
+    public String resolveMoStockNumber(Long moId, String moBillNo, Long moEntryId, Integer moEntrySeq) {
+        JsonNode billNode = viewMoBill(moId, moBillNo);
+        if (billNode == null) {
+            return null;
+        }
+        return KingdeeMoWorkShopParser.resolveStock(billNode, moEntryId, moEntrySeq);
+    }
+
+    /**
+     * 读取物料默认仓库（BD_MATERIAL 库存.仓库）。
+     */
+    public String resolveMaterialDefaultStockNumber(String materialCode) {
+        if (!properties.isEnabled() || !StringUtils.hasText(materialCode)) {
+            return null;
+        }
+        String formId = StringUtils.hasText(properties.getMaterialFormId())
+                ? properties.getMaterialFormId() : "BD_MATERIAL";
+        String number = materialCode.trim().replace("'", "''");
+        try {
+            List<List<String>> rows = executeBillQuery(
+                    formId,
+                    "FNumber,FStockId.FNumber,FMaterialStock.FStockId.FNumber",
+                    "FNumber='" + number + "'",
+                    "",
+                    0,
+                    10);
+            if (rows == null || rows.isEmpty()) {
+                return null;
+            }
+            List<String> row = rows.get(0);
+            String stock = firstNonBlankCell(row, 1);
+            if (!StringUtils.hasText(stock)) {
+                stock = firstNonBlankCell(row, 2);
+            }
+            return StringUtils.hasText(stock) ? stock.trim() : null;
+        } catch (BusinessException ex) {
+            log.warn("查询物料默认仓库失败 material={} : {}", materialCode, ex.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.warn("查询物料默认仓库失败 material={}", materialCode, e);
+            return null;
+        }
+    }
+
+    private JsonNode viewMoBill(Long moId, String moBillNo) {
+        if (!properties.isEnabled()) {
+            return null;
+        }
+        String formId = StringUtils.hasText(properties.getPrdMoFormId()) ? properties.getPrdMoFormId() : "PRD_MO";
+        try {
+            JsonNode billNode = null;
+            if (moId != null && moId > 0) {
+                billNode = viewBillById(formId, moId);
+            }
+            if (billNode == null && StringUtils.hasText(moBillNo)) {
+                billNode = viewBill(formId, moBillNo.trim());
+            }
+            return billNode;
+        } catch (BusinessException ex) {
+            log.warn("查询生产订单失败 moId={} moBillNo={} : {}", moId, moBillNo, ex.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.warn("查询生产订单失败 moId={} moBillNo={}", moId, moBillNo, e);
+            return null;
+        }
+    }
+
+    private static String firstNonBlankCell(List<String> row, int index) {
+        if (row == null || index < 0 || index >= row.size()) {
+            return null;
+        }
+        String value = row.get(index);
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private JsonNode parseViewResult(String responseJson) throws Exception {
@@ -509,6 +624,17 @@ public class KingdeeCloudService {
                 "退料实退", false, null, null, auditAfterSave);
     }
 
+    /**
+     * 采购退料单：按 PDA 实退数量回写 FRMREALQTY 后 Submit + Audit。
+     */
+    public KingdeeSyncResult savePurMrbActualQtyThenAudit(String formId, Long billId, String billNo,
+                                                          List<KingdeePurMrbActualQtyBuilder.Line> lines,
+                                                          boolean auditAfterSave) {
+        return saveEntryQtyThenAudit(formId, billId, billNo,
+                KingdeePurMrbActualQtyBuilder.build(objectMapper, billId, billNo, lines),
+                "采购退料实退", false, null, null, auditAfterSave);
+    }
+
     private KingdeeSyncResult saveEntryQtyThenAudit(String formId, Long billId, String billNo,
                                                     String savePayload, String bizLabel,
                                                     boolean useWorkflowAudit,
@@ -679,6 +805,16 @@ public class KingdeeCloudService {
 
     public KingdeeSyncResult pushSalesDeliveryToOutStockThenAudit(String deliveryBillNo, Long deliveryBillId,
                                                                    List<KingdeeSalOutStockEntryFill> entryFills) {
+        return pushSalesDeliveryToOutStockThenAudit(deliveryBillNo, deliveryBillId, entryFills, null);
+    }
+
+    /**
+     * @param existingOutStockNo 上次同步已下推出的销售出库单号（含暂存态）。有值时复用该单继续补全 + 提交审核，
+     *                           不再重复 Push，避免重试在金蝶堆积多张重复的暂存出库单。
+     */
+    public KingdeeSyncResult pushSalesDeliveryToOutStockThenAudit(String deliveryBillNo, Long deliveryBillId,
+                                                                   List<KingdeeSalOutStockEntryFill> entryFills,
+                                                                   String existingOutStockNo) {
         String srcFormId = "SAL_DELIVERYNOTICE";
         String targetFormId = properties.getSalOutStockFormId();
         String ruleId = properties.getSalesDeliveryPushRuleId();
@@ -704,47 +840,88 @@ public class KingdeeCloudService {
         }
         try {
             String session = login();
-            ObjectNode pushData = objectMapper.createObjectNode();
-            if (deliveryBillId != null && deliveryBillId > 0) {
-                pushData.put("Ids", String.valueOf(deliveryBillId));
-            } else {
-                pushData.putArray("Numbers").add(no);
+            String pushRequestJson = null;
+            String pushResponseJson = null;
+            String outStockNo = null;
+            Long outStockIdLong = null;
+
+            if (StringUtils.hasText(existingOutStockNo) && !existingOutStockNo.trim().equalsIgnoreCase(no)) {
+                String reuseNo = existingOutStockNo.trim();
+                JsonNode reuseNode = null;
+                // 历史失败可能把金蝶内码误存为 erpBillNo，纯数字时按 Id 查看
+                Long reuseId = parseLongQuiet(reuseNo);
+                if (reuseId != null && reuseId > 0 && reuseNo.matches("^\\d{6,}$")) {
+                    try {
+                        reuseNode = viewBillById(targetFormId, reuseId);
+                    } catch (Exception ex) {
+                        log.warn("Reuse sal-outstock by Id failed. deliveryBillNo={} outStockId={}", no, reuseId, ex);
+                    }
+                }
+                if (reuseNode == null && !isPlaceholderBillNo(reuseNo) && !reuseNo.matches("^\\d{6,}$")) {
+                    try {
+                        reuseNode = viewBill(targetFormId, reuseNo);
+                    } catch (Exception ex) {
+                        log.warn("Reuse sal-outstock by Number failed. deliveryBillNo={} outStockNo={}", no, reuseNo, ex);
+                    }
+                }
+                if (reuseNode != null) {
+                    outStockNo = firstNonBlank(
+                            firstText(reuseNode, "FBillNo", "BillNo", "Number"),
+                            isPlaceholderBillNo(reuseNo) || reuseNo.matches("^\\d{6,}$") ? null : reuseNo);
+                    outStockIdLong = parseLongQuiet(firstText(reuseNode, "FID", "Id"));
+                    if (outStockIdLong == null && reuseId != null) {
+                        outStockIdLong = reuseId;
+                    }
+                    log.info("Reuse existing sal-outstock instead of re-push. deliveryBillNo={} outStockNo={} outStockId={}",
+                            no, outStockNo, outStockIdLong);
+                } else {
+                    log.warn("Existing sal-outstock not found, fallback to push. deliveryBillNo={} outStockNo={}",
+                            no, reuseNo);
+                }
             }
-            String entryIds = joinSourceEntryIds(entryFills);
-            if (StringUtils.hasText(entryIds)) {
-                pushData.put("EntryIds", entryIds);
-            }
-            pushData.put("RuleId", ruleId.trim());
-            pushData.put("TargetFormId", targetFormId);
-            pushData.put("IsEnableDefaultRule", "false");
-            // 批号/仓库缺失时允许暂存草稿，随后 Save 补全再审核
-            pushData.put("IsDraftWhenSaveFail", "true");
-            String pushRequestJson = objectMapper.writeValueAsString(pushData);
-            String pushResponseJson = invokePush(session, srcFormId, pushRequestJson);
-            KingdeeSyncResult pushResult = parseSaveResponse(pushRequestJson, pushResponseJson);
-            String outStockId = extractBillId(pushResponseJson);
-            Long outStockIdLong = parseLongQuiet(outStockId);
-            String outStockNo = pushResult.getBillNo();
-            if (!StringUtils.hasText(outStockNo) && outStockIdLong != null) {
-                outStockNo = resolveBillNoByView(targetFormId, outStockIdLong);
-            }
-            if (!pushResult.isSuccess() && outStockIdLong == null) {
-                return KingdeeSyncResult.builder()
-                        .success(false)
-                        .billNo(no)
-                        .message("发货通知下推销售出库失败: " + pushResult.getMessage())
-                        .requestJson(pushRequestJson)
-                        .responseJson(pushResponseJson)
-                        .build();
-            }
-            if (outStockIdLong == null && !StringUtils.hasText(outStockNo)) {
-                return KingdeeSyncResult.builder()
-                        .success(false)
-                        .billNo(no)
-                        .message("下推未返回销售出库单号/内码: " + pushResult.getMessage())
-                        .requestJson(pushRequestJson)
-                        .responseJson(pushResponseJson)
-                        .build();
+
+            if (!StringUtils.hasText(outStockNo) && outStockIdLong == null) {
+                ObjectNode pushData = objectMapper.createObjectNode();
+                if (deliveryBillId != null && deliveryBillId > 0) {
+                    pushData.put("Ids", String.valueOf(deliveryBillId));
+                } else {
+                    pushData.putArray("Numbers").add(no);
+                }
+                String entryIds = joinSourceEntryIds(entryFills);
+                if (StringUtils.hasText(entryIds)) {
+                    pushData.put("EntryIds", entryIds);
+                }
+                pushData.put("RuleId", ruleId.trim());
+                pushData.put("TargetFormId", targetFormId);
+                pushData.put("IsEnableDefaultRule", "false");
+                // 批号/仓库缺失时允许暂存草稿，随后 Save 补全再审核
+                pushData.put("IsDraftWhenSaveFail", "true");
+                pushRequestJson = objectMapper.writeValueAsString(pushData);
+                pushResponseJson = invokePush(session, srcFormId, pushRequestJson);
+                KingdeeSyncResult pushResult = parseSaveResponse(pushRequestJson, pushResponseJson);
+                outStockIdLong = parseLongQuiet(extractBillId(pushResponseJson));
+                outStockNo = normalizePushedBillNo(pushResult.getBillNo(), outStockIdLong);
+                if ((!StringUtils.hasText(outStockNo) || isPlaceholderBillNo(outStockNo)) && outStockIdLong != null) {
+                    outStockNo = resolveBillNoByView(targetFormId, outStockIdLong);
+                }
+                if (!pushResult.isSuccess() && outStockIdLong == null) {
+                    return KingdeeSyncResult.builder()
+                            .success(false)
+                            .billNo(no)
+                            .message("发货通知下推销售出库失败: " + pushResult.getMessage())
+                            .requestJson(pushRequestJson)
+                            .responseJson(pushResponseJson)
+                            .build();
+                }
+                if (outStockIdLong == null && !StringUtils.hasText(outStockNo)) {
+                    return KingdeeSyncResult.builder()
+                            .success(false)
+                            .billNo(no)
+                            .message("下推未返回销售出库单号/内码: " + pushResult.getMessage())
+                            .requestJson(pushRequestJson)
+                            .responseJson(pushResponseJson)
+                            .build();
+                }
             }
 
             if (entryFills != null && !entryFills.isEmpty()) {
@@ -759,20 +936,53 @@ public class KingdeeCloudService {
                         outStockIdLong = filledId;
                     }
                 } else {
-                    // 下推规则已带出批号/仓库时，分录匹配失败可跳过补全，直接 Submit+Audit
-                    log.warn("Skip sal-outstock lot/stock fill after push, proceed to submit+audit. deliveryBillNo={} outStockNo={} reason={}",
+                    // 下推常已带出批号/仓库，View 对不上 PDA 行时仍尝试审核；金蝶能审过则视为成功
+                    log.warn("Sal-outstock lot/stock fill skipped, try submit+audit. deliveryBillNo={} outStockNo={} reason={}",
                             no, outStockNo, fillResult.getMessage());
+                    if ((!StringUtils.hasText(outStockNo) || isPlaceholderBillNo(outStockNo)) && outStockIdLong != null) {
+                        outStockNo = resolveBillNoByView(targetFormId, outStockIdLong);
+                    }
+                    if (StringUtils.hasText(outStockNo)) {
+                        KingdeeSyncResult auditAfterFillFail = submitAndAuditExistingBill(
+                                targetFormId, outStockNo, outStockIdLong);
+                        if (auditAfterFillFail.isSuccess()) {
+                            return KingdeeSyncResult.builder()
+                                    .success(true)
+                                    .billNo(outStockNo)
+                                    .submitted(auditAfterFillFail.isSubmitted())
+                                    .audited(auditAfterFillFail.isAudited())
+                                    .message("发货通知已下推销售出库并审核: " + outStockNo)
+                                    .requestJson(firstNonBlank(fillResult.getRequestJson(), pushRequestJson))
+                                    .responseJson(firstNonBlank(fillResult.getResponseJson(), pushResponseJson))
+                                    .submitRequestJson(auditAfterFillFail.getSubmitRequestJson())
+                                    .submitResponseJson(auditAfterFillFail.getSubmitResponseJson())
+                                    .auditRequestJson(auditAfterFillFail.getAuditRequestJson())
+                                    .auditResponseJson(auditAfterFillFail.getAuditResponseJson())
+                                    .build();
+                        }
+                        log.warn("Sal-outstock audit after fill-skip also failed. outStockNo={} audit={}",
+                                outStockNo, auditAfterFillFail.getMessage());
+                    }
+                    return KingdeeSyncResult.builder()
+                            .success(false)
+                            .billNo(outStockNo)
+                            .message("已生成销售出库单 " + outStockNo + "，但批号/仓库补全失败："
+                                    + fillResult.getMessage() + "。重新提交将继续沿用该单，不会重复生成")
+                            .requestJson(firstNonBlank(fillResult.getRequestJson(), pushRequestJson))
+                            .responseJson(firstNonBlank(fillResult.getResponseJson(), pushResponseJson))
+                            .build();
                 }
             }
 
-            if (!StringUtils.hasText(outStockNo) && outStockIdLong != null) {
+            if ((!StringUtils.hasText(outStockNo) || isPlaceholderBillNo(outStockNo)) && outStockIdLong != null) {
                 outStockNo = resolveBillNoByView(targetFormId, outStockIdLong);
             }
             if (!StringUtils.hasText(outStockNo)) {
                 return KingdeeSyncResult.builder()
                         .success(false)
-                        .billNo(no)
-                        .message("销售出库单号为空，无法提交审核")
+                        .billNo(outStockIdLong != null ? String.valueOf(outStockIdLong) : no)
+                        .message("销售出库单号为空，无法提交审核"
+                                + (outStockIdLong != null ? "（已取得内码 " + outStockIdLong + "，请到金蝶核对暂存出库单）" : ""))
                         .requestJson(pushRequestJson)
                         .responseJson(pushResponseJson)
                         .build();
@@ -808,15 +1018,25 @@ public class KingdeeCloudService {
                                                          List<KingdeeSalOutStockEntryFill> fills) throws Exception {
         JsonNode billNode = null;
         if (billId != null && billId > 0) {
-            billNode = viewBillById(formId, billId);
+            try {
+                billNode = viewBillById(formId, billId);
+            } catch (BusinessException ex) {
+                log.warn("View sal-outstock by Id failed formId={} billId={}: {}", formId, billId, ex.getMessage());
+            }
         }
-        if (billNode == null && StringUtils.hasText(billNo)) {
-            billNode = viewBill(formId, billNo.trim());
+        if (billNode == null && StringUtils.hasText(billNo) && !isPlaceholderBillNo(billNo)) {
+            try {
+                billNode = viewBill(formId, billNo.trim());
+            } catch (BusinessException ex) {
+                log.warn("View sal-outstock by Number failed formId={} billNo={}: {}", formId, billNo, ex.getMessage());
+            }
         }
         if (billNode == null) {
             return KingdeeSyncResult.builder()
                     .success(false)
-                    .message("无法 View 销售出库单以补全批号/仓库")
+                    .message("无法 View 销售出库单以补全批号/仓库"
+                            + (billId != null ? "（内码=" + billId + "）" : "")
+                            + (StringUtils.hasText(billNo) ? "（单号=" + billNo + "）" : ""))
                     .build();
         }
         String resolvedNo = firstText(billNode, "FBillNo", "BillNo", "Number");
@@ -824,135 +1044,68 @@ public class KingdeeCloudService {
         if (resolvedId == null) {
             resolvedId = billId;
         }
+        if (KingdeeSalOutStockEntryMatcher.alreadyHasLotAndStock(billNode)) {
+            log.info("Sal-outstock already has lot/stock after push, skip fill. billNo={}", resolvedNo);
+            return KingdeeSyncResult.builder()
+                    .success(true)
+                    .billNo(resolvedNo)
+                    .message("下推已带出批号/仓库，跳过补全")
+                    .build();
+        }
         List<KingdeeSalOutStockLotStockBuilder.EntryUpdate> updates =
-                matchOutStockEntriesForFill(billNode, fills);
+                KingdeeSalOutStockEntryMatcher.match(billNode, fills);
         if (updates.isEmpty()) {
-            if (outStockEntriesHaveLotAndStock(billNode)) {
-                log.info("Sal-outstock already has lot/stock after push, skip fill. billNo={}", resolvedNo);
-                return KingdeeSyncResult.builder()
-                        .success(true)
-                        .billNo(resolvedNo)
-                        .message("下推已带出批号/仓库，跳过补全")
-                        .build();
-            }
-            // 匹配失败：交由上层决定是否仍 Submit+Audit（多数账套下推已带齐字段）
+            log.warn("Sal-outstock entry match failed. billNo={} outStockMaterials={} pdaFills={}",
+                    resolvedNo, KingdeeSalOutStockEntryMatcher.describeEntries(billNode),
+                    KingdeeSalOutStockEntryMatcher.describeFills(fills));
             return KingdeeSyncResult.builder()
                     .success(false)
                     .billNo(resolvedNo)
-                    .message("销售出库分录与 PDA 扫码行未能匹配，跳过补全")
+                    .message("销售出库分录与 PDA 扫码行未能匹配，无法补全批号/仓库")
                     .build();
         }
         String savePayload = KingdeeSalOutStockLotStockBuilder.build(
                 objectMapper, resolvedId, resolvedNo, updates);
         String saveResponseJson = invokeSave(session, formId, savePayload);
         KingdeeSyncResult saveResult = parseSaveResponse(savePayload, saveResponseJson);
-        if (saveResult.isSuccess() && !StringUtils.hasText(saveResult.getBillNo()) && StringUtils.hasText(resolvedNo)) {
+        if (!saveResult.isSuccess()) {
+            return saveResult;
+        }
+        // Save 返回成功不等于字段已落库（字段名错误时常见）；再 View 校验批号/仓库
+        JsonNode afterSave = null;
+        Long idAfter = parseLongQuiet(extractBillId(saveResponseJson));
+        if (idAfter == null) {
+            idAfter = resolvedId;
+        }
+        try {
+            if (idAfter != null && idAfter > 0) {
+                afterSave = viewBillById(formId, idAfter);
+            } else if (StringUtils.hasText(resolvedNo)) {
+                afterSave = viewBill(formId, resolvedNo.trim());
+            }
+        } catch (Exception ex) {
+            log.warn("Re-view sal-outstock after lot/stock save failed billNo={}", resolvedNo, ex);
+        }
+        if (afterSave != null && !KingdeeSalOutStockEntryMatcher.alreadyHasLotAndStock(afterSave)) {
+            log.warn("Sal-outstock still missing lot/stock after Save. billNo={} entries={}",
+                    resolvedNo, KingdeeSalOutStockEntryMatcher.describeEntries(afterSave));
             return KingdeeSyncResult.builder()
-                    .success(true)
+                    .success(false)
                     .billNo(resolvedNo)
+                    .message("批号/仓库 Save 后仍为空，请核对物料批号与仓库编码。分录="
+                            + KingdeeSalOutStockEntryMatcher.describeEntries(afterSave)
+                            + "；PDA补全=" + KingdeeSalOutStockEntryMatcher.describeFills(fills))
                     .requestJson(savePayload)
                     .responseJson(saveResponseJson)
                     .build();
         }
-        return saveResult;
-    }
-
-    private List<KingdeeSalOutStockLotStockBuilder.EntryUpdate> matchOutStockEntriesForFill(
-            JsonNode billNode, List<KingdeeSalOutStockEntryFill> fills) {
-        JsonNode entries = billNode.get("FEntity");
-        if (entries == null || !entries.isArray()) {
-            entries = billNode.get("Entity");
-        }
-        List<KingdeeSalOutStockLotStockBuilder.EntryUpdate> updates = new ArrayList<>();
-        if (entries == null || !entries.isArray() || fills == null) {
-            return updates;
-        }
-        List<KingdeeSalOutStockEntryFill> pending = new ArrayList<>(fills);
-        for (JsonNode entry : entries) {
-            if (entry == null || entry.isNull()) {
-                continue;
-            }
-            Long entryId = parseLongQuiet(firstText(entry, "FENTRYID", "FEntryID", "EntryID", "Id"));
-            if (entryId == null || entryId <= 0) {
-                continue;
-            }
-            String material = refNumber(entry, "FMaterialID", "FMaterialId", "MaterialID");
-            Long srcEntryId = extractLinkSourceEntryId(entry);
-            KingdeeSalOutStockEntryFill matched = null;
-            for (int i = 0; i < pending.size(); i++) {
-                KingdeeSalOutStockEntryFill fill = pending.get(i);
-                if (fill == null) {
-                    continue;
-                }
-                boolean bySrc = fill.getSourceEntryId() != null && fill.getSourceEntryId() > 0
-                        && srcEntryId != null && fill.getSourceEntryId().equals(srcEntryId);
-                boolean byMaterial = StringUtils.hasText(fill.getMaterialCode())
-                        && StringUtils.hasText(material)
-                        && fill.getMaterialCode().trim().equalsIgnoreCase(material.trim());
-                if (bySrc || byMaterial) {
-                    matched = fill;
-                    pending.remove(i);
-                    break;
-                }
-            }
-            if (matched == null) {
-                continue;
-            }
-            updates.add(new KingdeeSalOutStockLotStockBuilder.EntryUpdate(
-                    entryId, matched.getLotNumber(), matched.getStockNumber(), matched.getRealQty()));
-        }
-        // 剩余按物料再匹配一次（同分录多行时）
-        if (!pending.isEmpty()) {
-            for (JsonNode entry : entries) {
-                if (pending.isEmpty()) {
-                    break;
-                }
-                Long entryId = parseLongQuiet(firstText(entry, "FENTRYID", "FEntryID", "EntryID", "Id"));
-                if (entryId == null || entryId <= 0) {
-                    continue;
-                }
-                boolean already = updates.stream().anyMatch(u -> entryId.equals(u.entryId()));
-                if (already) {
-                    continue;
-                }
-                String material = refNumber(entry, "FMaterialID", "FMaterialId", "MaterialID");
-                for (int i = 0; i < pending.size(); i++) {
-                    KingdeeSalOutStockEntryFill fill = pending.get(i);
-                    if (fill != null && StringUtils.hasText(fill.getMaterialCode())
-                            && StringUtils.hasText(material)
-                            && fill.getMaterialCode().trim().equalsIgnoreCase(material.trim())) {
-                        updates.add(new KingdeeSalOutStockLotStockBuilder.EntryUpdate(
-                                entryId, fill.getLotNumber(), fill.getStockNumber(), fill.getRealQty()));
-                        pending.remove(i);
-                        break;
-                    }
-                }
-            }
-        }
-        return updates;
-    }
-
-    private static boolean outStockEntriesHaveLotAndStock(JsonNode billNode) {
-        JsonNode entries = billNode != null ? billNode.get("FEntity") : null;
-        if (entries == null || !entries.isArray()) {
-            entries = billNode != null ? billNode.get("Entity") : null;
-        }
-        if (entries == null || !entries.isArray() || entries.isEmpty()) {
-            return false;
-        }
-        for (JsonNode entry : entries) {
-            if (entry == null || entry.isNull()) {
-                continue;
-            }
-            String lot = firstNonBlank(
-                    firstText(entry, "FLot_Text", "Lot_Text"),
-                    refNumber(entry, "FLot", "Lot"));
-            String stock = refNumber(entry, "FStockID", "FStockId", "StockID", "StockId");
-            if (!StringUtils.hasText(lot) || !StringUtils.hasText(stock)) {
-                return false;
-            }
-        }
-        return true;
+        String billNoOut = firstNonBlank(saveResult.getBillNo(), resolvedNo);
+        return KingdeeSyncResult.builder()
+                .success(true)
+                .billNo(billNoOut)
+                .requestJson(savePayload)
+                .responseJson(saveResponseJson)
+                .build();
     }
 
     private static String firstNonBlank(String... values) {
@@ -965,16 +1118,6 @@ public class KingdeeCloudService {
             }
         }
         return null;
-    }
-
-    private static Long extractLinkSourceEntryId(JsonNode entry) {
-        JsonNode links = entry.get("FEntity_Link");
-        if (links == null || !links.isArray() || links.isEmpty()) {
-            return null;
-        }
-        JsonNode link = links.get(0);
-        return parseLongQuiet(firstText(link,
-                "FEntity_Link_FSId", "FSId", "FEntity_Link_FSID", "SourceEntryId"));
     }
 
     private static String joinSourceEntryIds(List<KingdeeSalOutStockEntryFill> fills) {
@@ -1002,6 +1145,33 @@ public class KingdeeCloudService {
             log.warn("View billNo after push failed formId={} billId={}", formId, billId, e);
             return null;
         }
+    }
+
+    /** Push/Save 解析出的假单号或把内码当成 Number 时，不能拿去 View(Number=...) */
+    private static boolean isPlaceholderBillNo(String billNo) {
+        if (!StringUtils.hasText(billNo)) {
+            return true;
+        }
+        String no = billNo.trim();
+        return no.regionMatches(true, 0, "KD-", 0, 3) || no.matches("^\\d{6,}$");
+    }
+
+    private static String normalizePushedBillNo(String billNo, Long billId) {
+        if (!StringUtils.hasText(billNo)) {
+            return null;
+        }
+        String no = billNo.trim();
+        if (no.regionMatches(true, 0, "KD-", 0, 3)) {
+            return null;
+        }
+        // SuccessEntitys.Number 有时会回填成 Id
+        if (billId != null && billId > 0 && no.equals(String.valueOf(billId))) {
+            return null;
+        }
+        if (no.matches("^\\d{6,}$")) {
+            return null;
+        }
+        return no;
     }
 
     private static Long parseLongQuiet(String text) {
@@ -1056,7 +1226,7 @@ public class KingdeeCloudService {
 
     /**
      * 对已存在的金蝶单据执行 Submit + 普通 Audit。
-     * 若单据已是审核中(B)，Submit 失败时继续 Audit。
+     * 若单据已是审核中(B)/已审核(C)，跳过 Submit（已审核则直接成功）；Submit 报「只有暂存才允许提交」时同样继续 Audit。
      */
     public KingdeeSyncResult submitAndAuditExistingBill(String formId, String billNo, Long billId) {
         return submitAndAuditExistingBill(formId, billNo, billId, false, null, null);
@@ -1106,30 +1276,51 @@ public class KingdeeCloudService {
         try {
             String session = login();
             String id = billId != null && billId > 0 ? String.valueOf(billId) : "";
-            String submitRequestJson = objectMapper.writeValueAsString(
-                    KingdeeBillSubmitPayload.build(objectMapper, no, id));
-            String submitResponseJson = invokeSubmit(session, formId, no, id);
-            boolean submitted = parseOperationSuccess(submitResponseJson);
-            if (!submitted) {
-                String submitError = extractOperationError(submitResponseJson);
-                // 已提交过的单据直接走审批
-                boolean alreadySubmitted = submitError != null
-                        && (submitError.contains("提交") || submitError.contains("审核中")
-                        || submitError.contains("已提交") || submitError.contains("工作流")
-                        || submitError.toLowerCase().contains("submit"));
-                if (!alreadySubmitted) {
-                    return KingdeeSyncResult.builder()
-                            .success(false)
-                            .billNo(no)
-                            .submitted(false)
-                            .audited(false)
-                            .message("提交失败: " + submitError)
-                            .submitRequestJson(submitRequestJson)
-                            .submitResponseJson(submitResponseJson)
-                            .build();
+
+            // 已是「审核中 B / 已审核 C」则不再 Submit（金蝶会报：只有暂存/创建/重新审核才允许提交）
+            String docStatus = peekDocumentStatus(formId, no, billId);
+            boolean skipSubmit = isSubmittedOrAuditedStatus(docStatus);
+            if (isAuditedStatus(docStatus)) {
+                log.info("Kingdee bill already audited, skip submit+audit formId={} billNo={} status={}",
+                        formId, no, docStatus);
+                return KingdeeSyncResult.builder()
+                        .success(true)
+                        .billNo(no)
+                        .submitted(true)
+                        .audited(true)
+                        .message("单据已审核，无需重复提交审核: " + no)
+                        .build();
+            }
+
+            String submitRequestJson = null;
+            String submitResponseJson = null;
+            boolean submitted = skipSubmit;
+            if (!skipSubmit) {
+                submitRequestJson = objectMapper.writeValueAsString(
+                        KingdeeBillSubmitPayload.build(objectMapper, no, id));
+                submitResponseJson = invokeSubmit(session, formId, no, id);
+                submitted = parseOperationSuccess(submitResponseJson);
+                if (!submitted) {
+                    String submitError = extractOperationError(submitResponseJson);
+                    boolean alreadySubmitted = KingdeeSubmitErrorClassifier.isAlreadySubmitted(submitError);
+                    if (!alreadySubmitted) {
+                        return KingdeeSyncResult.builder()
+                                .success(false)
+                                .billNo(no)
+                                .submitted(false)
+                                .audited(false)
+                                .message("提交失败: " + submitError)
+                                .submitRequestJson(submitRequestJson)
+                                .submitResponseJson(submitResponseJson)
+                                .build();
+                    }
+                    submitted = true;
+                    log.info("Kingdee bill already submitted, continue {} formId={} billNo={} userId={}",
+                            useWorkflowAudit ? "WorkflowAudit" : "Audit", formId, no, kingdeeUserId);
                 }
-                log.info("Kingdee bill already submitted, continue {} formId={} billNo={} userId={}",
-                        useWorkflowAudit ? "WorkflowAudit" : "Audit", formId, no, kingdeeUserId);
+            } else {
+                log.info("Kingdee bill status={}, skip Submit and go {} formId={} billNo={}",
+                        docStatus, useWorkflowAudit ? "WorkflowAudit" : "Audit", formId, no);
             }
 
             String auditRequestJson;
@@ -1154,7 +1345,10 @@ public class KingdeeCloudService {
                         .billNo(no)
                         .submitted(true)
                         .audited(true)
-                        .message((useWorkflowAudit ? "提交并工作流审批成功: " : "提交并审核成功: ") + no)
+                        .message((skipSubmit
+                                ? (useWorkflowAudit ? "单据已提交，工作流审批成功: " : "单据已提交，审核成功: ")
+                                : (useWorkflowAudit ? "提交并工作流审批成功: " : "提交并审核成功: "))
+                                + no)
                         .submitRequestJson(submitRequestJson)
                         .submitResponseJson(submitResponseJson)
                         .auditRequestJson(auditRequestJson)
@@ -1164,7 +1358,7 @@ public class KingdeeCloudService {
             return KingdeeSyncResult.builder()
                     .success(false)
                     .billNo(no)
-                    .submitted(true)
+                    .submitted(submitted)
                     .audited(false)
                     .message((useWorkflowAudit ? "提交成功但工作流审批失败: " : "提交成功但审核失败: ")
                             + extractOperationError(auditResponseJson))
@@ -1182,6 +1376,43 @@ public class KingdeeCloudService {
                     .message(e.getMessage())
                     .build();
         }
+    }
+
+    /** View 单据状态；失败时返回 null，由后续 Submit 错误分类兜底 */
+    private String peekDocumentStatus(String formId, String billNo, Long billId) {
+        try {
+            JsonNode node = null;
+            if (billId != null && billId > 0) {
+                try {
+                    node = viewBillById(formId, billId);
+                } catch (Exception ex) {
+                    log.debug("peekDocumentStatus by Id failed formId={} billId={}", formId, billId);
+                }
+            }
+            if (node == null && StringUtils.hasText(billNo)) {
+                node = viewBill(formId, billNo.trim());
+            }
+            if (node == null) {
+                return null;
+            }
+            return firstText(node, "FDocumentStatus", "DocumentStatus");
+        } catch (Exception e) {
+            log.warn("peekDocumentStatus failed formId={} billNo={}: {}", formId, billNo, e.getMessage());
+            return null;
+        }
+    }
+
+    private static boolean isSubmittedOrAuditedStatus(String documentStatus) {
+        if (!StringUtils.hasText(documentStatus)) {
+            return false;
+        }
+        String s = documentStatus.trim().toUpperCase();
+        // B=审核中(已提交) C=已审核 D=重新审核（重新审核通常还需再提交，不跳过）
+        return "B".equals(s) || "C".equals(s);
+    }
+
+    private static boolean isAuditedStatus(String documentStatus) {
+        return StringUtils.hasText(documentStatus) && "C".equalsIgnoreCase(documentStatus.trim());
     }
 
     /**

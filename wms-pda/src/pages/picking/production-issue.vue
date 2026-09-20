@@ -7,6 +7,7 @@
         :disabled="busy"
         placeholder="扫码或搜索生产领料单号/车间"
         action-text="打开"
+        :bill-scan="true"
         @scan="onScan"
         @search="onSearch"
       />
@@ -37,7 +38,7 @@
       <view v-if="!notices.length && !loading" class="empty">
         <text class="empty-icon">📋</text>
         <text class="empty-text">暂无未审核的生产领料单</text>
-        <text class="empty-hint">可直接扫描领料单二维码进入明细</text>
+        <text class="empty-hint">拉取金蝶创建/审核中的领料单；扫码填数量后提交审核</text>
       </view>
       <view v-if="loading && !notices.length" class="loading-tip">加载中...</view>
       <view v-else-if="notices.length" class="loading-tip end-tip">共 {{ notices.length }} 条</view>
@@ -65,7 +66,6 @@ const {
   keyword,
   notices,
   loadList,
-  loadListOnShow,
   statusLabel,
   statusClass,
 } = useNoticeBillList(billType)
@@ -88,6 +88,10 @@ async function openByBarcode(barcode) {
     }
     if (!billNo) {
       uni.showToast({ title: '无法识别领料单号', icon: 'none' })
+      return
+    }
+    if (billNo.startsWith('{') || billNo.includes('://') || billNo.length > 64) {
+      uni.showToast({ title: '无法识别领料单号，请重扫', icon: 'none', duration: 2500 })
       return
     }
     keyword.value = billNo
@@ -116,7 +120,11 @@ function openBill(item) {
 }
 
 onLoad(() => uni.setNavigationBarTitle({ title: '生产领料' }))
-onShow(() => loadListOnShow())
+onShow(() => {
+  keyword.value = ''
+  loadList('', { force: true })
+  refocusScanInput(scanInputRef, 400)
+})
 onMounted(() => refocusScanInput(scanInputRef, 500))
 </script>
 

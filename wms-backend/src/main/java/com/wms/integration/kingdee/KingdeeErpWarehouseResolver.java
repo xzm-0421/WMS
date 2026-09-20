@@ -21,7 +21,7 @@ public class KingdeeErpWarehouseResolver {
     private final KingdeeCloudProperties properties;
 
     public String resolve(String wmsWarehouseCode, String receiveLineErpStockCode) {
-        if (StringUtils.hasText(receiveLineErpStockCode)) {
+        if (StringUtils.hasText(receiveLineErpStockCode) && !isUnassigned(receiveLineErpStockCode)) {
             return receiveLineErpStockCode.trim();
         }
         if (StringUtils.hasText(wmsWarehouseCode)) {
@@ -34,7 +34,33 @@ public class KingdeeErpWarehouseResolver {
                 return configured.trim();
             }
         }
-        return properties.getStockInDefaultWarehouseNumber();
+        String fallback = properties.getStockInDefaultWarehouseNumber();
+        return isUnassigned(fallback) ? null : fallback;
+    }
+
+    /**
+     * 是否为金蝶占位仓（如 CK004 未分配）。空值也视为未指定。
+     */
+    public boolean isUnassigned(String warehouseCode) {
+        if (!StringUtils.hasText(warehouseCode)) {
+            return true;
+        }
+        String code = warehouseCode.trim();
+        String unassigned = properties.getStockInUnassignedWarehouseNumber();
+        return StringUtils.hasText(unassigned) && unassigned.equalsIgnoreCase(code);
+    }
+
+    /** 取第一个非占位仓库编码。 */
+    public String firstAssigned(String... warehouseCodes) {
+        if (warehouseCodes == null) {
+            return null;
+        }
+        for (String code : warehouseCodes) {
+            if (StringUtils.hasText(code) && !isUnassigned(code)) {
+                return code.trim();
+            }
+        }
+        return null;
     }
 
     /**

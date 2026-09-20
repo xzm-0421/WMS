@@ -21,6 +21,8 @@ public class SysUserDto {
     /** 金蝶用户 Id FUserID */
     private Long kdUserId;
     private List<Long> roleIds;
+    /** Web 角色管理中的角色名称，未分配角色时为空 */
+    private List<String> roleNames;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

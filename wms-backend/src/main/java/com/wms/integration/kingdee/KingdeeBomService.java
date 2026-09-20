@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wms.common.constant.ErrorCode;
 import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
+import com.wms.integration.kingdee.dto.KingdeeMasterDataSyncResult;
 import com.wms.production.dto.BomVo;
 import com.wms.production.entity.BomDetail;
 import com.wms.production.entity.BomHeader;
@@ -19,8 +20,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 从金蝶云星空查询 BOM；未启用金蝶时回退本地 bom 表（仅开发联调）。
@@ -77,6 +80,111 @@ public class KingdeeBomService {
                     "未找到产品「" + productCode + "」的有效 BOM，请在金蝶云星空维护或启用金蝶对接");
         }
         return getFromLocal(header.getBomCode());
+    }
+
+    public PageResult<BomHeader> pageLocal(String bomCode, String productCode, long current, long size) {
+        return pageFromLocal(bomCode, productCode, current, size);
+    }
+
+    public BomVo getLocal(String bomCode) {
+        return getFromLocal(bomCode);
+    }
+
+    /**
+     * 通过 executeBillQuery 拉取 ENG_BOM 并写入本地 bom_header / bom_detail。
+     */
+    public KingdeeMasterDataSyncResult syncAllToLocal() {
+        if (!kingdeeCloudService.isEnabled()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "金蝶对接未启用");
+        }
+        int pageSize = Math.max(1, properties.getMasterDataQueryLimit());
+        int start = 0;
+        int fetched = 0;
+        int inserted = 0;
+        int updated = 0;
+        int skipped = 0;
+        Set<String> seen = new LinkedHashSet<>();
+        while (true) {
+            List<List<String>> rows = kingdeeCloudService.executeBillQuery(
+                    properties.getBomFormId(),
+                    properties.getBomListFieldKeys(),
+                    "FDocumentStatus='C' and FForbidStatus='A'",
+                    "FNumber",
+                    start,
+                    pageSize);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            for (List<String> row : rows) {
+                fetched++;
+                BomHeader listed = mapListRow(row);
+                if (listed == null || !StringUtils.hasText(listed.getBomCode()) || !seen.add(listed.getBomCode())) {
+                    skipped++;
+                    continue;
+                }
+                try {
+                    BomVo vo = getFromKingdeeByCode(listed.getBomCode());
+                    if ("INSERTED".equals(upsertLocal(vo))) {
+                        inserted++;
+                    } else {
+                        updated++;
+                    }
+                } catch (Exception e) {
+                    log.warn("BOM sync skip code={} msg={}", listed.getBomCode(), e.getMessage());
+                    skipped++;
+                }
+            }
+            if (rows.size() < pageSize) {
+                break;
+            }
+            start += pageSize;
+        }
+        return KingdeeMasterDataSyncResult.builder()
+                .totalFetched(fetched)
+                .inserted(inserted)
+                .updated(updated)
+                .skipped(skipped)
+                .message(String.format("BOM同步完成：拉取 %d，新增 %d，更新 %d，跳过 %d",
+                        fetched, inserted, updated, skipped))
+                .build();
+    }
+
+    private String upsertLocal(BomVo vo) {
+        BomHeader header = vo.getHeader();
+        if (!StringUtils.hasText(header.getProductCode())) {
+            header.setProductCode("-");
+        }
+        if (!StringUtils.hasText(header.getVersionNo())) {
+            header.setVersionNo("V1");
+        }
+        BomHeader existing = bomHeaderMapper.selectOne(new LambdaQueryWrapper<BomHeader>()
+                .eq(BomHeader::getBomCode, header.getBomCode()));
+        if (existing == null) {
+            if (header.getCreateTime() == null) {
+                header.setCreateTime(java.time.LocalDateTime.now());
+            }
+            bomHeaderMapper.insert(header);
+        } else {
+            existing.setProductCode(header.getProductCode());
+            existing.setVersionNo(header.getVersionNo());
+            existing.setStatus(header.getStatus() == null ? 1 : header.getStatus());
+            bomHeaderMapper.updateById(existing);
+        }
+        bomDetailMapper.delete(new LambdaQueryWrapper<BomDetail>().eq(BomDetail::getBomCode, header.getBomCode()));
+        if (vo.getDetails() != null) {
+            for (BomDetail detail : vo.getDetails()) {
+                detail.setId(null);
+                detail.setBomCode(header.getBomCode());
+                if (!StringUtils.hasText(detail.getUnitCode())) {
+                    detail.setUnitCode("-");
+                }
+                if (detail.getQtyPer() == null) {
+                    detail.setQtyPer(java.math.BigDecimal.ONE);
+                }
+                bomDetailMapper.insert(detail);
+            }
+        }
+        return existing == null ? "INSERTED" : "UPDATED";
     }
 
     private PageResult<BomHeader> pageFromKingdee(String bomCode, String productCode, long current, long size) {
@@ -143,9 +251,9 @@ public class KingdeeBomService {
         Map<String, Integer> idx = indexOf(listKeys);
 
         BomHeader header = new BomHeader();
-        header.setBomCode(val(first, idx, "FNumber"));
-        header.setProductCode(val(first, idx, "FMaterialId.FNumber"));
-        header.setVersionNo(val(first, idx, "FBOMVERSION"));
+        header.setBomCode(val(first, idx, "FNumber", "FBillNo"));
+        header.setProductCode(val(first, idx, "FMaterialId.FNumber", "FMaterialID.FNumber"));
+        header.setVersionNo(val(first, idx, "FBOMVERSION", "FBOMID", "FVersion"));
         header.setStatus(1);
 
         String bomCode = header.getBomCode();
@@ -155,19 +263,25 @@ public class KingdeeBomService {
             if (!bomCode.equals(val(row, idx, "FNumber"))) {
                 continue;
             }
-            String childCode = val(row, idx, "FTreeEntity_FMaterialIdChild.FNumber");
+            String childCode = val(row, idx,
+                    "FTreeEntity_FMaterialIdChild.FNumber",
+                    "SubHeadEntity.FMaterialID2.FNumber",
+                    "SubHeadEntity_FMaterialID2.FNumber");
             if (!StringUtils.hasText(childCode)) {
                 continue;
             }
             BomDetail d = new BomDetail();
             d.setBomCode(bomCode);
-            d.setLineNo(parseInt(val(row, idx, "FTreeEntity_FSEQ"), lineNo));
+            d.setLineNo(parseInt(val(row, idx, "FTreeEntity_FSEQ", "SubHeadEntity.FSeq", "SubHeadEntity_FSeq"), lineNo));
             d.setMaterialCode(childCode);
-            d.setMaterialName(val(row, idx, "FTreeEntity_FMaterialIdChild.FName"));
+            d.setMaterialName(val(row, idx,
+                    "FTreeEntity_FMaterialIdChild.FName",
+                    "SubHeadEntity.FMaterialID2.FName",
+                    "SubHeadEntity_FMaterialID2.FName"));
             d.setUnitCode(val(row, idx, "FTreeEntity_FUnitID.FNumber"));
             d.setQtyPer(calcQtyPer(
-                    val(row, idx, "FTreeEntity_FNumerator"),
-                    val(row, idx, "FTreeEntity_FDenominator")));
+                    val(row, idx, "FTreeEntity_FNumerator", "SubHeadEntity.FNumerator", "SubHeadEntity_FNumerator"),
+                    val(row, idx, "FTreeEntity_FDenominator", "SubHeadEntity.FDenominator", "SubHeadEntity_FDenominator")));
             details.add(d);
             lineNo++;
         }
@@ -189,8 +303,8 @@ public class KingdeeBomService {
         }
         BomHeader h = new BomHeader();
         h.setBomCode(bomCode);
-        h.setProductCode(val(row, idx, "FMaterialId.FNumber"));
-        h.setVersionNo(val(row, idx, "FBOMVERSION"));
+        h.setProductCode(val(row, idx, "FMaterialId.FNumber", "FMaterialID.FNumber"));
+        h.setVersionNo(val(row, idx, "FBOMVERSION", "FBOMID", "FVersion"));
         h.setStatus("A".equals(val(row, idx, "FForbidStatus")) ? 1 : 0);
         return h;
     }
@@ -226,13 +340,37 @@ public class KingdeeBomService {
         return map;
     }
 
-    private static String val(List<String> row, Map<String, Integer> idx, String key) {
-        Integer i = idx.get(key);
-        if (i == null || i >= row.size()) {
+    private static String val(List<String> row, Map<String, Integer> idx, String... keys) {
+        if (keys == null) {
             return "";
         }
-        String v = row.get(i);
-        return v == null ? "" : v.trim();
+        for (String key : keys) {
+            Integer i = findIndex(idx, key);
+            if (i == null || i >= row.size()) {
+                continue;
+            }
+            String v = row.get(i);
+            if (v != null && !v.isBlank()) {
+                return v.trim();
+            }
+        }
+        return "";
+    }
+
+    private static Integer findIndex(Map<String, Integer> idx, String key) {
+        if (!StringUtils.hasText(key)) {
+            return null;
+        }
+        Integer i = idx.get(key);
+        if (i != null) {
+            return i;
+        }
+        for (Map.Entry<String, Integer> entry : idx.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(key)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     private static BigDecimal calcQtyPer(String numerator, String denominator) {

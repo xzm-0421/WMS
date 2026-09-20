@@ -87,7 +87,7 @@ export function useNoticeBillList(billTypeRef) {
     const inbound = typeConfig.value.direction === 'INBOUND'
     if (s === 'COMPLETED' || s === 'PARTIAL_SUBMITTED') return inbound ? '已完成' : '已出完'
     if (s === 'SCANNING') return '扫码中'
-    if (s === 'NEW' || !s) return inbound ? '待收料' : '待出库'
+    if (s === 'NEW' || !s) return inbound ? '待收料' : (typeConfig.value.code === 'PRODUCTION_ISSUE' ? '待领料' : '待出库')
     if (item.inProgress) return '进行中'
     return inbound ? '待收料' : '待出库'
   }

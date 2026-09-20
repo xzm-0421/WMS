@@ -55,6 +55,7 @@
               inputmode="decimal"
               :value="getQtyDraft(line)"
               @input="onQtyInput(line, $event)"
+              @focus="pauseScanAutoFocus"
               @blur="onQtyBlur(line)"
             />
           </view>
@@ -66,6 +67,7 @@
               inputmode="decimal"
               :value="getAuxQtyDraft(line)"
               @input="onAuxQtyInput(line, $event)"
+              @focus="pauseScanAutoFocus"
               @blur="onAuxQtyBlur(line)"
             />
           </view>
@@ -112,6 +114,7 @@ import WarehousePicker from '@/components/WarehousePicker.vue'
 import LocationPicker from '@/components/LocationPicker.vue'
 import useNoticeBillScan from '@/composables/useNoticeBillScan.js'
 import usePageAlive from '@/composables/usePageAlive.js'
+import { pauseScanAutoFocus, resumeScanAutoFocus } from '@/utils/scanFocusGuard.js'
 import { getNoticeBillType } from '@/constants/noticeBillTypes.js'
 import { sanitizeDecimalInput } from '@/utils/decimalInput.js'
 import { qtyDecimalScale, formatQtyInput } from '@/utils/formatQty.js'
@@ -226,6 +229,27 @@ function autoRemainQty(line) {
   return inputMapsToAux(line) ? line.remainQty : line.remainAuxQty
 }
 
+/** 录入数量不得超过可处理余量，超出时立即提示，避免提交后才发现被拦 */
+function assertWithinRemain(line, qty) {
+  return assertQtyWithinRemain(qty, inputPlanQty(line), inputRemainQty(line), inputUnitOf(line))
+}
+
+function assertWithinAutoRemain(line, qty) {
+  return assertQtyWithinRemain(qty, autoPlanQty(line), autoRemainQty(line), autoUnitOf(line))
+}
+
+function assertQtyWithinRemain(qty, planQty, remainQty, unitCode) {
+  const remain = Number(remainQty) || 0
+  const plan = Number(planQty) || 0
+  if (plan <= 0 || qty <= remain) return true
+  uni.showToast({
+    title: `本次数量不能超过可处理 ${formatQtyInput(remain, unitCode)}${unitCode || ''}`,
+    icon: 'none',
+    duration: 2500,
+  })
+  return false
+}
+
 function convertByPlanRate(qty, fromPlan, toPlan) {
   const q = Number(qty) || 0
   const from = Number(fromPlan) || 0
@@ -296,8 +320,10 @@ function onAuxQtyInput(line, e) {
   auxQtyDrafts[line.lineNo] = sanitizeDecimalInput(e.detail.value, qtyDecimalScale(autoUnitOf(line)))
 }
 async function onQtyBlur(line) {
+  resumeScanAutoFocus()
   const pcs = Number(qtyDrafts[line.lineNo] || 0)
   if (Number.isNaN(pcs) || pcs < 0) return
+  if (!assertWithinRemain(line, pcs)) return
   let stockQty = pcs
   let auxQty
   if (line.multiUnit) {
@@ -315,8 +341,10 @@ async function onQtyBlur(line) {
   if (ok) syncQtyDrafts()
 }
 async function onAuxQtyBlur(line) {
+  resumeScanAutoFocus()
   const kg = Number(auxQtyDrafts[line.lineNo] || 0)
   if (Number.isNaN(kg) || kg < 0) return
+  if (!assertWithinAutoRemain(line, kg)) return
   const pcs = kgToPcs(line, kg)
   qtyDrafts[line.lineNo] = formatQtyInput(pcs, inputUnitOf(line))
   let stockQty = pcs

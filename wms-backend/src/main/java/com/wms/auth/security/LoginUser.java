@@ -17,6 +17,8 @@ public class LoginUser implements UserDetails {
     private String password;
     private String realName;
     private List<String> roles;
+    /** 与 Web 角色管理中的角色名称一致；未分配则为空 */
+    private List<String> roleNames;
     private List<String> permissions;
     private List<String> warehouseScope;
     private Integer dataScope;

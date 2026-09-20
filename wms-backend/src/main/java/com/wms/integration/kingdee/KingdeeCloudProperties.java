@@ -12,8 +12,14 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "kingdee.cloud")
 public class KingdeeCloudProperties {
 
-    /** 是否启用金蝶云星空企业版对接；false 时使用模拟数据 */
+    /** 是否启用金蝶云星空企业版对接；false 时不调金蝶 */
     private boolean enabled = false;
+
+    /**
+     * 金蝶未启用时是否向 PDA 返回内存模拟单（SLD/SCL 等）。
+     * 生产环境必须为 false，否则列表会一直出现模拟数据。
+     */
+    private boolean mockEnabled = false;
 
     /** 云星空 WebAPI 站点根地址，如 https://xxx.ik3cloud.com/K3Cloud */
     private String baseUrl = "http://localhost/K3Cloud";
@@ -46,7 +52,12 @@ public class KingdeeCloudProperties {
      * 汇报下推常用普通生产入库 SCRKD01_SYS；简单生产入库为 SCRKD02_SYS。
      */
     private String prdInStockBillTypeNumber = "SCRKD01_SYS";
-    private String prdInStockWorkShopNumber = "BM000020";
+    /**
+     * 生产入库明细车间兜底编码。汇报下推时应取生产订单行车间，勿填与 MO 不一致的固定值。
+     */
+    private String prdInStockWorkShopNumber = "";
+    /** 生产订单 FormId，用于读取分录生产车间 */
+    private String prdMoFormId = "PRD_MO";
     /** 入库类型：1=合格品入库 */
     private String prdInStockInStockType = "1";
 
@@ -239,7 +250,8 @@ public class KingdeeCloudProperties {
 
     /** 生产领料单列表 FieldKeys */
     private String pickMtrlLineCountFieldKeys =
-            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+            "FBillNo,FWorkShopId.FNumber,FWorkShopId.FName,FDocumentStatus,FDate,FEntity_FEntryID,"
+                    + "FCreatorId.FNumber,FCreatorId.FName";
 
     /** 生产领料单明细 FieldKeys */
     private String pickMtrlDetailFieldKeys =
@@ -250,7 +262,8 @@ public class KingdeeCloudProperties {
                     + "FEntity_FSeq,FEntity_FEntryID,FEntity_FLot.FNumber,"
                     + "FEntity_FUnitID.FNumber,FEntity_FStockId.FNumber,"
                     + "FEntity_FMoBillNo,FEntity_FMoId,FEntity_FMoEntryId,FEntity_FMoEntrySeq,"
-                    + "FEntity_FParentMaterialId.FNumber,FEntity_FPPBomEntryId,FEntity_FPPBomBillNo";
+                    + "FEntity_FParentMaterialId.FNumber,FEntity_FPPBomEntryId,FEntity_FPPBomBillNo,"
+                    + "FCreatorId.FNumber,FCreatorId.FName";
 
     /** 生产退料单列表 FieldKeys（字段布局与领料单一致，便于共用解析） */
     private String returnMtrlLineCountFieldKeys =
@@ -537,9 +550,9 @@ public class KingdeeCloudProperties {
                     + "FQty,FQty,FQty,FQty,"
                     + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
 
-    /** 销售发货通知列表 FieldKeys */
+    /** 销售发货通知列表 FieldKeys（含未出库数量，便于列表剔除已出完） */
     private String salesDeliveryLineCountFieldKeys =
-            "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDocumentStatus,FDate,FEntity_FEntryID";
+            "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDocumentStatus,FDate,FEntity_FEntryID,FRemainOutQty";
 
     /** 销售发货通知明细 FieldKeys */
     private String salesDeliveryDetailFieldKeys =
@@ -580,10 +593,15 @@ public class KingdeeCloudProperties {
      * 销售退货通知明细 FieldKeys。
      * 布局对齐 {@link KingdeeReceiveBillDetailRowParser}：客户槽位 + 物料 + FQty + 批号/单位/仓库。
      */
+    /**
+     * 复用收料单明细解析器的列布局，退货通知无「已入库关联量」，
+     * 该列（第 11 列）须用非数值字段占位，否则会被算成 remain = FQty - FQty = 0，
+     * 提交时被「超过收料单剩余可入库 0」误拦。
+     */
     private String salReturnNoticeDetailFieldKeys =
             "FBillNo,FID,FDate,FRetcustId.FNumber,FRetcustId.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FQty,"
-                    + "FQty,FQty,FQty,FQty,"
+                    + "FQty,FQty,FLot.FNumber,FQty,"
                     + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
 
     /** 销售退货单 FormId（SAL_RETURNSTOCK） */
@@ -611,15 +629,17 @@ public class KingdeeCloudProperties {
 
     private int salReturnStockLinkFlowLineId = 0;
 
-    /** @deprecated 列表已改为退货通知；保留字段以免旧 yml 报错 */
+    /** 列表已改为退货通知；保留字段以免旧 yml 报错 */
+    @Deprecated
     private String salReturnStockLineCountFieldKeys =
             "FBillNo,FCustomerID.FNumber,FCustomerID.FName,FDocumentStatus,FDate,FEntity_FEntryID";
 
-    /** @deprecated 见 salReturnNoticeDetailFieldKeys */
+    /** 见 salReturnNoticeDetailFieldKeys */
+    @Deprecated
     private String salReturnStockDetailFieldKeys =
             "FBillNo,FID,FDate,FCustomerID.FNumber,FCustomerID.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FQty,"
-                    + "FQty,FQty,FQty,FQty,"
+                    + "FQty,FQty,FLot.FNumber,FQty,"
                     + "FEntity_FSeq,FEntity_FEntryID,FLot.FNumber,FUnitID.FNumber,FStockId.FNumber";
 
     /** 采购退料单 FormId */
@@ -665,6 +685,10 @@ public class KingdeeCloudProperties {
     private String stockInWwInType = "QLI";
     private String stockInDefaultUnitNumber = "Pcs";
     private String stockInDefaultWarehouseNumber = "CK004";
+    /**
+     * 金蝶占位仓（名称多为「未分配」）。自动分配仓库时跳过，改取物料默认仓或生产订单仓。
+     */
+    private String stockInUnassignedWarehouseNumber = "CK004";
     private double stockInEntryTaxRate = 13.0;
     private boolean stockInGiveAway = true;
     /** 同步时是否传 WMS 库位到金蝶 FStockLocId（收料通知单建议 false） */
@@ -702,4 +726,74 @@ public class KingdeeCloudProperties {
     private int readTimeoutMs = 30000;
 
     private int maxRetry = 3;
+
+    /**
+     * 轻 MES：工序 FormId。OpenAPI 工程数据以工艺路线分录带出工序；
+     * 云星空另有工序基础资料 ENG_Process，可按现场覆盖。
+     */
+    private String mesProcessFormId = "ENG_Process";
+    private String mesProcessFieldKeys =
+            "FNumber,FName,FDeptId.FNumber,FDeptId.FName,FForbidStatus,FDocumentStatus";
+
+    /** 轻 MES：设备 FormId（设备组/设备基础资料，按现场覆盖） */
+    private String mesEquipmentFormId = "ENG_Equipment";
+    private String mesEquipmentFieldKeys =
+            "FNumber,FName,FProcessId.FNumber,FModel,FSpecification,FForbidStatus,FDocumentStatus";
+
+    /**
+     * 工艺路线 FormId。OpenAPI：ENG_ROUTE。
+     * 云星空部分环境为 ENG_Route，拉取时会自动回退。
+     */
+    private String mesRouteFormId = "ENG_ROUTE";
+    /**
+     * 工艺路线 ExecuteBillQuery FieldKeys：路线编码/名称、物料、车间、工序明细（工序号、工作中心、准备/加工/传送工时）。
+     */
+    private String mesRouteFieldKeys =
+            "FNumber,FName,FMaterialID.FNumber,FMaterialID.FName,FVersion,FBOMID,"
+                    + "FWorkShopId.FNumber,FWorkShopId.FName,FForbidStatus,FDocumentStatus,"
+                    + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,"
+                    + "FEntity_FWorkCenterId.FNumber,FEntity_FWorkCenterId.FName,"
+                    + "FEntity_FPrepareTime,FEntity_FProcessTime,FEntity_FTransferTime,FEntity_FStdHour";
+    /** 工艺路线备用 FieldKeys（FormId 回退到 ENG_Route 时使用） */
+    private String mesRouteAltFieldKeys =
+            "FNumber,FName,FMaterialId.FNumber,FMaterialId.FName,FVersion,FForbidStatus,FDocumentStatus,"
+                    + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,FEntity_FStdHour";
+
+    /**
+     * 工序计划单 FormId。OpenAPI：PRD_PROCESSCHEDULE。
+     * 云星空车间常用 SFC_OperationPlanning，拉取失败时自动回退。
+     */
+    private String mesOpPlanFormId = "PRD_PROCESSCHEDULE";
+    private String mesOpPlanFieldKeys =
+            "FBillNo,FID,FMOBillNO,FMaterialID.FNumber,FMaterialID.FName,"
+                    + "FWorkShopId.FNumber,FWorkShopId.FName,FQty,FDocumentStatus,"
+                    + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,"
+                    + "FEntity_FWorkCenterId.FNumber,FEntity_FPlanStartDate,FEntity_FPlanFinishDate,"
+                    + "FEntity_FPlanQty,FEntity_FReportQty,FEntity_FEntryID";
+    /** 工序计划备用（SFC_OperationPlanning） */
+    private String mesOpPlanAltFormId = "SFC_OperationPlanning";
+    private String mesOpPlanAltFieldKeys =
+            "FBillNo,FID,FMoNumber,FProductId.FNumber,FProductId.FName,"
+                    + "FOperID.FNumber,FOperID.FName,FOperNumber,FPlanQty,FDocumentStatus,"
+                    + "FPlanStartDate,FPlanFinishDate,FEntryID";
+    private String mesOpPlanFilter = "FDocumentStatus='C'";
+
+    /** 轻 MES：工序汇报回写 FormId */
+    private String mesReportFormId = "SFC_OperationReport";
+    private boolean mesReportAutoAudit = true;
+    private String mesReportBillTypeNumber = "";
+    private String mesReportMoField = "FMoNumber";
+    private String mesReportEntryKey = "FEntity";
+    private String mesReportProcessField = "FOperID";
+    private String mesReportQtyField = "FFinishQty";
+    private String mesReportEquipmentField = "FEquipmentId";
+    private String mesReportReworkField = "FIsRework";
+
+    /** 轻 MES：工序转移回写 FormId */
+    private String mesTransferFormId = "SFC_TransferDirect";
+    private boolean mesTransferAutoAudit = true;
+    private String mesTransferEntryKey = "FEntity";
+    private String mesTransferFromProcessField = "FFromOperId";
+    private String mesTransferToProcessField = "FToOperId";
+    private String mesTransferQtyField = "FQty";
 }

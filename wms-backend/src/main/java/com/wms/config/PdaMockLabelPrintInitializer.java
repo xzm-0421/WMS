@@ -8,6 +8,7 @@ import com.wms.print.service.LabelPrintJobService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 @Component
 @Order(20)
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "kingdee.cloud", name = "mock-enabled", havingValue = "true")
 public class PdaMockLabelPrintInitializer implements CommandLineRunner {
 
     private final LabelPrintJobMapper jobMapper;
