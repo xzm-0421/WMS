@@ -329,9 +329,9 @@ onMounted(loadData)
       <el-table-column prop="batchNo" label="批次" width="120" />
       <el-table-column prop="locationCode" label="推荐库位" width="140" />
       <el-table-column prop="availableQty" label="可用数量" width="100" />
-      <el-table-column prop="expireDate" label="到期日" width="120">
+      <el-table-column prop="inboundDate" label="入库日期" width="120">
         <template #default="{ row }">
-          <WmsDateText :value="row.expireDate" />
+          <WmsDateText :value="row.inboundDate" />
         </template>
       </el-table-column>
     </el-table>

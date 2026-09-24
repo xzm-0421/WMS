@@ -123,6 +123,9 @@ onMounted(loadData)
       <el-table-column label="返工汇合" width="90">
         <template #default="{ row }">{{ row.reworkJoinFlag === 1 ? '是' : '否' }}</template>
       </el-table-column>
+      <el-table-column label="汇合工序" width="90">
+        <template #default="{ row }">{{ row.isConvergeOp ? '是' : '否' }}</template>
+      </el-table-column>
     </el-table>
   </el-dialog>
 </template>

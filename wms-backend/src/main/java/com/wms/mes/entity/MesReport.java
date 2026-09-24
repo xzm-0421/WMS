@@ -39,4 +39,6 @@ public class MesReport extends BaseEntity {
     private Integer retryCount;
     private LocalDateTime nextRetryTime;
     private String cancelReason;
+    private String clientReportNo;
+    private LocalDateTime clientTime;
 }

@@ -96,6 +96,17 @@ onMounted(loadData)
           <OrderStatusTag :status="row.syncStatus" pending-label="未同步" failed-label="同步失败" />
         </template>
       </el-table-column>
+      <el-table-column prop="lastSyncTime" label="最后同步时间" width="170">
+        <template #default="{ row }">
+          <WmsDateText :value="row.lastSyncTime" />
+        </template>
+      </el-table-column>
+      <el-table-column prop="changeRejectReason" label="变更拒绝原因" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span v-if="row.changeRejectReason" style="color: var(--el-color-danger)">{{ row.changeRejectReason }}</span>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">查看详情</el-button>

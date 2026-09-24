@@ -3,6 +3,9 @@
     <view class="stage" :class="{ fit: canvas.fit }" :style="stageStyle">
       <view class="tool-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
         <text class="tool-title">MES-tablet</text>
+        <view v-if="useMockData" class="mock-badge">
+          <text>🧪 模拟数据模式</text>
+        </view>
         <view class="tool-actions">
           <text class="res-hint">{{ sizeHint }}</text>
           <text class="tool-btn" @click="openSettings">显示设置</text>
@@ -11,54 +14,124 @@
         </view>
       </view>
 
+      <!-- 工序信息区域 -->
       <view class="panel process-panel">
         <view class="panel-head">
           <text>工序信息</text>
+          <view class="refresh-btn" @click="searchPlans">
+            <text>🔄 刷新</text>
+          </view>
         </view>
         <view class="search-row">
           <input
             v-model="keyword"
             class="search-input"
-            placeholder="名称、信息……"
+            placeholder="搜索工单号、产品编码......"
             confirm-type="search"
-            @confirm="placeholder('检索工序')"
+            @confirm="searchPlans"
           />
         </view>
         <view class="process-body">
-          <text class="empty-hint">工单 / 工序明细将在此展示</text>
+          <view v-if="loading" class="loading-hint">
+            <text>加载中...</text>
+          </view>
+          <view v-else-if="planList.length === 0" class="empty-hint">
+            <text>暂无工序数据</text>
+          </view>
+          <scroll-view v-else class="plan-list" scroll-y>
+            <view
+              v-for="plan in planList"
+              :key="plan.id"
+              class="plan-card"
+              :class="{ selected: selectedPlan?.id === plan.id }"
+              @click="selectPlan(plan)"
+            >
+              <view class="plan-main">
+                <text class="plan-mo-no">{{ plan.moNo }}</text>
+                <view class="plan-product-info">
+                  <text class="plan-code">{{ plan.productCode }}</text>
+                  <text class="plan-separator">·</text>
+                  <text class="plan-name">{{ plan.productName }}</text>
+                </view>
+              </view>
+              <view class="plan-status-area">
+                <view class="status-tag" :class="getStatusClass(plan.status)">
+                  <text>{{ getStatusText(plan.status) }}</text>
+                </view>
+                <text class="plan-qty-text">数量: {{ plan.planQty }}</text>
+              </view>
+            </view>
+          </scroll-view>
         </view>
       </view>
 
+      <!-- 底部统计栏 -->
       <view class="summary-bar">
-        <view class="total-box">
-          <text>共计：—</text>
-        </view>
+        <text>共计：{{ planList.length }} 条工单</text>
       </view>
 
       <view class="bottom-row">
+        <!-- 称重区域 -->
         <view class="panel weigh-panel">
           <view class="panel-head">
             <text>称重区域</text>
+            <view v-if="selectedPlan" class="clear-btn" @click="clearSelection">
+              <text>✕ 清除</text>
+            </view>
           </view>
-          <view class="weigh-frame">
-            <text class="weigh-value">—.—</text>
-            <text class="weigh-unit">kg</text>
-            <text class="weigh-tip">电子秤读数（待对接）</text>
+          <view v-if="!selectedPlan" class="weigh-empty">
+            <text>请点击上方工单选择</text>
+          </view>
+          <view v-else class="weigh-content">
+            <view class="weigh-plan-info">
+              <text class="weigh-mo-no">{{ selectedPlan.moNo }}</text>
+              <text class="weigh-product">{{ selectedPlan.productName }}</text>
+            </view>
+            <view class="weigh-input-row">
+              <view class="weigh-label">
+                <text>重量 (kg)</text>
+              </view>
+              <input
+                v-model="inputWeight"
+                class="weight-input"
+                type="digit"
+                placeholder="输入或等待电子秤"
+                @confirm="confirmWeigh"
+              />
+              <view class="confirm-weight-btn" @click="confirmWeigh">
+                <text>确认称重</text>
+              </view>
+            </view>
+            <view class="weigh-tip">
+              <text>💡 阶段一：手动输入；后续对接电子秤自动读取</text>
+            </view>
           </view>
         </view>
 
+        <!-- 物料标签打印区域 -->
         <view class="panel print-panel">
           <view class="panel-head">
-            <text>物料标签打印</text>
+            <text>物料标签打印 ({{ printQueue.length }})</text>
           </view>
           <scroll-view class="print-list" scroll-y>
-            <view v-for="box in boxes" :key="box.seq" class="print-row">
-              <view class="print-label">
-                <text>{{ box.label }}</text>
-                <text class="print-qty">{{ box.qty == null ? '—' : box.qty }}</text>
+            <view v-if="printQueue.length === 0" class="print-empty">
+              <text>暂无待打印标签</text>
+            </view>
+            <view v-for="(item, index) in printQueue" :key="item.reportNo || index" class="print-card">
+              <view class="print-card-header">
+                <text class="print-card-title">{{ item.productName }}</text>
               </view>
-              <view class="print-btn" @click="placeholder('打印第' + box.seq + '框标签')">
-                <text>标签打印</text>
+              <view class="print-card-code">
+                <text>{{ item.productCode }}</text>
+              </view>
+              <view class="print-card-info">
+                <text class="info-item">数量: <text class="info-value">{{ item.qty }}</text></text>
+                <text class="info-item">重量: <text class="info-value">{{ item.weightKg }} kg</text></text>
+              </view>
+              <view class="print-action">
+                <view class="print-btn" :class="{ printing: item.printing }" @click="handlePrint(item)">
+                  <text>{{ item.printing ? '打印中...' : '🖨️ 打印' }}</text>
+                </view>
               </view>
             </view>
           </scroll-view>
@@ -105,8 +178,8 @@ import {
   resolveTabletCanvas,
   saveTabletDisplay,
 } from '@/utils/tabletDisplay.js'
+import { getMesPlanList, submitReport, printLabel } from '@/api/mes.js'
 
-const CN_ORDINAL = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 const presets = TABLET_PRESETS
 const display = reactive(loadTabletDisplay())
 const keyword = ref('')
@@ -117,13 +190,12 @@ const winH = ref(800)
 const draftWidth = ref(String(display.customWidth))
 const draftHeight = ref(String(display.customHeight))
 
-const boxes = computed(() =>
-  Array.from({ length: 6 }, (_, index) => ({
-    seq: index + 1,
-    label: `第${CN_ORDINAL[index] || index + 1}框件数`,
-    qty: null,
-  })),
-)
+const planList = ref([])
+const selectedPlan = ref(null)
+const loading = ref(false)
+const inputWeight = ref('')
+const printQueue = ref([])
+let useMockData = false
 
 const canvas = computed(() => resolveTabletCanvas(display, winW.value, winH.value))
 
@@ -182,10 +254,6 @@ function applyCustomSize() {
   uni.showToast({ title: `${width} × ${height}`, icon: 'none' })
 }
 
-function placeholder(action) {
-  uni.showToast({ title: `${action}（后续接入）`, icon: 'none' })
-}
-
 function goSystemSettings() {
   uni.navigateTo({ url: '/pages/settings/settings' })
 }
@@ -202,19 +270,196 @@ function logout() {
   })
 }
 
-onShow(() => {
+const MOCK_PLAN_DATA = [
+  { id: 1, moNo: 'MO20260923001', productCode: 'P001', productName: '产品A-电机组件', planQty: 100, status: 'PENDING' },
+  { id: 2, moNo: 'MO20260923002', productCode: 'P002', productName: '产品B-控制板', planQty: 50, status: 'PROCESSING' },
+  { id: 3, moNo: 'MO20260923003', productCode: 'P003', productName: '产品C-传感器', planQty: 200, status: 'PENDING' },
+  { id: 4, moNo: 'MO20260923004', productCode: 'P004', productName: '产品D-外壳', planQty: 80, status: 'COMPLETED' },
+  { id: 5, moNo: 'MO20260922005', productCode: 'P005', productName: '产品E-连接器', planQty: 150, status: 'PENDING' },
+]
+
+function getStatusClass(status) {
+  const map = {
+    'PENDING': 'status-pending',
+    'PROCESSING': 'status-processing',
+    'COMPLETED': 'status-completed',
+  }
+  return map[status] || 'status-pending'
+}
+
+function getStatusText(status) {
+  const map = {
+    'PENDING': '待处理',
+    'PROCESSING': '进行中',
+    'COMPLETED': '已完成',
+  }
+  return map[status] || '待处理'
+}
+
+async function searchPlans() {
+  loading.value = true
+  try {
+    const params = {
+      current: 1,
+      size: 50,
+    }
+    if (keyword.value.trim()) {
+      params.keyword = keyword.value.trim()
+    }
+    const res = await getMesPlanList(params)
+    const realData = res.records || []
+    
+    if (realData.length > 0) {
+      planList.value = realData
+      useMockData = false
+      console.log('✅ 使用真实数据:', realData.length, '条')
+    } else {
+      const filtered = MOCK_PLAN_DATA.filter(item => 
+        !keyword.value.trim() || 
+        item.moNo.toLowerCase().includes(keyword.value.trim().toLowerCase()) ||
+        item.productName.includes(keyword.value.trim()) ||
+        item.productCode.toLowerCase().includes(keyword.value.trim().toLowerCase())
+      )
+      planList.value = filtered
+      useMockData = true
+      console.log('ℹ️ 使用模拟数据:', filtered.length, '条')
+    }
+  } catch (e) {
+    console.error('获取工序计划失败，使用模拟数据:', e)
+    const filtered = MOCK_PLAN_DATA.filter(item => 
+      !keyword.value.trim() || 
+      item.moNo.toLowerCase().includes(keyword.value.trim().toLowerCase()) ||
+      item.productName.includes(keyword.value.trim()) ||
+      item.productCode.toLowerCase().includes(keyword.value.trim().toLowerCase())
+    )
+    planList.value = filtered
+    useMockData = true
+  } finally {
+    loading.value = false
+  }
+}
+
+function selectPlan(plan) {
+  selectedPlan.value = plan
+  inputWeight.value = ''
+}
+
+function clearSelection() {
+  selectedPlan.value = null
+  inputWeight.value = ''
+}
+
+async function confirmWeigh() {
+  if (!selectedPlan.value) {
+    uni.showToast({ title: '请先选择工单', icon: 'none' })
+    return
+  }
+  
+  const weight = parseFloat(inputWeight.value)
+  if (!weight || weight <= 0) {
+    uni.showToast({ title: '请输入有效的重量', icon: 'none' })
+    return
+  }
+
+  try {
+    uni.showLoading({ title: useMockData ? '模拟提交中...' : '提交报工中...' })
+    
+    const reportData = {
+      moNo: selectedPlan.value.moNo,
+      processCode: selectedPlan.value.processCode || 'DEFAULT',
+      reportType: 'WEIGH',
+      qty: Math.floor(weight * 4),
+      weightKg: weight,
+      equipmentCode: 'SCALE-001',
+      remark: `平板端称重 - ${new Date().toLocaleString()}`,
+    }
+    
+    let result
+    if (useMockData) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+      result = {
+        reportNo: `MOCK-${Date.now()}`,
+        id: Math.floor(Math.random() * 10000),
+      }
+      console.log('ℹ️ 模拟报工成功:', result.reportNo)
+    } else {
+      result = await submitReport(reportData)
+    }
+    
+    const printItem = {
+      reportNo: result.reportNo,
+      moNo: selectedPlan.value.moNo,
+      productCode: selectedPlan.value.productCode,
+      productName: selectedPlan.value.productName,
+      weightKg: weight.toFixed(2),
+      qty: reportData.qty,
+      reportTime: new Date(),
+      printing: false,
+    }
+    
+    printQueue.value.unshift(printItem)
+    
+    uni.hideLoading()
+    uni.showToast({ 
+      title: `称重成功: ${weight.toFixed(2)}kg`, 
+      icon: 'success' 
+    })
+    
+    inputWeight.value = ''
+    
+  } catch (e) {
+    uni.hideLoading()
+    console.error('报工失败:', e)
+    uni.showToast({ title: '报工失败: ' + (e.message || '未知错误'), icon: 'none' })
+  }
+}
+
+async function handlePrint(item) {
+  if (item.printing) return
+  
+  item.printing = true
+  
+  try {
+    if (useMockData) {
+      await new Promise(resolve => setTimeout(resolve, 800))
+      console.log('ℹ️ 模拟打印成功:', item.reportNo)
+    } else {
+      await printLabel({
+        reportNo: item.reportNo,
+        moNo: item.moNo,
+        weightKg: item.weightKg,
+        qty: item.qty,
+      })
+    }
+    
+    uni.showToast({ 
+      title: '标签打印成功', 
+      icon: 'success' 
+    })
+    
+  } catch (e) {
+    console.error('打印失败:', e)
+    uni.showToast({ title: '打印失败: ' + (e.message || '未知错误'), icon: 'none' })
+  } finally {
+    item.printing = false
+  }
+}
+
+onShow(async () => {
   if (!hasSession()) {
     uni.reLaunch({ url: '/pages/login/login' })
     return
   }
   Object.assign(display, loadTabletDisplay())
   syncWindow()
+  await searchPlans()
 })
 
 onMounted(() => {
   syncWindow()
   uni.onWindowResize?.(syncWindow)
 })
+
 onUnmounted(() => {
   uni.offWindowResize?.(syncWindow)
 })
@@ -227,7 +472,7 @@ onUnmounted(() => {
   top: 0;
   right: 0;
   bottom: 0;
-  background: #1c1c1c;
+  background: #f5f5f5;
   overflow: hidden;
 }
 
@@ -238,7 +483,7 @@ onUnmounted(() => {
   padding: 10px 12px 12px;
   box-sizing: border-box;
   background: #fff;
-  color: #111;
+  color: #333;
   transform-origin: center center;
 }
 
@@ -253,6 +498,7 @@ onUnmounted(() => {
 .tool-title {
   font-size: 16px;
   font-weight: 600;
+  color: #333;
 }
 
 .tool-actions {
@@ -262,78 +508,207 @@ onUnmounted(() => {
 }
 
 .res-hint {
-  color: #909399;
+  color: #999;
   font-size: 13px;
 }
 
 .tool-btn {
   padding: 6px 12px;
-  border: 1px solid #222;
+  border: 1px solid #ddd;
+  border-radius: 4px;
   font-size: 14px;
+  color: #666;
+  background: #fff;
+}
+
+.mock-badge {
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid #222;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
   background: #fff;
+  overflow: hidden;
 }
 
 .panel-head {
-  padding: 8px 12px;
-  background: #d9d9d9;
-  font-size: 16px;
+  padding: 10px 12px;
+  background: #f0f0f0;
+  font-size: 15px;
   font-weight: 600;
-  border-bottom: 1px solid #222;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .process-panel {
-  flex: 1.15;
+  flex: 1.2;
   min-height: 0;
 }
 
+.refresh-btn {
+  padding: 4px 12px;
+  background: #1890ff;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .search-row {
-  padding: 8px 10px 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .search-input {
-  height: 40px;
+  width: 100%;
+  height: 38px;
   padding: 0 12px;
-  border: 1px solid #222;
-  font-size: 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
 }
 
 .process-body {
   flex: 1;
-  margin: 8px 10px 10px;
-  border: 1px solid #222;
+  overflow: hidden;
+  position: relative;
+}
+
+.plan-list {
+  width: 100%;
+  height: 100%;
+}
+
+.plan-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.plan-card:hover {
+  background-color: #fafafa;
+}
+
+.plan-card.selected {
+  background-color: #e6f7ff;
+  border-left: 3px solid #1890ff;
+}
+
+.plan-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-mo-no {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.plan-product-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #666;
+}
+
+.plan-code {
+  color: #999;
+}
+
+.plan-separator {
+  color: #ccc;
+}
+
+.plan-name {
+  color: #666;
+}
+
+.plan-status-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin-left: 16px;
+}
+
+.status-tag {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-pending {
+  background: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.status-processing {
+  background: #fff7e6;
+  color: #fa8c16;
+  border: 1px solid #ffd591;
+}
+
+.status-completed {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.plan-qty-text {
+  font-size: 12px;
+  color: #999;
+}
+
+.loading-hint,
+.empty-hint {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.empty-hint {
-  color: #a8abb2;
-  font-size: 15px;
+  color: #999;
+  font-size: 14px;
+  padding: 40px 20px;
 }
 
 .summary-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 8px 2px;
-}
-
-.total-box {
-  min-width: 160px;
-  height: 40px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  background: #cfcfcf;
-  font-size: 16px;
+  padding: 10px 12px;
+  background: #e8e8e8;
+  text-align: center;
+  font-size: 14px;
   font-weight: 600;
+  color: #666;
+  border-radius: 4px;
+  margin-top: 8px;
 }
 
 .bottom-row {
@@ -341,6 +716,7 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   gap: 10px;
+  margin-top: 8px;
 }
 
 .weigh-panel,
@@ -349,31 +725,92 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.weigh-frame {
+.clear-btn {
+  padding: 4px 10px;
+  background: #ff4d4f;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.weigh-empty {
   flex: 1;
-  margin: 10px;
-  border: 3px solid #2f6fed;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
+  color: #999;
+  font-size: 14px;
+  padding: 40px 20px;
 }
 
-.weigh-value {
-  font-size: 64px;
+.weigh-content {
+  padding: 16px;
+}
+
+.weigh-plan-info {
+  margin-bottom: 20px;
+}
+
+.weigh-mo-no {
+  display: block;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 1;
+  color: #333;
+  margin-bottom: 4px;
 }
 
-.weigh-unit {
-  margin-top: 8px;
-  font-size: 22px;
+.weigh-product {
+  display: block;
+  font-size: 14px;
+  color: #666;
+}
+
+.weigh-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.weigh-label {
+  font-size: 14px;
+  color: #333;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.weight-input {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 15px;
+}
+
+.confirm-weight-btn {
+  height: 40px;
+  padding: 0 20px;
+  background: #1890ff;
+  color: #fff;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .weigh-tip {
-  margin-top: 12px;
-  color: #909399;
-  font-size: 13px;
+  padding: 10px;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #ad8b00;
 }
 
 .print-list {
@@ -382,35 +819,76 @@ onUnmounted(() => {
   height: 100%;
 }
 
-.print-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 52px;
-  padding: 6px 12px;
-  border-bottom: 1px solid #dcdcdc;
-}
-
-.print-label {
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.print-qty {
-  color: #909399;
-}
-
-.print-btn {
-  min-width: 108px;
-  height: 36px;
-  background: #e8e8e8;
-  border: 1px solid #bbb;
+.print-empty {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #999;
   font-size: 14px;
+  padding: 40px 20px;
+}
+
+.print-card {
+  margin: 10px 12px;
+  padding: 12px;
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+}
+
+.print-card-header {
+  margin-bottom: 6px;
+}
+
+.print-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+}
+
+.print-card-code {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #999;
+}
+
+.print-card-info {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #666;
+}
+
+.info-value {
+  color: #333;
+  font-weight: 600;
+}
+
+.print-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.print-btn {
+  padding: 6px 16px;
+  background: #52c41a;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.print-btn:hover {
+  opacity: 0.85;
+}
+
+.print-btn.printing {
+  background: #999;
+  cursor: not-allowed;
 }
 
 .mask {
@@ -441,11 +919,12 @@ onUnmounted(() => {
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 8px;
+  color: #333;
 }
 
 .sheet-desc {
   display: block;
-  color: #606266;
+  color: #666;
   font-size: 13px;
   line-height: 1.5;
   margin-bottom: 16px;
@@ -453,17 +932,20 @@ onUnmounted(() => {
 
 .preset-item {
   height: 42px;
-  border: 1px solid #dcdcdc;
+  border: 1px solid #d9d9d9;
   margin-bottom: 8px;
   padding: 0 12px;
   display: flex;
   align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .preset-item.active {
-  border-color: #111;
-  background: #f3f3f3;
+  border-color: #1890ff;
+  background: #e6f7ff;
   font-weight: 600;
+  color: #1890ff;
 }
 
 .custom-row {
@@ -476,29 +958,35 @@ onUnmounted(() => {
 .size-input {
   flex: 1;
   height: 36px;
-  border: 1px solid #222;
+  border: 1px solid #d9d9d9;
   padding: 0 8px;
+  border-radius: 4px;
 }
 
 .size-x {
-  color: #909399;
+  color: #999;
 }
 
 .apply-btn {
   height: 36px;
   padding: 0 12px;
-  background: #1d4ed8;
+  background: #1890ff;
   color: #fff;
   display: flex;
   align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .sheet-close {
   margin-top: 16px;
   height: 40px;
-  border: 1px solid #222;
+  border: 1px solid #d9d9d9;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #f5f5f5;
 }
 </style>

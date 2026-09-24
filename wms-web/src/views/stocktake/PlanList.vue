@@ -55,14 +55,14 @@ async function handleCreate() {
 
 async function handlePublish(row: StockcheckPlan) {
   await ElMessageBox.confirm(`确定发布盘点计划 ${row.planName}？发布后将生成盘点任务。`, '提示')
-  await publishStockcheckPlan(row.id!)
+  await publishStockcheckPlan(row.planNo!)
   ElMessage.success('发布成功')
   loadData()
 }
 
 async function handleDelete(row: StockcheckPlan) {
   await ElMessageBox.confirm(`确定删除盘点计划 ${row.planName}？`, '提示')
-  await deleteStockcheckPlan(row.id!)
+  await deleteStockcheckPlan(row.planNo!)
   ElMessage.success('删除成功')
   loadData()
 }

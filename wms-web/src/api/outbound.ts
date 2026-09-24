@@ -42,7 +42,7 @@ export interface RecommendLocation {
   batchNo: string
   locationCode: string
   availableQty: number
-  expireDate?: string
+  inboundDate?: string
 }
 
 export function getOutboundOrders(params: PageQuery) {

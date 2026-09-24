@@ -62,6 +62,7 @@ export interface MesRouteOp {
   stdHours?: number
   inspectFlag?: number
   reworkJoinFlag?: number
+  isConvergeOp?: boolean
   workCenterCode?: string
 }
 

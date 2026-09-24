@@ -42,6 +42,13 @@ public class MesSyncWorkerService {
     private final ObjectMapper objectMapper;
 
     public void drainQueue() {
+        long queueSize = countReport(MesConstants.SYNC_PENDING) + countTransfer(MesConstants.SYNC_PENDING);
+        if (queueSize > mesProperties.getQueueCapacity()) {
+            // 仅告警：新数据接收已由 MesReportService.assertQueueCapacity 拦截，
+            // 此处必须继续回写，否则积压永远无法下降。
+            log.error("MES同步队列已满: {} 条记录待同步, 请尽快处理", queueSize);
+            sendAlert("MES同步队列已满", String.format("当前队列长度: %d", queueSize));
+        }
         if (!kingdeeCloudService.isEnabled() || !healthService.isOnline()) {
             log.debug("MES sync skip: ERP unavailable");
             return;
@@ -49,6 +56,11 @@ public class MesSyncWorkerService {
         processReports();
         processTransfers();
         markStale();
+    }
+
+    private void sendAlert(String title, String content) {
+        // TODO: 集成钉钉/邮件/短信告警通道
+        log.warn("告警: {} - {}", title, content);
     }
 
     public MesSyncPanelVo panel() {

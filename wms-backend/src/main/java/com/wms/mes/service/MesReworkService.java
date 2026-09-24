@@ -139,7 +139,8 @@ public class MesReworkService {
         for (int i = start; i < ops.size(); i++) {
             MesRouteOp op = ops.get(i);
             if (nvl(op.getInspectFlag()) == MesConstants.FLAG_YES
-                    || nvl(op.getReworkJoinFlag()) == MesConstants.FLAG_YES) {
+                    || nvl(op.getReworkJoinFlag()) == MesConstants.FLAG_YES
+                    || Boolean.TRUE.equals(op.getIsConvergeOp())) {
                 end = i;
                 break;
             }

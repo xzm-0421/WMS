@@ -25,5 +25,6 @@ public class MesRouteOp extends BaseEntity {
     private BigDecimal stdHours;
     private Integer inspectFlag;
     private Integer reworkJoinFlag;
+    private Boolean isConvergeOp;
     private String workCenterCode;
 }
