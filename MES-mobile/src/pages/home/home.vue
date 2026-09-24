@@ -16,7 +16,7 @@
       </view>
 
       <view class="quick-row">
-        <view v-for="item in quickMenus" :key="item.label" class="quick" @click="comingSoon(item.label)">
+        <view v-for="item in quickMenus" :key="item.label" class="quick" @click="onQuick(item)">
           <view class="quick-circle" :style="{ background: item.color }">
             <text class="quick-glyph">{{ item.glyph }}</text>
           </view>
@@ -66,6 +66,8 @@ import AppTabBar from '@/components/AppTabBar.vue'
 import RippleBg from '@/components/RippleBg.vue'
 import { requireSession } from '@/utils/authStorage.js'
 import { comingSoon } from '@/utils/ui.js'
+import { flushQueue, getQueueCount } from '@/utils/offlineQueue.js'
+import { syncReports } from '@/api/mes.js'
 
 const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 20)
 
@@ -79,7 +81,7 @@ const stats = [
 ]
 
 const quickMenus = [
-  { label: '工单报工', color: '#ff8a3d', glyph: '🛠' },
+  { label: '工单报工', color: '#ff8a3d', glyph: '🛠', url: '/pages/report/report' },
   { label: '工单统计', color: '#3ec6e0', glyph: '📊' },
   { label: '服务热线', color: '#4d7cff', glyph: '☎' },
   { label: '意见反馈', color: '#f5c542', glyph: '✎' },
@@ -87,8 +89,26 @@ const quickMenus = [
 
 const todos = []
 
+function onQuick(item) {
+  if (item.url) {
+    uni.navigateTo({ url: item.url })
+    return
+  }
+  comingSoon(item.label)
+}
+
+async function tryFlush() {
+  if (!getQueueCount()) return
+  try {
+    await flushQueue((items, deviceNo) => syncReports(items, deviceNo))
+  } catch {
+    /* ignore */
+  }
+}
+
 onShow(() => {
-  requireSession()
+  if (!requireSession()) return
+  tryFlush()
 })
 </script>
 

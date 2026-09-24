@@ -37,6 +37,34 @@
         "navigationStyle": "custom",
         "navigationBarTitleText": "修改密码"
       }
+    },
+    {
+      "path": "pages/report/report",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "工序报工"
+      }
+    },
+    {
+      "path": "pages/report/transfer",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "工序转移"
+      }
+    },
+    {
+      "path": "pages/report/rework",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "发起返工"
+      }
+    },
+    {
+      "path": "pages/report/records",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的报工"
+      }
     }
   ],
   "globalStyle": {

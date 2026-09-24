@@ -18,13 +18,25 @@ public class QcOrder {
     private String sourceType;
     private String sourceNo;
     private String materialCode;
+    private String materialName;
     private String batchNo;
+    private String qcType;
     private BigDecimal sampleQty;
+    private BigDecimal qcQty;
+    private BigDecimal qualifiedQty;
+    private BigDecimal unqualifiedQty;
     private String status;
     private String result;
     private String inspectorId;
     private String inspectorName;
     private LocalDateTime inspectTime;
+    private String judgeResult;
+    private String judgeRemark;
+    private LocalDateTime judgeTime;
+    private String judgeBy;
+    private String concessionReason;
+    private String concessionApprover;
+    private LocalDateTime concessionTime;
     private String remark;
     private LocalDateTime createTime;
 }

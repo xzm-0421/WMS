@@ -28,6 +28,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -209,17 +210,31 @@ public class OutboundService {
 
     public List<RecommendLocationDto> recommendLocations(String orderNo, Integer lineNo) {
         OutboundOrder order = getOrder(orderNo);
-        OutboundOrderDetail detail = getDetail(orderNo, lineNo);
-        List<Inventory> inventories = inventoryMapper.selectList(new LambdaQueryWrapper<Inventory>()
-                .eq(Inventory::getWarehouseCode, order.getWarehouseCode())
-                .eq(Inventory::getMaterialCode, detail.getMaterialCode())
-                .gt(Inventory::getAvailableQty, 0)
-                .orderByAsc(Inventory::getInboundDate));
-        return inventories.stream().map(inv -> {
-            RecommendLocationDto dto = new RecommendLocationDto();
-            BeanUtils.copyProperties(inv, dto);
-            return dto;
-        }).toList();
+        List<OutboundOrderDetail> details;
+        if (lineNo != null) {
+            details = List.of(getDetail(orderNo, lineNo));
+        } else {
+            details = detailMapper.selectList(new LambdaQueryWrapper<OutboundOrderDetail>()
+                    .eq(OutboundOrderDetail::getOrderNo, orderNo)
+                    .orderByAsc(OutboundOrderDetail::getLineNo));
+        }
+        if (details.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "出库单无明细行", "DETAIL_NOT_FOUND");
+        }
+        List<RecommendLocationDto> result = new ArrayList<>();
+        for (OutboundOrderDetail detail : details) {
+            List<Inventory> inventories = inventoryMapper.selectList(new LambdaQueryWrapper<Inventory>()
+                    .eq(Inventory::getWarehouseCode, order.getWarehouseCode())
+                    .eq(Inventory::getMaterialCode, detail.getMaterialCode())
+                    .gt(Inventory::getAvailableQty, 0)
+                    .orderByAsc(Inventory::getInboundDate));
+            for (Inventory inv : inventories) {
+                RecommendLocationDto dto = new RecommendLocationDto();
+                BeanUtils.copyProperties(inv, dto);
+                result.add(dto);
+            }
+        }
+        return result;
     }
 
     @Transactional(rollbackFor = Exception.class)

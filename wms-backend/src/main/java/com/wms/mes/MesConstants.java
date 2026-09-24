@@ -17,6 +17,7 @@ public final class MesConstants {
     public static final String SYNC_CANCELLED = "CANCELLED";
     public static final String SYNC_MANUAL = "MANUAL_REQUIRED";
     public static final String SYNC_STALE = "STALE";
+    public static final String SYNC_EXPIRED = "EXPIRED";
 
     public static final String REPORT_NORMAL = "NORMAL";
     public static final String REPORT_REWORK = "REWORK";

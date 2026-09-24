@@ -24,6 +24,7 @@ public class MesProcess extends BaseEntity {
     private Integer reportFlag;
     private Integer transferFlag;
     private Integer inspectFlag;
+    private Boolean isConvergeOp;
     private BigDecimal overReceiveRatio;
     private Integer status;
     private String syncStatus;

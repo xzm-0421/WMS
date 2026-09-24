@@ -97,7 +97,7 @@ public class OutboundController {
     @GetMapping("/{orderNo}/recommend-locations")
     public ApiResult<List<RecommendLocationDto>> recommendLocations(
             @PathVariable String orderNo,
-            @RequestParam Integer lineNo) {
+            @RequestParam(required = false) Integer lineNo) {
         return ApiResult.ok(outboundService.recommendLocations(orderNo, lineNo));
     }
 }

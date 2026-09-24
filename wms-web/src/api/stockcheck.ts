@@ -47,24 +47,26 @@ export function createStockcheckPlan(data: StockcheckPlan) {
   return request.post<any, StockcheckPlan>('/stockcheck/plans', data)
 }
 
-export function updateStockcheckPlan(planId: number, data: StockcheckPlan) {
-  return request.put(`/stockcheck/plans/${planId}`, data)
+export function updateStockcheckPlan(planNo: string, data: StockcheckPlan) {
+  return request.put(`/stockcheck/plans/${planNo}`, data)
 }
 
-export function deleteStockcheckPlan(planId: number) {
-  return request.delete(`/stockcheck/plans/${planId}`)
+export function deleteStockcheckPlan(planNo: string) {
+  return request.delete(`/stockcheck/plans/${planNo}`)
 }
 
-export function publishStockcheckPlan(planId: number) {
-  return request.post(`/stockcheck/plans/${planId}/publish`)
+export function publishStockcheckPlan(planNo: string) {
+  return request.put(`/stockcheck/plans/${planNo}/publish`)
 }
 
 export function getStockcheckTasks(params: PageQuery) {
   return request.get<any, PageResult<StockcheckTask>>('/stockcheck/tasks', { params })
 }
 
-export function getStockcheckTask(taskId: number) {
-  return request.get<any, StockcheckTask>(`/stockcheck/tasks/${taskId}`)
+export function getStockcheckTask(taskNo: string) {
+  return request.get<any, { task: StockcheckTask; details: Record<string, unknown>[] }>(
+    `/stockcheck/tasks/${taskNo}`,
+  )
 }
 
 export function getStockcheckDiffs(params: PageQuery) {

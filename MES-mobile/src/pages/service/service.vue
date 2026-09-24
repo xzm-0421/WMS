@@ -14,7 +14,7 @@
           class="cell"
           hover-class="cell-hover"
           :hover-stay-time="80"
-          @click="comingSoon(item.label)"
+          @click="onCell(item)"
         >
           <view class="icon-plate">
             <view class="icon-box" :style="{ background: item.bg }">
@@ -62,11 +62,19 @@ import { comingSoon } from '@/utils/ui.js'
 const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 20)
 
 const orderMenus = [
-  { label: '工单报工', icon: '/static/service/wrench.svg', bg: '#5b8cff' },
-  { label: '全部工单', icon: '/static/service/clipboard.svg', bg: '#7b93c4' },
-  { label: '我的工单', icon: '/static/service/user-doc.svg', bg: '#6d74f0' },
-  { label: '工单统计', icon: '/static/service/clock-doc.svg', bg: '#8b96e0' },
+  { label: '工单报工', icon: '/static/service/wrench.svg', bg: '#5b8cff', url: '/pages/report/report' },
+  { label: '工序转移', icon: '/static/service/clipboard.svg', bg: '#7b93c4', url: '/pages/report/transfer' },
+  { label: '发起返工', icon: '/static/service/user-doc.svg', bg: '#6d74f0', url: '/pages/report/rework' },
+  { label: '我的报工', icon: '/static/service/clock-doc.svg', bg: '#8b96e0', url: '/pages/report/records' },
 ]
+
+function onCell(item) {
+  if (item.url) {
+    uni.navigateTo({ url: item.url })
+    return
+  }
+  comingSoon(item.label)
+}
 
 const statMenus = [
   { label: '报表', icon: '/static/service/grid.svg' },

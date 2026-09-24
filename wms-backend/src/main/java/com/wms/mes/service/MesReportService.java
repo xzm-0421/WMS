@@ -34,13 +34,16 @@ import com.wms.mes.mapper.MesReworkOpMapper;
 import com.wms.mes.mapper.MesRouteMapper;
 import com.wms.mes.mapper.MesTransferMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -124,6 +127,12 @@ public class MesReportService {
     }
 
     private MesReport doSubmit(MesReportSubmitRequest request, String moNo, String processCode) {
+        if (StringUtils.hasText(request.getClientReportNo())) {
+            MesReport existing = findByClientReportNo(request.getClientReportNo().trim());
+            if (existing != null) {
+                return existing;
+            }
+        }
         assertQueueCapacity();
         MesOpPlan plan = opPlanService.findByMoAndProcess(moNo, processCode);
         if (plan == null) {
@@ -157,6 +166,7 @@ public class MesReportService {
         LoginUser user = SecurityUtils.currentUser();
         MesEquipment equipment = requireEquipment(request.getEquipmentCode(), processCode);
         LocalDateTime now = LocalDateTime.now();
+        LocalDateTime reportTime = resolveReportTime(request, now);
         MesReport report = new MesReport();
         report.setReportNo(OrderNoGenerator.next(MesConstants.PREFIX_REPORT));
         report.setMoNo(moNo);
@@ -172,10 +182,21 @@ public class MesReportService {
         report.setOperatorName(StringUtils.hasText(user.getRealName()) ? user.getRealName() : user.getUsername());
         report.setRemark(request.getRemark());
         report.setDefectNo(reworkOp == null ? null : reworkOp.getDefectNo());
-        report.setReportTime(now);
+        report.setReportTime(reportTime);
+        report.setClientReportNo(StringUtils.hasText(request.getClientReportNo())
+                ? request.getClientReportNo().trim() : null);
+        report.setClientTime(request.getClientTime() != null ? reportTime : null);
         report.setSyncStatus(MesConstants.SYNC_PENDING);
         report.setRetryCount(0);
-        reportMapper.insert(report);
+        try {
+            reportMapper.insert(report);
+        } catch (DuplicateKeyException ex) {
+            MesReport existing = findByClientReportNo(report.getClientReportNo());
+            if (existing != null) {
+                return existing;
+            }
+            throw ex;
+        }
 
         if (MesConstants.REPORT_REWORK.equals(reportType) && reworkOp != null) {
             reworkOp.setReportedQty(nvl(reworkOp.getReportedQty()).add(request.getQty()));
@@ -435,6 +456,22 @@ public class MesReportService {
         if (total >= mesProperties.getQueueCapacity()) {
             throw new BusinessException(ErrorCode.CONFLICT, "暂存队列已满，请尽快处理已失败数据。", "QUEUE_FULL");
         }
+    }
+
+    private MesReport findByClientReportNo(String clientReportNo) {
+        if (!StringUtils.hasText(clientReportNo)) {
+            return null;
+        }
+        return reportMapper.selectOne(new LambdaQueryWrapper<MesReport>()
+                .eq(MesReport::getClientReportNo, clientReportNo)
+                .last("OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY"));
+    }
+
+    private LocalDateTime resolveReportTime(MesReportSubmitRequest request, LocalDateTime fallback) {
+        if (request.getClientTime() == null) {
+            return fallback;
+        }
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(request.getClientTime()), ZoneId.systemDefault());
     }
 
     private void validateSubmit(MesReportSubmitRequest request) {

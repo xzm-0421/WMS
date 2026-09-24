@@ -16,6 +16,8 @@ public class QcStandard {
     private String standardCode;
     private String standardName;
     private String materialCode;
+    private String materialName;
+    private String qcType;
     private String checkItems;
     private Integer status;
     private LocalDateTime createTime;

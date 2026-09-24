@@ -72,6 +72,12 @@ const router = createRouter({
           meta: { title: '收料入库批次', permission: MENU_PERMISSIONS['/inbound/pda-records'] },
         },
         {
+          path: 'outbound/orders',
+          name: 'OutboundOrders',
+          component: () => import('@/views/outbound/OutboundOrderList.vue'),
+          meta: { title: '出库单', permission: MENU_PERMISSIONS['/outbound/orders'] },
+        },
+        {
           path: 'outbound/pda-records',
           name: 'PdaOutboundRecords',
           component: () => import('@/views/outbound/PdaOutboundRecordList.vue'),
@@ -90,10 +96,46 @@ const router = createRouter({
           meta: { title: '库存抽检', permission: MENU_PERMISSIONS['/inventory/sample-plans'] },
         },
         {
+          path: 'inventory/transfers',
+          name: 'InventoryTransfers',
+          component: () => import('@/views/inventory/TransferList.vue'),
+          meta: { title: '移库管理', permission: MENU_PERMISSIONS['/inventory/transfers'] },
+        },
+        {
           path: 'barcode/rules',
           name: 'BarcodeRules',
           component: () => import('@/views/barcode/RuleList.vue'),
           meta: { title: '条码规则', permission: MENU_PERMISSIONS['/barcode/rules'] },
+        },
+        {
+          path: 'stocktake/plans',
+          name: 'StocktakePlans',
+          component: () => import('@/views/stocktake/PlanList.vue'),
+          meta: { title: '盘点计划', permission: MENU_PERMISSIONS['/stocktake/plans'] },
+        },
+        {
+          path: 'stocktake/tasks',
+          name: 'StocktakeTasks',
+          component: () => import('@/views/stocktake/TaskList.vue'),
+          meta: { title: '盘点任务', permission: MENU_PERMISSIONS['/stocktake/tasks'] },
+        },
+        {
+          path: 'stocktake/diffs',
+          name: 'StocktakeDiffs',
+          component: () => import('@/views/stocktake/DiffList.vue'),
+          meta: { title: '盘点差异', permission: MENU_PERMISSIONS['/stocktake/diffs'] },
+        },
+        {
+          path: 'quality/standards',
+          name: 'QualityStandards',
+          component: () => import('@/views/quality/QcStandardList.vue'),
+          meta: { title: '质检标准', permission: MENU_PERMISSIONS['/quality/standards'] },
+        },
+        {
+          path: 'quality/orders',
+          name: 'QualityOrders',
+          component: () => import('@/views/quality/QcOrderList.vue'),
+          meta: { title: '质检单', permission: MENU_PERMISSIONS['/quality/orders'] },
         },
         {
           path: 'print/label-jobs',

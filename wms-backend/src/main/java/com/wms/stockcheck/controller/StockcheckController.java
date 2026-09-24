@@ -11,6 +11,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Tag(name = "盘点管理")
 @RestController
 @RequestMapping("/stockcheck")
@@ -75,6 +78,15 @@ public class StockcheckController {
         return ApiResult.ok(stockcheckService.pageTasks(planNo, warehouseCode, status, current, size));
     }
 
+    @Operation(summary = "盘点任务详情")
+    @GetMapping("/tasks/{taskNo}")
+    public ApiResult<Map<String, Object>> taskDetail(@PathVariable String taskNo) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("task", stockcheckService.getTask(taskNo));
+        result.put("details", stockcheckService.getTaskDetails(taskNo));
+        return ApiResult.ok(result);
+    }
+
     @Operation(summary = "盘点差异列表")
     @GetMapping("/diffs")
     public ApiResult<PageResult<StockcheckDiff>> listDiffs(
@@ -90,5 +102,14 @@ public class StockcheckController {
     public ApiResult<Void> approveDiff(@PathVariable Long id) {
         stockcheckService.approveDiff(id);
         return ApiResult.ok("审批成功", null);
+    }
+
+    @Operation(summary = "驳回盘点差异")
+    @PostMapping("/diffs/{id}/reject")
+    public ApiResult<Void> rejectDiff(@PathVariable Long id,
+                                      @RequestBody(required = false) Map<String, String> body) {
+        String reason = body == null ? null : body.get("reason");
+        stockcheckService.rejectDiff(id, reason);
+        return ApiResult.ok("驳回成功", null);
     }
 }

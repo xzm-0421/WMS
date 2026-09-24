@@ -14,6 +14,7 @@ import com.wms.inventory.service.InventoryService;
 import com.wms.stockcheck.entity.*;
 import com.wms.stockcheck.mapper.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StockcheckService {
@@ -193,6 +195,24 @@ public class StockcheckService {
         diff.setApproverId(String.valueOf(user.getUserId()));
         diff.setApproveTime(LocalDateTime.now());
         diffMapper.updateById(diff);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void rejectDiff(Long id, String reason) {
+        StockcheckDiff diff = diffMapper.selectById(id);
+        if (diff == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "差异记录不存在");
+        }
+        if (!"PENDING".equals(diff.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "差异已处理", "DIFF_STATUS_CONFLICT");
+        }
+        LoginUser user = currentUser();
+        diff.setStatus("REJECTED");
+        diff.setDiffReason(StringUtils.hasText(reason) ? reason : diff.getDiffReason());
+        diff.setApproverId(String.valueOf(user.getUserId()));
+        diff.setApproveTime(LocalDateTime.now());
+        diffMapper.updateById(diff);
+        log.info("盘点差异 {} 已驳回, 原因: {}", id, diff.getDiffReason());
     }
 
     public StockcheckTask getTask(String taskNo) {

@@ -14,4 +14,8 @@ public class MesReportSubmitRequest {
     private String equipmentCode;
     private String remark;
     private String defectNo;
+    /** 移动端离线幂等键 */
+    private String clientReportNo;
+    /** 客户端报工时间（epoch 毫秒） */
+    private Long clientTime;
 }

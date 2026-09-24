@@ -18,7 +18,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
-const defaultOpeneds = ref(['system', 'base', 'warehouse', 'inventory', 'dashboard', 'mes'])
+const defaultOpeneds = ref(['system', 'base', 'warehouse', 'inventory', 'stocktake', 'qc', 'dashboard', 'mes'])
 
 const activeMenu = computed(() => route.path)
 
@@ -65,6 +65,7 @@ const menus = [
       { path: '/inbound/orders', title: '入库单', permission: MENU_PERMISSIONS['/inbound/orders'] },
       { path: '/inbound/pda-records', title: 'PDA入库记录', permission: MENU_PERMISSIONS['/inbound/pda-records'] },
       { path: '/inbound/receive-batches', title: '收料入库批次', permission: MENU_PERMISSIONS['/inbound/pda-records'] },
+      { path: '/outbound/orders', title: '出库单', permission: MENU_PERMISSIONS['/outbound/orders'] },
       { path: '/outbound/pda-records', title: 'PDA出库记录', permission: MENU_PERMISSIONS['/outbound/pda-records'] },
     ],
   },
@@ -75,6 +76,26 @@ const menus = [
     children: [
       { path: '/inventory/list', title: '实时库存', permission: MENU_PERMISSIONS['/inventory/list'] },
       { path: '/inventory/sample-plans', title: '库存抽检', permission: MENU_PERMISSIONS['/inventory/sample-plans'] },
+      { path: '/inventory/transfers', title: '移库管理', permission: MENU_PERMISSIONS['/inventory/transfers'] },
+    ],
+  },
+  {
+    index: 'stocktake',
+    title: '盘点管理',
+    icon: Grid,
+    children: [
+      { path: '/stocktake/plans', title: '盘点计划', permission: MENU_PERMISSIONS['/stocktake/plans'] },
+      { path: '/stocktake/tasks', title: '盘点任务', permission: MENU_PERMISSIONS['/stocktake/tasks'] },
+      { path: '/stocktake/diffs', title: '盘点差异', permission: MENU_PERMISSIONS['/stocktake/diffs'] },
+    ],
+  },
+  {
+    index: 'qc',
+    title: '质检管理',
+    icon: Document,
+    children: [
+      { path: '/quality/standards', title: '质检标准', permission: MENU_PERMISSIONS['/quality/standards'] },
+      { path: '/quality/orders', title: '质检单', permission: MENU_PERMISSIONS['/quality/orders'] },
     ],
   },
   {
