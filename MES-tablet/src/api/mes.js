@@ -38,3 +38,11 @@ export function printLabel(data) {
     data: withDevice(data),
   })
 }
+
+export function printMesLabel(data) {
+  return request({
+    url: '/mobile/mes/reports/print',
+    method: 'POST',
+    data: withDevice(data),
+  })
+}

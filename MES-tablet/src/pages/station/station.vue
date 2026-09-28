@@ -8,6 +8,13 @@
         </view>
         <view class="tool-actions">
           <text class="res-hint">{{ sizeHint }}</text>
+          <text 
+            class="tool-btn" 
+            :class="{ 'printer-connected': bluetoothConnected }"
+            @click="handleConnectPrinter"
+          >
+            {{ bluetoothConnected ? '🖨️ 已连接' : '🖨️ 连接打印机' }}
+          </text>
           <text class="tool-btn" @click="openSettings">显示设置</text>
           <text class="tool-btn" @click="goSystemSettings">系统设置</text>
           <text class="tool-btn" @click="logout">退出</text>
@@ -178,7 +185,15 @@ import {
   resolveTabletCanvas,
   saveTabletDisplay,
 } from '@/utils/tabletDisplay.js'
-import { getMesPlanList, submitReport, printLabel } from '@/api/mes.js'
+import { getMesPlanList, submitReport, printLabel, printMesLabel } from '@/api/mes.js'
+import {
+  initBluetooth,
+  selectPrinter,
+  connectPrinter,
+  disconnectPrinter,
+  sendToPrinter,
+  isPrinterConnected,
+} from '@/utils/bluetoothPrinter.js'
 
 const presets = TABLET_PRESETS
 const display = reactive(loadTabletDisplay())
@@ -196,6 +211,8 @@ const loading = ref(false)
 const inputWeight = ref('')
 const printQueue = ref([])
 let useMockData = false
+const bluetoothConnected = ref(false)
+const connectingPrinter = ref(false)
 
 const canvas = computed(() => resolveTabletCanvas(display, winW.value, winH.value))
 
@@ -364,13 +381,18 @@ async function confirmWeigh() {
   try {
     uni.showLoading({ title: useMockData ? '模拟提交中...' : '提交报工中...' })
     
+    if (!selectedPlan.value.processCode) {
+      uni.showToast({ title: '该工单未配置工序编码', icon: 'none' })
+      return
+    }
+
     const reportData = {
       moNo: selectedPlan.value.moNo,
-      processCode: selectedPlan.value.processCode || 'DEFAULT',
-      reportType: 'WEIGH',
-      qty: Math.floor(weight * 4),
+      processCode: selectedPlan.value.processCode,
+      reportType: 'NORMAL',
+      qty: weight,
       weightKg: weight,
-      equipmentCode: 'SCALE-001',
+      equipmentCode: '',
       remark: `平板端称重 - ${new Date().toLocaleString()}`,
     }
     
@@ -416,32 +438,115 @@ async function confirmWeigh() {
 
 async function handlePrint(item) {
   if (item.printing) return
-  
+
   item.printing = true
-  
+
   try {
     if (useMockData) {
       await new Promise(resolve => setTimeout(resolve, 800))
       console.log('ℹ️ 模拟打印成功:', item.reportNo)
     } else {
-      await printLabel({
+      const labelData = {
         reportNo: item.reportNo,
         moNo: item.moNo,
+        productCode: item.productCode,
+        productName: item.productName,
         weightKg: item.weightKg,
         qty: item.qty,
-      })
+      }
+
+      await printMesLabel(labelData)
+
+      if (bluetoothConnected.value) {
+        try {
+          await sendToPrinter(labelData)
+        } catch (printError) {
+          console.warn('⚠️ 蓝牙打印失败，已记录打印任务:', printError.message)
+        }
+      }
     }
-    
-    uni.showToast({ 
-      title: '标签打印成功', 
-      icon: 'success' 
+
+    uni.showToast({
+      title: '标签打印成功',
+      icon: 'success'
     })
-    
+
   } catch (e) {
     console.error('打印失败:', e)
     uni.showToast({ title: '打印失败: ' + (e.message || '未知错误'), icon: 'none' })
   } finally {
     item.printing = false
+  }
+}
+
+async function handleConnectPrinter() {
+  if (connectingPrinter.value) return
+
+  connectingPrinter.value = true
+
+  try {
+    if (bluetoothConnected.value) {
+      await disconnectPrinter()
+      bluetoothConnected.value = false
+      uni.showToast({ title: '打印机已断开', icon: 'success' })
+      return
+    }
+
+    // 初始化蓝牙（自动检测环境：Web Bluetooth 或 UniApp）
+    await initBluetooth()
+
+    // 选择打印机（自动适配不同环境的交互方式）
+    const printer = await selectPrinter()
+
+    if (!printer) return
+
+    // 连接选中的打印机
+    uni.showLoading({ title: `连接 ${printer.name}...` })
+    await connectPrinter(printer)
+    uni.hideLoading()
+
+    bluetoothConnected.value = true
+    uni.showToast({
+      title: `已连接: ${printer.name}`,
+      icon: 'success'
+    })
+
+  } catch (error) {
+    uni.hideLoading()
+    console.error('连接打印机失败:', error)
+
+    // 用户取消选择设备（Web Bluetooth）
+    if (error.name === 'NotFoundError') {
+      return
+    }
+
+    // 环境不支持蓝牙
+    if (error.message?.includes('不支持')) {
+      uni.showModal({
+        title: '提示',
+        content: '当前浏览器或环境不支持 Web Bluetooth。\n\n' +
+                 '✅ 支持的环境：\n' +
+                 '   • Chrome 浏览器（推荐）\n' +
+                 '   • Edge 浏览器（Chromium内核）\n' +
+                 '   • Android 手机 Chrome\n' +
+                 '   • 原生 APP\n\n' +
+                 '❌ 不支持：\n' +
+                 '   • Safari (iOS)\n' +
+                 '   • Firefox\n' +
+                 '   • 微信内置浏览器\n\n' +
+                 '💡 提示：打印任务会正常记录到后端系统。',
+        showCancel: false,
+        confirmText: '我知道了'
+      })
+      return
+    }
+
+    uni.showToast({
+      title: error.message || '连接失败',
+      icon: 'none'
+    })
+  } finally {
+    connectingPrinter.value = false
   }
 }
 
@@ -462,6 +567,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   uni.offWindowResize?.(syncWindow)
+  if (bluetoothConnected.value) {
+    disconnectPrinter().catch(console.error)
+    bluetoothConnected.value = false
+  }
 })
 </script>
 
@@ -519,6 +628,13 @@ onUnmounted(() => {
   font-size: 14px;
   color: #666;
   background: #fff;
+}
+
+.printer-connected {
+  border-color: #52c41a;
+  color: #52c41a;
+  background: #f6ffed;
+  font-weight: 600;
 }
 
 .mock-badge {
