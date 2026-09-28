@@ -12,6 +12,7 @@ import com.wms.common.exception.BusinessException;
 import com.wms.system.entity.SysUser;
 import com.wms.system.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -159,24 +161,36 @@ public class AuthService {
 
     private void storeCaptcha(String key, String code) {
         if (redisTemplate != null) {
-            redisTemplate.opsForValue().set(CAPTCHA_PREFIX + key, code, Duration.ofMinutes(5));
-        } else {
-            memoryCaptcha.put(key, code);
+            try {
+                redisTemplate.opsForValue().set(CAPTCHA_PREFIX + key, code, Duration.ofMinutes(5));
+                return;
+            } catch (Exception e) {
+                log.warn("验证码写入 Redis 失败，回退内存: {}", e.getMessage());
+            }
         }
+        memoryCaptcha.put(key, code);
     }
 
     private String getCaptcha(String key) {
         if (redisTemplate != null) {
-            return redisTemplate.opsForValue().get(CAPTCHA_PREFIX + key);
+            try {
+                String value = redisTemplate.opsForValue().get(CAPTCHA_PREFIX + key);
+                return value != null ? value : memoryCaptcha.get(key);
+            } catch (Exception e) {
+                log.warn("验证码读取 Redis 失败，回退内存: {}", e.getMessage());
+            }
         }
         return memoryCaptcha.get(key);
     }
 
     private void removeCaptcha(String key) {
+        memoryCaptcha.remove(key);
         if (redisTemplate != null) {
-            redisTemplate.delete(CAPTCHA_PREFIX + key);
-        } else {
-            memoryCaptcha.remove(key);
+            try {
+                redisTemplate.delete(CAPTCHA_PREFIX + key);
+            } catch (Exception e) {
+                log.warn("验证码删除 Redis 失败: {}", e.getMessage());
+            }
         }
     }
 

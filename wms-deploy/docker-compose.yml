@@ -6,14 +6,19 @@ services:
     ports:
       - "9980:9980"
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      # 启用 Redis（含 MES 分布式工序锁）设为 prod,redis；无 Redis 保持 prod
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SQLSERVER_HOST: sqlserver
       SQLSERVER_PORT: 1433
       SQLSERVER_DB: wms
       SQLSERVER_USER: sa
       SQLSERVER_PASSWORD: ${SQLSERVER_SA_PASSWORD:-sa@2019}
       REDIS_HOST: redis
+      REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: 0
+      # 工序锁模式：AUTO（有 Redis 用 Redis，否则回退本地）/ REDIS / LOCAL
+      MES_LOCK_MODE: ${MES_LOCK_MODE:-AUTO}
     depends_on:
       - sqlserver
       - redis

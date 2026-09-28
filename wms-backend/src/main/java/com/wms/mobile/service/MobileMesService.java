@@ -13,7 +13,9 @@ import com.wms.mes.entity.MesReport;
 import com.wms.mes.entity.MesTransfer;
 import com.wms.mes.service.MesReworkService;
 import com.wms.mes.service.MesReportService;
+import com.wms.mes.service.MesSummaryService;
 import com.wms.mes.service.MesSyncWorkerService;
+import com.wms.mobile.dto.MobileMesSummaryVo;
 import com.wms.mobile.dto.MobileMesSyncRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ public class MobileMesService {
     private final MesReportService reportService;
     private final MesReworkService reworkService;
     private final MesSyncWorkerService syncWorkerService;
+    private final MesSummaryService summaryService;
 
     public MesReportContextVo context(String moNo) {
         return reportService.context(moNo);
@@ -87,6 +90,10 @@ public class MobileMesService {
 
     public MesSyncPanelVo panel() {
         return syncWorkerService.panel();
+    }
+
+    public MobileMesSummaryVo summary() {
+        return summaryService.summary();
     }
 
     /**

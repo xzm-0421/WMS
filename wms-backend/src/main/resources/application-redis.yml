@@ -1,0 +1,20 @@
+# 可选 Redis 配置：与 prod / dev 组合使用即可启用 Redis
+#   SPRING_PROFILES_ACTIVE=prod,redis
+#   SPRING_PROFILES_ACTIVE=dev,redis
+#
+# 作用：覆盖 prod / dev 中的 Redis 自动配置排除项，使 StringRedisTemplate 生效；
+#       验证码、PDA 短缓存、MES 工序锁将优先走 Redis，Redis 不可用时各自回退本地。
+# 注意：后置 profile 覆盖前置 profile 的同名属性，故本文件中 exclude 仅保留 Repositories。
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      # 连接/命令超时保持较短，Redis 故障时快速回退本地，不拖慢现场
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:1s}
+      timeout: ${REDIS_TIMEOUT:2s}

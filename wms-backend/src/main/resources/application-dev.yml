@@ -211,6 +211,10 @@ mes:
   max-retry: 5
   queue-capacity: 10000
   default-over-receive-ratio: 0
+  # 工序锁：AUTO=有 Redis 用 Redis，否则回退本地；可选 REDIS / LOCAL
+  lock-mode: AUTO
+  lock-lease-seconds: 30
+  lock-retry-interval-ms: 100
 
 wms:
   pda:

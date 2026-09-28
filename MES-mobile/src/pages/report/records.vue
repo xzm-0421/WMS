@@ -27,6 +27,7 @@
         本地待同步({{ queue.length }})
       </view>
       <view class="seg-item" :class="{ active: tab === 'server' }" @click="switchServer">服务端记录</view>
+      <view class="seg-item" :class="{ active: tab === 'transfer' }" @click="switchTransfer">转移记录</view>
     </view>
 
     <view v-if="tab === 'queue'" class="card">
@@ -40,7 +41,7 @@
       <button v-if="queue.length" class="ghost-btn" @click="syncNow" :loading="syncing">立即同步</button>
     </view>
 
-    <view v-else class="card">
+    <view v-else-if="tab === 'server'" class="card">
       <view v-if="!reports.length" class="empty">暂无报工记录</view>
       <view v-for="r in reports" :key="r.reportNo" class="row">
         <view class="row-main">
@@ -56,6 +57,23 @@
         </button>
       </view>
     </view>
+
+    <view v-else class="card">
+      <view v-if="!transfers.length" class="empty">暂无转移记录</view>
+      <view v-for="t in transfers" :key="t.transferNo" class="row">
+        <view class="row-main">
+          <text class="row-title">{{ t.transferNo }} · {{ t.fromProcessName || t.fromProcessCode }} → {{ t.toProcessName || t.toProcessCode }}</text>
+          <text class="row-sub">{{ t.moNo }} · {{ t.qty }} · {{ syncLabel(t.syncStatus) }}</text>
+        </view>
+        <button
+          v-if="t.syncStatus === 'FAILED' || t.syncStatus === 'MANUAL_REQUIRED'"
+          class="retry-btn"
+          @click="handleRetryTransfer(t)"
+        >
+          重试
+        </button>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -63,7 +81,7 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { requireSession } from '@/utils/authStorage.js'
-import { getMyReports, retryReport, getSyncPanel, syncReports } from '@/api/mes.js'
+import { getMyReports, retryReport, getSyncPanel, syncReports, getTransfers, retryTransfer } from '@/api/mes.js'
 import { flushQueue, getQueue, getQueueCount } from '@/utils/offlineQueue.js'
 import { toast } from '@/utils/ui.js'
 
@@ -71,6 +89,7 @@ const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 20)
 const tab = ref('queue')
 const queue = ref([])
 const reports = ref([])
+const transfers = ref([])
 const panel = ref(null)
 const syncing = ref(false)
 
@@ -151,6 +170,30 @@ async function handleRetry(report) {
     await retryReport(report.reportNo)
     toast('已加入重试队列')
     await loadReports()
+  } catch {
+    /* ignore */
+  }
+}
+
+async function switchTransfer() {
+  tab.value = 'transfer'
+  await loadTransfers()
+}
+
+async function loadTransfers() {
+  try {
+    const res = await getTransfers({ current: 1, size: 20 })
+    transfers.value = res?.records || []
+  } catch {
+    transfers.value = []
+  }
+}
+
+async function handleRetryTransfer(transfer) {
+  try {
+    await retryTransfer(transfer.transferNo)
+    toast('已加入重试队列')
+    await loadTransfers()
   } catch {
     /* ignore */
   }

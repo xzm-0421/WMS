@@ -12,6 +12,7 @@ import com.wms.mes.dto.MesTransferSubmitRequest;
 import com.wms.mes.entity.MesDefect;
 import com.wms.mes.entity.MesReport;
 import com.wms.mes.entity.MesTransfer;
+import com.wms.mobile.dto.MobileMesSummaryVo;
 import com.wms.mobile.dto.MobileMesSyncRequest;
 import com.wms.mobile.service.MobileMesService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -82,6 +83,12 @@ public class MobileMesController {
     @GetMapping("/sync/panel")
     public ApiResult<MesSyncPanelVo> panel() {
         return ApiResult.ok(mobileMesService.panel());
+    }
+
+    @Operation(summary = "首页统计")
+    @GetMapping("/summary")
+    public ApiResult<MobileMesSummaryVo> summary() {
+        return ApiResult.ok(mobileMesService.summary());
     }
 
     @Operation(summary = "提交工序转移")

@@ -67,18 +67,18 @@ import RippleBg from '@/components/RippleBg.vue'
 import { requireSession } from '@/utils/authStorage.js'
 import { comingSoon } from '@/utils/ui.js'
 import { flushQueue, getQueueCount } from '@/utils/offlineQueue.js'
-import { syncReports } from '@/api/mes.js'
+import { syncReports, getSummary } from '@/api/mes.js'
 
 const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 20)
 
-const stats = [
-  { value: 0, label: '全部工单' },
-  { value: 0, label: '全部待办' },
-  { value: 0, label: '全部办结' },
-  { value: 0, label: '我的工单' },
-  { value: 0, label: '我的待办' },
-  { value: 0, label: '我的已办' },
-]
+const stats = ref([
+  { value: '-', label: '今日报工' },
+  { value: '-', label: '待同步' },
+  { value: '-', label: '同步失败' },
+  { value: '-', label: '未完成计划' },
+  { value: '-', label: '未处理不良' },
+  { value: '-', label: '网络状态' },
+])
 
 const quickMenus = [
   { label: '工单报工', color: '#ff8a3d', glyph: '🛠', url: '/pages/report/report' },
@@ -106,9 +106,24 @@ async function tryFlush() {
   }
 }
 
+async function loadSummary() {
+  try {
+    const s = await getSummary()
+    stats.value[0].value = s.todayReportCount ?? 0
+    stats.value[1].value = s.pendingCount ?? 0
+    stats.value[2].value = s.failedCount ?? 0
+    stats.value[3].value = s.incompletePlanCount ?? 0
+    stats.value[4].value = s.openDefectCount ?? 0
+    stats.value[5].value = s.networkStatus === 'ONLINE' ? '在线' : '离线'
+  } catch {
+    /* http.js 已提示 */
+  }
+}
+
 onShow(() => {
   if (!requireSession()) return
   tryFlush()
+  loadSummary()
 })
 </script>
 

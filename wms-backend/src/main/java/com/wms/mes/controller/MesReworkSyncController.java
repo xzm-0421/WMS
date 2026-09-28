@@ -6,6 +6,7 @@ import com.wms.mes.dto.MesDefectCreateRequest;
 import com.wms.mes.dto.MesReworkSequenceVo;
 import com.wms.mes.dto.MesSyncPanelVo;
 import com.wms.mes.entity.MesDefect;
+import com.wms.mes.entity.MesErpOutbox;
 import com.wms.mes.service.MesReworkService;
 import com.wms.mes.service.MesSyncWorkerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -50,9 +51,45 @@ public class MesReworkSyncController {
         return ApiResult.ok(reworkService.sequence(defectNo));
     }
 
+    @Operation(summary = "完成返工")
+    @PostMapping("/defects/{defectNo}/complete")
+    public ApiResult<MesDefect> complete(@PathVariable String defectNo) {
+        return ApiResult.ok("已标记返工完成", reworkService.complete(defectNo));
+    }
+
+    @Operation(summary = "标记二次返工")
+    @PostMapping("/defects/{defectNo}/secondary")
+    public ApiResult<MesDefect> secondary(@PathVariable String defectNo) {
+        return ApiResult.ok("已标记二次返工", reworkService.markSecondary(defectNo));
+    }
+
+    @Operation(summary = "关闭返工")
+    @PostMapping("/defects/{defectNo}/close")
+    public ApiResult<MesDefect> close(@PathVariable String defectNo) {
+        return ApiResult.ok("已关闭返工", reworkService.close(defectNo));
+    }
+
     @Operation(summary = "同步状态面板")
     @GetMapping("/sync/panel")
     public ApiResult<MesSyncPanelVo> panel() {
         return ApiResult.ok(syncWorkerService.panel());
+    }
+
+    @Operation(summary = "不良/返工同步任务列表")
+    @GetMapping("/sync/outbox")
+    public ApiResult<PageResult<MesErpOutbox>> outbox(
+            @RequestParam(required = false) String bizType,
+            @RequestParam(required = false) String bizNo,
+            @RequestParam(required = false) String syncStatus,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResult.ok(syncWorkerService.pageOutbox(bizType, bizNo, syncStatus, current, size));
+    }
+
+    @Operation(summary = "重试不良/返工同步任务")
+    @PostMapping("/sync/outbox/{id}/retry")
+    public ApiResult<Void> retryOutbox(@PathVariable Long id) {
+        syncWorkerService.retryOutbox(id);
+        return ApiResult.ok("已加入重试队列", null);
     }
 }

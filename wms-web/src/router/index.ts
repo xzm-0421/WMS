@@ -220,6 +220,12 @@ const router = createRouter({
           meta: { title: '工序转移', permission: MENU_PERMISSIONS['/mes/transfer'] },
         },
         {
+          path: 'mes/transfers',
+          name: 'MesTransfers',
+          component: () => import('@/views/mes/TransferList.vue'),
+          meta: { title: '工序转移记录', permission: MENU_PERMISSIONS['/mes/transfers'] },
+        },
+        {
           path: 'mes/rework',
           name: 'MesRework',
           component: () => import('@/views/mes/ReworkView.vue'),

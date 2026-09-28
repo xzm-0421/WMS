@@ -30,6 +30,11 @@ export function getSyncPanel() {
   return request({ url: '/mobile/mes/sync/panel' })
 }
 
+// 首页统计
+export function getSummary() {
+  return request({ url: '/mobile/mes/summary' })
+}
+
 // 工序转移
 export function submitTransfer(data) {
   return request({ url: '/mobile/mes/transfers', method: 'POST', data })

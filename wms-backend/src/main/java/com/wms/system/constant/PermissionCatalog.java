@@ -97,9 +97,14 @@ public enum PermissionCatalog {
     MES_REPORT_CANCEL("mes:report:cancel", "取消报工暂存", "mes"),
     MES_REPORT_EXPORT("mes:report:export", "导出报工记录", "mes"),
     MES_TRANSFER_SUBMIT("mes:transfer:submit", "工序转移", "mes"),
+    MES_TRANSFER_LIST("mes:transfer:list", "工序转移记录查询", "mes"),
+    MES_TRANSFER_RETRY("mes:transfer:retry", "工序转移重试同步", "mes"),
     MES_REWORK_CREATE("mes:rework:create", "发起返工", "mes"),
     MES_REWORK_REPORT("mes:rework:report", "返工报工", "mes"),
     MES_REWORK_VIEW("mes:rework:view", "查看返工序列", "mes"),
+    MES_REWORK_COMPLETE("mes:rework:complete", "完成返工", "mes"),
+    MES_REWORK_SECONDARY("mes:rework:secondary", "标记二次返工", "mes"),
+    MES_REWORK_CLOSE("mes:rework:close", "关闭返工", "mes"),
     MES_SYNC_PANEL("mes:sync:panel", "MES同步中心", "mes");
 
     private final String code;

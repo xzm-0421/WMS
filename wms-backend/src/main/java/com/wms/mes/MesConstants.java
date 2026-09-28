@@ -42,6 +42,13 @@ public final class MesConstants {
     public static final String PREFIX_TRANSFER = "ZY";
     public static final String PREFIX_DEFECT = "BL";
 
+    /** 出站队列业务类型 */
+    public static final String BIZ_DEFECT = "DEFECT";
+    public static final String BIZ_REWORK = "REWORK";
+    /** 出站队列动作：新增单据 / 提交审核 */
+    public static final String ACTION_CREATE = "CREATE";
+    public static final String ACTION_SUBMIT = "SUBMIT";
+
     public static final int FLAG_YES = 1;
     public static final int FLAG_NO = 0;
     public static final int STATUS_ACTIVE = 1;

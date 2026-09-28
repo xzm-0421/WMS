@@ -7,14 +7,17 @@ import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
 import com.wms.common.util.OrderNoGenerator;
 import com.wms.mes.MesConstants;
+import com.wms.mes.domain.MesReworkStatusRule;
 import com.wms.mes.dto.MesDefectCreateRequest;
 import com.wms.mes.dto.MesReworkSequenceVo;
 import com.wms.mes.entity.MesDefect;
+import com.wms.mes.entity.MesErpOutbox;
 import com.wms.mes.entity.MesOpPlan;
 import com.wms.mes.entity.MesProcess;
 import com.wms.mes.entity.MesReworkOp;
 import com.wms.mes.entity.MesRouteOp;
 import com.wms.mes.mapper.MesDefectMapper;
+import com.wms.mes.mapper.MesErpOutboxMapper;
 import com.wms.mes.mapper.MesReworkOpMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,7 +26,9 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 不良登记与返工序列。
@@ -34,6 +39,7 @@ public class MesReworkService {
 
     private final MesDefectMapper defectMapper;
     private final MesReworkOpMapper reworkOpMapper;
+    private final MesErpOutboxMapper outboxMapper;
     private final MesOpPlanService opPlanService;
     private final MesMasterDataService masterDataService;
 
@@ -43,7 +49,38 @@ public class MesReworkService {
                 .eq(StringUtils.hasText(reworkStatus), MesDefect::getReworkStatus, reworkStatus)
                 .orderByDesc(MesDefect::getCreateTime);
         Page<MesDefect> page = defectMapper.selectPage(new Page<>(current, size), wrapper);
+        attachSyncStatus(page.getRecords());
         return PageResult.of(page.getRecords(), page.getTotal(), page.getCurrent(), page.getSize());
+    }
+
+    private void attachSyncStatus(List<MesDefect> defects) {
+        if (defects == null || defects.isEmpty()) {
+            return;
+        }
+        List<String> nos = defects.stream().map(MesDefect::getDefectNo).toList();
+        List<MesErpOutbox> tasks = outboxMapper.selectList(new LambdaQueryWrapper<MesErpOutbox>()
+                .in(MesErpOutbox::getBizNo, nos));
+        Map<String, String> createStatus = new HashMap<>();
+        Map<String, String> submitStatus = new HashMap<>();
+        for (MesErpOutbox task : tasks) {
+            String key = task.getBizType() + "|" + task.getBizNo();
+            if (MesConstants.ACTION_SUBMIT.equals(task.getAction())) {
+                submitStatus.put(key, task.getSyncStatus());
+            } else {
+                createStatus.put(key, task.getSyncStatus());
+            }
+        }
+        for (MesDefect defect : defects) {
+            defect.setDefectSyncStatus(resolveStatus(createStatus, submitStatus,
+                    MesConstants.BIZ_DEFECT + "|" + defect.getDefectNo()));
+            defect.setReworkSyncStatus(resolveStatus(createStatus, submitStatus,
+                    MesConstants.BIZ_REWORK + "|" + defect.getDefectNo()));
+        }
+    }
+
+    private static String resolveStatus(Map<String, String> createStatus, Map<String, String> submitStatus, String key) {
+        String submit = submitStatus.get(key);
+        return submit != null ? submit : createStatus.get(key);
     }
 
     public MesReworkSequenceVo sequence(String defectNo) {
@@ -101,7 +138,59 @@ public class MesReworkService {
             op.setOpStatus(MesConstants.OP_PENDING);
             reworkOpMapper.insert(op);
         }
+        enqueue(defect.getDefectNo(), MesConstants.ACTION_CREATE);
         return sequence(defect.getDefectNo());
+    }
+
+    /** 完成返工：REWORKING -> DONE，并入队提交 ERP 单据 */
+    @Transactional(rollbackFor = Exception.class)
+    public MesDefect complete(String defectNo) {
+        MesDefect defect = transit(defectNo, MesConstants.REWORK_DONE, "当前状态不可完成返工",
+                MesReworkStatusRule::canComplete);
+        enqueue(defectNo, MesConstants.ACTION_SUBMIT);
+        return defect;
+    }
+
+    private void enqueue(String defectNo, String action) {
+        for (String bizType : List.of(MesConstants.BIZ_DEFECT, MesConstants.BIZ_REWORK)) {
+            Long exists = outboxMapper.selectCount(new LambdaQueryWrapper<MesErpOutbox>()
+                    .eq(MesErpOutbox::getBizType, bizType)
+                    .eq(MesErpOutbox::getBizNo, defectNo)
+                    .eq(MesErpOutbox::getAction, action));
+            if (exists != null && exists > 0) {
+                continue;
+            }
+            MesErpOutbox task = new MesErpOutbox();
+            task.setBizType(bizType);
+            task.setBizNo(defectNo);
+            task.setAction(action);
+            task.setSyncStatus(MesConstants.SYNC_PENDING);
+            task.setRetryCount(0);
+            outboxMapper.insert(task);
+        }
+    }
+
+    /** 再次不良：REWORKING/DONE -> SECONDARY */
+    @Transactional(rollbackFor = Exception.class)
+    public MesDefect markSecondary(String defectNo) {
+        return transit(defectNo, MesConstants.REWORK_SECONDARY, "当前状态不可标记二次返工", MesReworkStatusRule::canSecondary);
+    }
+
+    /** 关闭返工：DONE/SECONDARY -> CLOSED */
+    @Transactional(rollbackFor = Exception.class)
+    public MesDefect close(String defectNo) {
+        return transit(defectNo, MesConstants.REWORK_CLOSED, "当前状态不可关闭返工", MesReworkStatusRule::canClose);
+    }
+
+    private MesDefect transit(String defectNo, String target, String message,
+                              java.util.function.Predicate<String> allowed) {
+        MesDefect defect = getDefect(defectNo);
+        if (!allowed.test(defect.getReworkStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, message);
+        }
+        defect.setReworkStatus(target);
+        defectMapper.updateById(defect);
+        return defect;
     }
 
     private MesDefect getDefect(String defectNo) {

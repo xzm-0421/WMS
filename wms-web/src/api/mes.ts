@@ -118,9 +118,13 @@ export interface MesTransfer {
   qty?: number
   autoFlag?: number
   operatorName?: string
+  remark?: string
   transferTime?: string
   syncStatus?: string
+  syncTime?: string
+  erpBillNo?: string
   failReason?: string
+  retryCount?: number
 }
 
 export interface MesDefect {
@@ -133,6 +137,8 @@ export interface MesDefect {
   defectDesc?: string
   ownerName?: string
   reworkStatus?: string
+  defectSyncStatus?: string
+  reworkSyncStatus?: string
 }
 
 export interface MesReworkOp {
@@ -166,6 +172,14 @@ export interface MesSyncPanel {
   syncingCount?: number
   failedCount?: number
   todaySyncedCount?: number
+  reportPendingCount?: number
+  reportFailedCount?: number
+  transferPendingCount?: number
+  transferFailedCount?: number
+  defectPendingCount?: number
+  defectFailedCount?: number
+  reworkPendingCount?: number
+  reworkFailedCount?: number
   networkStatus?: string
   lastSyncTime?: string
   lastCheckTime?: string
@@ -307,6 +321,10 @@ export function getMesTransfers(params: Record<string, unknown>) {
   return request.get<any, PageResult<MesTransfer>>('/mes/transfers', { params })
 }
 
+export function getMesTransfer(transferNo: string) {
+  return request.get<any, MesTransfer>(`/mes/transfers/${encodeURIComponent(transferNo)}`)
+}
+
 export function retryMesTransfer(transferNo: string) {
   return request.post(`/mes/transfers/${encodeURIComponent(transferNo)}/retry`)
 }
@@ -323,6 +341,38 @@ export function getMesReworkSequence(defectNo: string) {
   return request.get<any, MesReworkSequence>(`/mes/defects/${encodeURIComponent(defectNo)}`)
 }
 
+export function completeMesRework(defectNo: string) {
+  return request.post<any, MesDefect>(`/mes/defects/${encodeURIComponent(defectNo)}/complete`)
+}
+
+export function secondaryMesRework(defectNo: string) {
+  return request.post<any, MesDefect>(`/mes/defects/${encodeURIComponent(defectNo)}/secondary`)
+}
+
+export function closeMesRework(defectNo: string) {
+  return request.post<any, MesDefect>(`/mes/defects/${encodeURIComponent(defectNo)}/close`)
+}
+
 export function getMesSyncPanel() {
   return request.get<any, MesSyncPanel>('/mes/sync/panel')
+}
+
+export interface MesErpOutbox {
+  id?: number
+  bizType?: string
+  bizNo?: string
+  action?: string
+  syncStatus?: string
+  retryCount?: number
+  erpBillNo?: string
+  failReason?: string
+  lastSyncTime?: string
+}
+
+export function getMesOutbox(params: Record<string, unknown>) {
+  return request.get<any, PageResult<MesErpOutbox>>('/mes/sync/outbox', { params })
+}
+
+export function retryMesOutbox(id: number) {
+  return request.post(`/mes/sync/outbox/${id}/retry`)
 }

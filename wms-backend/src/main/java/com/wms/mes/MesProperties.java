@@ -55,4 +55,13 @@ public class MesProperties {
 
     /** 工序锁等待秒数 */
     private long processLockWaitSeconds = 30L;
+
+    /** 工序锁模式：AUTO（有 Redis 用 Redis，否则本地）/ REDIS / LOCAL */
+    private String lockMode = "AUTO";
+
+    /** Redis 锁租期（秒），看门狗按 1/3 周期自动续约 */
+    private long lockLeaseSeconds = 30L;
+
+    /** Redis 锁获取重试间隔（毫秒） */
+    private long lockRetryIntervalMs = 100L;
 }

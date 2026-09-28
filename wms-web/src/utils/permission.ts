@@ -70,6 +70,7 @@ export const MENU_PERMISSIONS: Record<string, string> = {
   '/mes/plans': 'mes:plan:list',
   '/mes/report': 'mes:report:submit',
   '/mes/transfer': 'mes:transfer:submit',
+  '/mes/transfers': 'mes:transfer:list',
   '/mes/rework': 'mes:rework:view',
   '/mes/reports': 'mes:report:list',
   '/mes/sync': 'mes:sync:panel',

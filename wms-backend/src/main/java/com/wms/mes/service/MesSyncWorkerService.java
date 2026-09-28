@@ -2,6 +2,9 @@ package com.wms.mes.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wms.common.constant.ErrorCode;
+import com.wms.common.exception.BusinessException;
+import com.wms.common.result.PageResult;
 import com.wms.integration.kingdee.KingdeeCloudProperties;
 import com.wms.integration.kingdee.KingdeeCloudService;
 import com.wms.integration.kingdee.KingdeeSyncResult;
@@ -9,12 +12,20 @@ import com.wms.mes.MesConstants;
 import com.wms.mes.MesProperties;
 import com.wms.mes.domain.MesRetryBackoff;
 import com.wms.mes.dto.MesSyncPanelVo;
+import com.wms.mes.entity.MesDefect;
+import com.wms.mes.entity.MesErpOutbox;
 import com.wms.mes.entity.MesReport;
+import com.wms.mes.entity.MesReworkOp;
 import com.wms.mes.entity.MesRuntime;
 import com.wms.mes.entity.MesTransfer;
+import com.wms.mes.kingdee.MesDefectSaveBuilder;
 import com.wms.mes.kingdee.MesReportSaveBuilder;
+import com.wms.mes.kingdee.MesReworkOrderSaveBuilder;
 import com.wms.mes.kingdee.MesTransferSaveBuilder;
+import com.wms.mes.mapper.MesDefectMapper;
+import com.wms.mes.mapper.MesErpOutboxMapper;
 import com.wms.mes.mapper.MesReportMapper;
+import com.wms.mes.mapper.MesReworkOpMapper;
 import com.wms.mes.mapper.MesTransferMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +46,9 @@ public class MesSyncWorkerService {
 
     private final MesReportMapper reportMapper;
     private final MesTransferMapper transferMapper;
+    private final MesErpOutboxMapper outboxMapper;
+    private final MesDefectMapper defectMapper;
+    private final MesReworkOpMapper reworkOpMapper;
     private final KingdeeCloudService kingdeeCloudService;
     private final KingdeeCloudProperties kingdeeProperties;
     private final MesProperties mesProperties;
@@ -55,6 +69,7 @@ public class MesSyncWorkerService {
         }
         processReports();
         processTransfers();
+        processOutbox();
         markStale();
     }
 
@@ -69,10 +84,23 @@ public class MesSyncWorkerService {
         vo.setNetworkStatus(runtime.getNetworkStatus());
         vo.setLastCheckTime(runtime.getLastCheckTime());
         vo.setLastError(runtime.getLastError());
-        vo.setPendingCount(countReport(MesConstants.SYNC_PENDING) + countTransfer(MesConstants.SYNC_PENDING));
+        long reportPending = countReport(MesConstants.SYNC_PENDING);
+        long reportFailed = countReport(MesConstants.SYNC_FAILED) + countReport(MesConstants.SYNC_MANUAL);
+        long transferPending = countTransfer(MesConstants.SYNC_PENDING);
+        long transferFailed = countTransfer(MesConstants.SYNC_FAILED) + countTransfer(MesConstants.SYNC_MANUAL);
+        vo.setReportPendingCount(reportPending);
+        vo.setReportFailedCount(reportFailed);
+        vo.setTransferPendingCount(transferPending);
+        vo.setTransferFailedCount(transferFailed);
+        vo.setPendingCount(reportPending + transferPending);
         vo.setSyncingCount(countReport(MesConstants.SYNC_SYNCING) + countTransfer(MesConstants.SYNC_SYNCING));
-        vo.setFailedCount(countReport(MesConstants.SYNC_FAILED) + countReport(MesConstants.SYNC_MANUAL)
-                + countTransfer(MesConstants.SYNC_FAILED) + countTransfer(MesConstants.SYNC_MANUAL));
+        vo.setFailedCount(reportFailed + transferFailed);
+        vo.setDefectPendingCount(countOutbox(MesConstants.BIZ_DEFECT, MesConstants.SYNC_PENDING));
+        vo.setDefectFailedCount(countOutbox(MesConstants.BIZ_DEFECT, MesConstants.SYNC_FAILED)
+                + countOutbox(MesConstants.BIZ_DEFECT, MesConstants.SYNC_MANUAL));
+        vo.setReworkPendingCount(countOutbox(MesConstants.BIZ_REWORK, MesConstants.SYNC_PENDING));
+        vo.setReworkFailedCount(countOutbox(MesConstants.BIZ_REWORK, MesConstants.SYNC_FAILED)
+                + countOutbox(MesConstants.BIZ_REWORK, MesConstants.SYNC_MANUAL));
         vo.setQueueTotal(vo.getPendingCount() + vo.getSyncingCount() + vo.getFailedCount());
         LocalDate today = LocalDate.now();
         LocalDateTime start = today.atStartOfDay();
@@ -215,6 +243,154 @@ public class MesSyncWorkerService {
             report.setFailReason("长期未同步");
             reportMapper.updateById(report);
         }
+    }
+
+    public PageResult<MesErpOutbox> pageOutbox(String bizType, String bizNo, String syncStatus, long current, long size) {
+        LambdaQueryWrapper<MesErpOutbox> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StringUtils.hasText(bizType), MesErpOutbox::getBizType, bizType)
+                .eq(StringUtils.hasText(bizNo), MesErpOutbox::getBizNo, bizNo)
+                .eq(StringUtils.hasText(syncStatus), MesErpOutbox::getSyncStatus, syncStatus)
+                .orderByDesc(MesErpOutbox::getCreateTime);
+        var page = outboxMapper.selectPage(
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size), wrapper);
+        return PageResult.of(page.getRecords(), page.getTotal(), page.getCurrent(), page.getSize());
+    }
+
+    public void retryOutbox(Long id) {
+        MesErpOutbox task = outboxMapper.selectById(id);
+        if (task == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "同步任务不存在");
+        }
+        if (MesConstants.SYNC_SUCCESS.equals(task.getSyncStatus())
+                || MesConstants.SYNC_CANCELLED.equals(task.getSyncStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前状态不可重试");
+        }
+        task.setSyncStatus(MesConstants.SYNC_PENDING);
+        task.setNextRetryTime(LocalDateTime.now());
+        task.setFailReason(null);
+        outboxMapper.updateById(task);
+    }
+
+    private void processOutbox() {
+        var page = outboxMapper.selectPage(
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 50),
+                new LambdaQueryWrapper<MesErpOutbox>()
+                        .in(MesErpOutbox::getSyncStatus, MesConstants.SYNC_PENDING, MesConstants.SYNC_FAILED)
+                        .and(w -> w.isNull(MesErpOutbox::getNextRetryTime)
+                                .or().le(MesErpOutbox::getNextRetryTime, LocalDateTime.now()))
+                        .orderByAsc(MesErpOutbox::getCreateTime));
+        for (MesErpOutbox task : page.getRecords()) {
+            pushOutbox(task);
+        }
+    }
+
+    private void pushOutbox(MesErpOutbox task) {
+        task.setSyncStatus(MesConstants.SYNC_SYNCING);
+        outboxMapper.updateById(task);
+        String formId = formIdOf(task.getBizType());
+        if (!StringUtils.hasText(formId)) {
+            markOutboxManual(task, "未配置金蝶单据 FormId，请配置后再同步");
+            return;
+        }
+        try {
+            KingdeeSyncResult result = MesConstants.ACTION_SUBMIT.equals(task.getAction())
+                    ? submitOutboxBill(task, formId)
+                    : createOutboxBill(task, formId);
+            applyOutboxResult(task, result);
+        } catch (Exception e) {
+            log.error("MES outbox sync failed id={} type={} no={}", task.getId(), task.getBizType(), task.getBizNo(), e);
+            applyOutboxFailure(task, e.getMessage());
+        }
+    }
+
+    private KingdeeSyncResult createOutboxBill(MesErpOutbox task, String formId) {
+        MesDefect defect = findDefect(task.getBizNo());
+        String payload;
+        if (MesConstants.BIZ_REWORK.equals(task.getBizType())) {
+            List<MesReworkOp> ops = reworkOpMapper.selectList(new LambdaQueryWrapper<MesReworkOp>()
+                    .eq(MesReworkOp::getDefectNo, task.getBizNo())
+                    .orderByAsc(MesReworkOp::getSeqNo));
+            payload = MesReworkOrderSaveBuilder.build(objectMapper, kingdeeProperties, defect, ops);
+        } else {
+            payload = MesDefectSaveBuilder.build(objectMapper, kingdeeProperties, defect);
+        }
+        return kingdeeCloudService.rawSave(formId, payload, autoAuditOf(task.getBizType()));
+    }
+
+    private KingdeeSyncResult submitOutboxBill(MesErpOutbox task, String formId) {
+        MesErpOutbox create = outboxMapper.selectOne(new LambdaQueryWrapper<MesErpOutbox>()
+                .eq(MesErpOutbox::getBizType, task.getBizType())
+                .eq(MesErpOutbox::getBizNo, task.getBizNo())
+                .eq(MesErpOutbox::getAction, MesConstants.ACTION_CREATE));
+        if (create == null || !MesConstants.SYNC_SUCCESS.equals(create.getSyncStatus())
+                || !StringUtils.hasText(create.getErpBillNo())) {
+            throw new IllegalStateException("单据尚未在 ERP 新增成功，暂不能提交");
+        }
+        return kingdeeCloudService.submitAndAuditExistingBill(formId, create.getErpBillNo(), create.getErpBillId());
+    }
+
+    private void applyOutboxResult(MesErpOutbox task, KingdeeSyncResult result) {
+        if (result != null && result.isSuccess()) {
+            task.setSyncStatus(MesConstants.SYNC_SUCCESS);
+            task.setErpBillNo(result.getBillNo());
+            task.setLastSyncTime(LocalDateTime.now());
+            task.setFailReason(null);
+            outboxMapper.updateById(task);
+            return;
+        }
+        applyOutboxFailure(task, result == null ? "ERP无响应" : result.getMessage());
+    }
+
+    private void applyOutboxFailure(MesErpOutbox task, String message) {
+        int retry = task.getRetryCount() == null ? 0 : task.getRetryCount();
+        retry++;
+        task.setRetryCount(retry);
+        task.setFailReason(trimReason(message));
+        task.setLastSyncTime(LocalDateTime.now());
+        if (!MesRetryBackoff.retryable(message) || MesRetryBackoff.exhausted(retry, mesProperties.getMaxRetry())) {
+            task.setSyncStatus(MesConstants.SYNC_MANUAL);
+            task.setNextRetryTime(null);
+        } else {
+            task.setSyncStatus(MesConstants.SYNC_FAILED);
+            task.setNextRetryTime(MesRetryBackoff.nextRetryTime(retry - 1, LocalDateTime.now()));
+        }
+        outboxMapper.updateById(task);
+    }
+
+    private void markOutboxManual(MesErpOutbox task, String reason) {
+        task.setSyncStatus(MesConstants.SYNC_MANUAL);
+        task.setFailReason(reason);
+        task.setNextRetryTime(null);
+        task.setLastSyncTime(LocalDateTime.now());
+        outboxMapper.updateById(task);
+    }
+
+    private MesDefect findDefect(String defectNo) {
+        MesDefect defect = defectMapper.selectOne(new LambdaQueryWrapper<MesDefect>()
+                .eq(MesDefect::getDefectNo, defectNo));
+        if (defect == null) {
+            throw new IllegalStateException("不良单不存在: " + defectNo);
+        }
+        return defect;
+    }
+
+    private String formIdOf(String bizType) {
+        return MesConstants.BIZ_REWORK.equals(bizType)
+                ? kingdeeProperties.getMesReworkFormId()
+                : kingdeeProperties.getMesDefectFormId();
+    }
+
+    private boolean autoAuditOf(String bizType) {
+        return MesConstants.BIZ_REWORK.equals(bizType)
+                ? kingdeeProperties.isMesReworkAutoAudit()
+                : kingdeeProperties.isMesDefectAutoAudit();
+    }
+
+    private long countOutbox(String bizType, String status) {
+        Long count = outboxMapper.selectCount(new LambdaQueryWrapper<MesErpOutbox>()
+                .eq(MesErpOutbox::getBizType, bizType)
+                .eq(MesErpOutbox::getSyncStatus, status));
+        return count == null ? 0 : count;
     }
 
     private long countReport(String status) {

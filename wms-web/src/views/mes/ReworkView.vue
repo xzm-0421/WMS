@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import {
+  closeMesRework,
+  completeMesRework,
   createMesDefect,
   getMesDefects,
+  getMesOutbox,
   getMesReportContext,
   getMesReworkSequence,
+  retryMesOutbox,
+  secondaryMesRework,
   type MesDefect,
   type MesOpPlan,
   type MesReworkOp,
@@ -14,6 +19,9 @@ import {
 
 const userStore = useUserStore()
 const canCreate = computed(() => userStore.hasPermission('mes:rework:create'))
+const canComplete = computed(() => userStore.hasPermission('mes:rework:complete'))
+const canSecondary = computed(() => userStore.hasPermission('mes:rework:secondary'))
+const canClose = computed(() => userStore.hasPermission('mes:rework:close'))
 
 const loading = ref(false)
 const tableData = ref<MesDefect[]>([])
@@ -65,6 +73,29 @@ async function showSeq(row: MesDefect) {
   seqTitle.value = `返工序列 ${row.defectNo}`
   seqOps.value = vo.operations || []
   seqVisible.value = true
+}
+
+async function confirmAction(row: MesDefect, text: string, fn: (no: string) => Promise<unknown>) {
+  await ElMessageBox.confirm(`确定对不良单 ${row.defectNo} ${text}？`, '提示')
+  await fn(row.defectNo!)
+  ElMessage.success('操作成功')
+  loadData()
+}
+
+async function retryDefectSync(row: MesDefect) {
+  const res = await getMesOutbox({ bizNo: row.defectNo, size: 50 })
+  const targets = (res.records || []).filter(
+    (t) => t.syncStatus === 'FAILED' || t.syncStatus === 'MANUAL_REQUIRED',
+  )
+  if (!targets.length) {
+    ElMessage.info('无可重试的同步任务')
+    return
+  }
+  for (const t of targets) {
+    await retryMesOutbox(t.id!)
+  }
+  ElMessage.success('已加入重试队列')
+  loadData()
 }
 
 onMounted(loadData)
@@ -129,6 +160,14 @@ onMounted(loadData)
           <el-form-item label="工单号">
             <el-input v-model="query.moNo" clearable />
           </el-form-item>
+          <el-form-item label="状态">
+            <WmsSelect v-model="query.reworkStatus" clearable placeholder="全部">
+              <el-option label="返工中" value="REWORKING" />
+              <el-option label="返工完成" value="DONE" />
+              <el-option label="二次返工中" value="SECONDARY" />
+              <el-option label="已关闭" value="CLOSED" />
+            </WmsSelect>
+          </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="loadData">查询</el-button>
           </el-form-item>
@@ -139,12 +178,58 @@ onMounted(loadData)
           <el-table-column prop="sourceProcessName" label="源工序" width="110" />
           <el-table-column prop="defectQty" label="不良数" width="80" />
           <el-table-column prop="defectType" label="类型" width="90" />
-          <el-table-column label="状态" width="100">
+          <el-table-column label="状态" width="110">
             <template #default="{ row }"><OrderStatusTag :status="row.reworkStatus" /></template>
           </el-table-column>
-          <el-table-column label="操作" width="110">
+          <el-table-column label="不良单同步" width="110">
             <template #default="{ row }">
-              <el-button link type="primary" @click="showSeq(row)">查看返工序列</el-button>
+              <OrderStatusTag :status="row.defectSyncStatus" pending-label="待同步" failed-label="同步失败" />
+            </template>
+          </el-table-column>
+          <el-table-column label="返工单同步" width="110">
+            <template #default="{ row }">
+              <OrderStatusTag :status="row.reworkSyncStatus" pending-label="待同步" failed-label="同步失败" />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="350" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="showSeq(row)">返工序列</el-button>
+              <el-button
+                v-if="
+                  (row.defectSyncStatus === 'FAILED' || row.defectSyncStatus === 'MANUAL_REQUIRED'
+                    || row.reworkSyncStatus === 'FAILED' || row.reworkSyncStatus === 'MANUAL_REQUIRED')
+                  && userStore.hasPermission('mes:sync:panel')
+                "
+                link
+                type="warning"
+                @click="retryDefectSync(row)"
+              >
+                同步重试
+              </el-button>
+              <el-button
+                v-if="row.reworkStatus === 'REWORKING' && canComplete"
+                link
+                type="success"
+                @click="confirmAction(row, '完成返工', completeMesRework)"
+              >
+                完成返工
+              </el-button>
+              <el-button
+                v-if="(row.reworkStatus === 'REWORKING' || row.reworkStatus === 'DONE') && canSecondary"
+                link
+                type="warning"
+                @click="confirmAction(row, '标记二次返工', secondaryMesRework)"
+              >
+                再次不良
+              </el-button>
+              <el-button
+                v-if="(row.reworkStatus === 'DONE' || row.reworkStatus === 'SECONDARY') && canClose"
+                link
+                type="info"
+                @click="confirmAction(row, '关闭返工', closeMesRework)"
+              >
+                关闭
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -159,8 +244,17 @@ onMounted(loadData)
     </el-col>
   </el-row>
 
-  <el-dialog v-model="seqVisible" :title="seqTitle" width="640px">
-    <el-table :data="seqOps" stripe>
+  <el-dialog v-model="seqVisible" :title="seqTitle" width="720px">
+    <el-steps :active="seqOps.length" align-center finish-status="success">
+      <el-step
+        v-for="op in seqOps"
+        :key="op.seqNo"
+        :title="op.processName || op.processCode"
+        :description="`计划 ${op.planQty} / 已报 ${op.reportedQty}`"
+        :status="op.opStatus === 'DONE' ? 'success' : 'process'"
+      />
+    </el-steps>
+    <el-table :data="seqOps" stripe style="margin-top: 20px">
       <el-table-column prop="seqNo" label="#" width="50" />
       <el-table-column prop="processCode" label="工序编码" width="120" />
       <el-table-column prop="processName" label="工序名称" />

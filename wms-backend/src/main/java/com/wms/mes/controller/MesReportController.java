@@ -105,6 +105,12 @@ public class MesReportController {
         return ApiResult.ok(reportService.pageTransfer(transferNo, moNo, syncStatus, current, size));
     }
 
+    @Operation(summary = "转移单详情")
+    @GetMapping("/transfers/{transferNo}")
+    public ApiResult<MesTransfer> transferDetail(@PathVariable String transferNo) {
+        return ApiResult.ok(reportService.getTransfer(transferNo));
+    }
+
     @Operation(summary = "转移单重试")
     @PostMapping("/transfers/{transferNo}/retry")
     public ApiResult<Void> retryTransfer(@PathVariable String transferNo) {

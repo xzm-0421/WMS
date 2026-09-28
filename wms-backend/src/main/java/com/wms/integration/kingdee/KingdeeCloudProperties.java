@@ -796,4 +796,29 @@ public class KingdeeCloudProperties {
     private String mesTransferFromProcessField = "FFromOperId";
     private String mesTransferToProcessField = "FToOperId";
     private String mesTransferQtyField = "FQty";
+
+    /**
+     * 轻 MES：不良单回写 FormId 与字段（FormId 待现场确认，留空则不回传并标记人工介入）
+     */
+    private String mesDefectFormId = "";
+    private boolean mesDefectAutoAudit = false;
+    private String mesDefectBillTypeNumber = "";
+    private String mesDefectMoField = "FMoNumber";
+    private String mesDefectEntryKey = "FEntity";
+    private String mesDefectProcessField = "FOperID";
+    private String mesDefectQtyField = "FQty";
+    private String mesDefectTypeField = "";
+    private String mesDefectDescField = "FDescription";
+
+    /**
+     * 轻 MES：返工工单回写 FormId 与字段（FormId 待现场确认，留空则不回传并标记人工介入）
+     */
+    private String mesReworkFormId = "";
+    private boolean mesReworkAutoAudit = false;
+    private String mesReworkBillTypeNumber = "";
+    private String mesReworkMoField = "FMoNumber";
+    private String mesReworkEntryKey = "FEntity";
+    private String mesReworkProcessField = "FOperID";
+    private String mesReworkQtyField = "FQty";
+    private String mesReworkDefectNoField = "F_MES_SourceDefectNo";
 }

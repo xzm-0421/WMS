@@ -111,6 +111,7 @@ const menus = [
       { path: '/mes/plans', title: '工序计划', permission: MENU_PERMISSIONS['/mes/plans'] },
       { path: '/mes/report', title: '工序报工', permission: MENU_PERMISSIONS['/mes/report'] },
       { path: '/mes/transfer', title: '工序转移', permission: MENU_PERMISSIONS['/mes/transfer'] },
+      { path: '/mes/transfers', title: '工序转移记录', permission: MENU_PERMISSIONS['/mes/transfers'] },
       { path: '/mes/rework', title: '不良与返工', permission: MENU_PERMISSIONS['/mes/rework'] },
       { path: '/mes/reports', title: '报工记录', permission: MENU_PERMISSIONS['/mes/reports'] },
       { path: '/mes/sync', title: '同步中心', permission: MENU_PERMISSIONS['/mes/sync'] },
