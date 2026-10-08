@@ -1,23 +1,22 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   cancelMesReport,
   exportMesReports,
-  getMesReport,
   getMesReports,
   retryMesReport,
   type MesReport,
 } from '@/api/mes'
 import { useUserStore } from '@/stores/user'
+import OrderStatusTag from '@/views/components/OrderStatusTag.vue'
 
 const userStore = useUserStore()
 const loading = ref(false)
 const tableData = ref<MesReport[]>([])
 const total = ref(0)
 const query = reactive({ reportNo: '', moNo: '', syncStatus: '', current: 1, size: 20 })
-const drawerVisible = ref(false)
-const current = ref<MesReport | null>(null)
 
 async function loadData() {
   loading.value = true
@@ -28,11 +27,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-async function showDetail(row: MesReport) {
-  current.value = await getMesReport(row.reportNo!)
-  drawerVisible.value = true
 }
 
 async function handleRetry(row: MesReport) {
@@ -89,7 +83,13 @@ onMounted(loadData)
     </el-form>
 
     <el-table v-loading="loading" :data="tableData" stripe>
-      <el-table-column prop="reportNo" label="报工单号" width="150" />
+      <el-table-column label="报工单号" width="150">
+        <template #default="{ row }">
+          <RouterLink class="detail-link" :to="`/mes/reports/${encodeURIComponent(row.reportNo)}`">
+            {{ row.reportNo }}
+          </RouterLink>
+        </template>
+      </el-table-column>
       <el-table-column prop="moNo" label="工单号" width="140" />
       <el-table-column prop="processName" label="工序" width="120" />
       <el-table-column prop="qty" label="数量" width="80" />
@@ -103,7 +103,6 @@ onMounted(loadData)
       <el-table-column prop="failReason" label="失败原因" min-width="160" show-overflow-tooltip />
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="showDetail(row)">查看详情</el-button>
           <el-button
             v-if="row.syncStatus === 'FAILED' || row.syncStatus === 'MANUAL_REQUIRED'"
             link
@@ -132,19 +131,10 @@ onMounted(loadData)
       @current-change="loadData"
     />
   </el-card>
-
-  <el-drawer v-model="drawerVisible" title="报工详情" size="480px">
-    <el-descriptions v-if="current" :column="1" border>
-      <el-descriptions-item label="报工单号">{{ current.reportNo }}</el-descriptions-item>
-      <el-descriptions-item label="工单号">{{ current.moNo }}</el-descriptions-item>
-      <el-descriptions-item label="工序">{{ current.processCode }} {{ current.processName }}</el-descriptions-item>
-      <el-descriptions-item label="类型">{{ current.reportType }}</el-descriptions-item>
-      <el-descriptions-item label="数量">{{ current.qty }}</el-descriptions-item>
-      <el-descriptions-item label="重量">{{ current.weightKg || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="设备">{{ current.equipmentName }}</el-descriptions-item>
-      <el-descriptions-item label="操作员">{{ current.operatorName }}</el-descriptions-item>
-      <el-descriptions-item label="ERP单号">{{ current.erpBillNo || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="失败原因">{{ current.failReason || '-' }}</el-descriptions-item>
-    </el-descriptions>
-  </el-drawer>
 </template>
+
+<style scoped>
+.detail-link {
+  color: var(--el-color-primary);
+}
+</style>

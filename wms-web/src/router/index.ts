@@ -36,6 +36,18 @@ const router = createRouter({
           meta: { title: '角色管理', permission: MENU_PERMISSIONS['/system/roles'] },
         },
         {
+          path: 'system/operation-logs',
+          name: 'SystemOperationLogs',
+          component: () => import('@/views/system/OperationLogList.vue'),
+          meta: { title: '操作日志', permission: MENU_PERMISSIONS['/system/operation-logs'] },
+        },
+        {
+          path: 'system/alerts',
+          name: 'SystemAlerts',
+          component: () => import('@/views/system/AlertList.vue'),
+          meta: { title: '告警中心', permission: MENU_PERMISSIONS['/system/alerts'] },
+        },
+        {
           path: 'base/materials',
           name: 'Materials',
           component: () => import('@/views/base/MaterialList.vue'),
@@ -168,12 +180,6 @@ const router = createRouter({
           meta: { title: '报表概览', permission: MENU_PERMISSIONS['/report/overview'] },
         },
         {
-          path: 'mes/materials',
-          name: 'MesMaterials',
-          component: () => import('@/views/mes/MaterialList.vue'),
-          meta: { title: '物料管理', permission: MENU_PERMISSIONS['/mes/materials'] },
-        },
-        {
           path: 'mes/boms',
           name: 'MesBoms',
           component: () => import('@/views/mes/BomList.vue'),
@@ -198,8 +204,26 @@ const router = createRouter({
           meta: { title: '工艺路线', permission: MENU_PERMISSIONS['/mes/routes'] },
         },
         {
+          path: 'mes/work-centers',
+          name: 'MesWorkCenters',
+          component: () => import('@/views/mes/WorkCenterList.vue'),
+          meta: { title: '工作中心', permission: MENU_PERMISSIONS['/mes/work-centers'] },
+        },
+        {
+          path: 'mes/resources',
+          name: 'MesResources',
+          component: () => import('@/views/mes/ResourceList.vue'),
+          meta: { title: '资源管理', permission: MENU_PERMISSIONS['/mes/resources'] },
+        },
+        {
+          path: 'mes/personnel',
+          name: 'MesPersonnel',
+          component: () => import('@/views/mes/PersonnelList.vue'),
+          meta: { title: '人员管理', permission: MENU_PERMISSIONS['/mes/personnel'] },
+        },
+        {
           path: 'mes/master',
-          redirect: '/mes/materials',
+          redirect: '/base/materials',
         },
         {
           path: 'mes/plans',
@@ -244,6 +268,66 @@ const router = createRouter({
           meta: { title: '同步中心', permission: MENU_PERMISSIONS['/mes/sync'] },
         },
       ],
+    },
+    {
+      path: '/mes/plans/:id',
+      name: 'MesPlanDetail',
+      component: () => import('@/views/mes/detail/OpPlanDetail.vue'),
+      meta: { title: '工序计划详情', permission: MENU_PERMISSIONS['/mes/plans'] },
+    },
+    {
+      path: '/mes/routes/:id',
+      name: 'MesRouteDetail',
+      component: () => import('@/views/mes/detail/RouteDetail.vue'),
+      meta: { title: '工艺路线详情', permission: MENU_PERMISSIONS['/mes/routes'] },
+    },
+    {
+      path: '/mes/process/:processCode',
+      name: 'MesProcessDetail',
+      component: () => import('@/views/mes/detail/ProcessDetail.vue'),
+      meta: { title: '工序详情', permission: MENU_PERMISSIONS['/mes/process'] },
+    },
+    {
+      path: '/mes/equipment/:equipmentCode',
+      name: 'MesEquipmentDetail',
+      component: () => import('@/views/mes/detail/EquipmentDetail.vue'),
+      meta: { title: '设备详情', permission: MENU_PERMISSIONS['/mes/equipment'] },
+    },
+    {
+      path: '/mes/reports/:reportNo',
+      name: 'MesReportDetail',
+      component: () => import('@/views/mes/detail/ReportDetail.vue'),
+      meta: { title: '报工记录详情', permission: MENU_PERMISSIONS['/mes/reports'] },
+    },
+    {
+      path: '/mes/transfers/:transferNo',
+      name: 'MesTransferDetail',
+      component: () => import('@/views/mes/detail/TransferDetail.vue'),
+      meta: { title: '工序转移详情', permission: MENU_PERMISSIONS['/mes/transfers'] },
+    },
+    {
+      path: '/mes/rework/:defectNo',
+      name: 'MesReworkDetail',
+      component: () => import('@/views/mes/detail/ReworkDetail.vue'),
+      meta: { title: '不良/返工详情', permission: MENU_PERMISSIONS['/mes/rework'] },
+    },
+    {
+      path: '/mes/work-centers/:workCenterCode',
+      name: 'MesWorkCenterDetail',
+      component: () => import('@/views/mes/detail/WorkCenterDetail.vue'),
+      meta: { title: '工作中心详情', permission: MENU_PERMISSIONS['/mes/work-centers'] },
+    },
+    {
+      path: '/mes/resources/:resourceCode',
+      name: 'MesResourceDetail',
+      component: () => import('@/views/mes/detail/ResourceDetail.vue'),
+      meta: { title: '资源详情', permission: MENU_PERMISSIONS['/mes/resources'] },
+    },
+    {
+      path: '/mes/personnel/:personnelCode',
+      name: 'MesPersonnelDetail',
+      component: () => import('@/views/mes/detail/PersonnelDetail.vue'),
+      meta: { title: '人员详情', permission: MENU_PERMISSIONS['/mes/personnel'] },
     },
   ],
 })

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getMesRoute, getMesRoutes, refreshMesRoutes, type MesRoute, type MesRouteOp } from '@/api/mes'
+import { getMesRoutes, refreshMesRoutes, type MesRoute } from '@/api/mes'
 import { useUserStore } from '@/stores/user'
+import OrderStatusTag from '@/views/components/OrderStatusTag.vue'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -10,9 +12,6 @@ const syncing = ref(false)
 const tableData = ref<MesRoute[]>([])
 const total = ref(0)
 const query = reactive({ productCode: '', productName: '', current: 1, size: 20 })
-const detailVisible = ref(false)
-const current = ref<MesRoute | null>(null)
-const routeOps = ref<MesRouteOp[]>([])
 
 async function loadData() {
   loading.value = true
@@ -35,13 +34,6 @@ async function handleSync() {
   } finally {
     syncing.value = false
   }
-}
-
-async function showDetail(row: MesRoute) {
-  const vo = await getMesRoute(row.id!)
-  current.value = vo.header
-  routeOps.value = vo.operations || []
-  detailVisible.value = true
 }
 
 onMounted(loadData)
@@ -76,9 +68,14 @@ onMounted(loadData)
     </el-form>
 
     <el-table v-loading="loading" :data="tableData" stripe>
-      <el-table-column prop="routeCode" label="路线编码" width="140" />
+      <el-table-column label="路线编码" width="140">
+        <template #default="{ row }">
+          <RouterLink class="detail-link" :to="`/mes/routes/${row.id}`">{{ row.routeCode }}</RouterLink>
+        </template>
+      </el-table-column>
       <el-table-column prop="routeName" label="路线名称" min-width="140" show-overflow-tooltip />
       <el-table-column prop="productCode" label="物料编码" width="140" />
+      <el-table-column prop="erpMaterialId" label="物料内码" width="110" />
       <el-table-column prop="productName" label="产品名称" min-width="180" />
       <el-table-column prop="versionNo" label="版本号" width="100" />
       <el-table-column label="同步" width="110">
@@ -87,11 +84,6 @@ onMounted(loadData)
         </template>
       </el-table-column>
       <el-table-column prop="lastSyncTime" label="最后同步" width="170" />
-      <el-table-column label="操作" width="100" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="showDetail(row)">查看详情</el-button>
-        </template>
-      </el-table-column>
     </el-table>
     <el-pagination
       v-model:current-page="query.current"
@@ -102,30 +94,10 @@ onMounted(loadData)
       @current-change="loadData"
     />
   </el-card>
-
-  <el-dialog v-model="detailVisible" title="工艺路线详情" width="680px">
-    <el-descriptions v-if="current" :column="1" border>
-      <el-descriptions-item label="路线编码">{{ current.routeCode || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="路线名称">{{ current.routeName || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="物料编码">{{ current.productCode }}</el-descriptions-item>
-      <el-descriptions-item label="产品名称">{{ current.productName }}</el-descriptions-item>
-      <el-descriptions-item label="版本号">{{ current.versionNo }}</el-descriptions-item>
-    </el-descriptions>
-    <el-table :data="routeOps" stripe style="margin-top: 12px">
-      <el-table-column prop="seqNo" label="顺序" width="70" />
-      <el-table-column prop="processCode" label="工序编码" width="120" />
-      <el-table-column prop="processName" label="工序名称" />
-      <el-table-column prop="workCenterCode" label="工作中心" width="120" />
-      <el-table-column prop="stdHours" label="标准工时" width="100" />
-      <el-table-column label="质检" width="70">
-        <template #default="{ row }">{{ row.inspectFlag === 1 ? '是' : '否' }}</template>
-      </el-table-column>
-      <el-table-column label="返工汇合" width="90">
-        <template #default="{ row }">{{ row.reworkJoinFlag === 1 ? '是' : '否' }}</template>
-      </el-table-column>
-      <el-table-column label="汇合工序" width="90">
-        <template #default="{ row }">{{ row.isConvergeOp ? '是' : '否' }}</template>
-      </el-table-column>
-    </el-table>
-  </el-dialog>
 </template>
+
+<style scoped>
+.detail-link {
+  color: var(--el-color-primary);
+}
+</style>

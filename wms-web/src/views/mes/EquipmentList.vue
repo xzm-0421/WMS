@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getMesEquipment, getMesEquipmentDetail, refreshMesEquipment, type MesEquipment } from '@/api/mes'
+import { getMesEquipment, refreshMesEquipment, type MesEquipment } from '@/api/mes'
 import { useUserStore } from '@/stores/user'
+import OrderStatusTag from '@/views/components/OrderStatusTag.vue'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -17,8 +19,6 @@ const query = reactive({
   current: 1,
   size: 20,
 })
-const detailVisible = ref(false)
-const current = ref<MesEquipment | null>(null)
 
 async function loadData() {
   loading.value = true
@@ -44,11 +44,6 @@ async function handleSync() {
   } finally {
     syncing.value = false
   }
-}
-
-async function showDetail(row: MesEquipment) {
-  current.value = row.equipmentCode ? await getMesEquipmentDetail(row.equipmentCode) : row
-  detailVisible.value = true
 }
 
 onMounted(loadData)
@@ -92,7 +87,13 @@ onMounted(loadData)
     </el-form>
 
     <el-table v-loading="loading" :data="tableData" stripe>
-      <el-table-column prop="equipmentCode" label="设备编码" width="140" />
+      <el-table-column label="设备编码" width="140">
+        <template #default="{ row }">
+          <RouterLink class="detail-link" :to="`/mes/equipment/${encodeURIComponent(row.equipmentCode)}`">
+            {{ row.equipmentCode }}
+          </RouterLink>
+        </template>
+      </el-table-column>
       <el-table-column prop="equipmentName" label="设备名称" min-width="180" />
       <el-table-column prop="processCode" label="所属工序" width="120" />
       <el-table-column prop="specModel" label="规格型号" min-width="140" show-overflow-tooltip />
@@ -106,11 +107,6 @@ onMounted(loadData)
       </el-table-column>
       <el-table-column prop="lastSyncTime" label="最后同步" width="170" />
       <el-table-column prop="failReason" label="失败原因" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="100" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="showDetail(row)">查看详情</el-button>
-        </template>
-      </el-table-column>
     </el-table>
     <el-pagination
       v-model:current-page="query.current"
@@ -121,17 +117,10 @@ onMounted(loadData)
       @current-change="loadData"
     />
   </el-card>
-
-  <el-dialog v-model="detailVisible" title="设备详情" width="520px">
-    <el-descriptions v-if="current" :column="1" border>
-      <el-descriptions-item label="设备编码">{{ current.equipmentCode }}</el-descriptions-item>
-      <el-descriptions-item label="设备名称">{{ current.equipmentName }}</el-descriptions-item>
-      <el-descriptions-item label="所属工序">{{ current.processCode || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="规格型号">{{ current.specModel || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{ current.status === 1 ? '启用' : '停用' }}</el-descriptions-item>
-      <el-descriptions-item label="同步状态">{{ current.syncStatus || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="最后同步">{{ current.lastSyncTime || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="失败原因">{{ current.failReason || '-' }}</el-descriptions-item>
-    </el-descriptions>
-  </el-dialog>
 </template>
+
+<style scoped>
+.detail-link {
+  color: var(--el-color-primary);
+}
+</style>

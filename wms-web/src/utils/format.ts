@@ -35,3 +35,39 @@ export function formatDate(value?: string | number | Date | null): string {
 
   return text
 }
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+/** 格式化为 yyyy-MM-dd HH:mm:ss，无效值返回 '-' */
+export function formatDateTime(value?: string | number | Date | null): string {
+  if (value === null || value === undefined || value === '') return '-'
+
+  let date: Date | null = null
+  if (value instanceof Date) {
+    date = value
+  } else if (typeof value === 'number') {
+    date = new Date(value)
+  } else {
+    const text = String(value).trim()
+    const matched = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+    if (matched) {
+      date = new Date(
+        Number(matched[1]),
+        Number(matched[2]) - 1,
+        Number(matched[3]),
+        Number(matched[4]),
+        Number(matched[5]),
+        Number(matched[6] ?? 0),
+      )
+    } else {
+      const parsed = new Date(text)
+      date = Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  }
+
+  if (!date || Number.isNaN(date.getTime())) return String(value)
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} `
+    + `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
+}

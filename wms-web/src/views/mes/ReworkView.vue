@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import {
@@ -9,13 +10,12 @@ import {
   getMesDefects,
   getMesOutbox,
   getMesReportContext,
-  getMesReworkSequence,
   retryMesOutbox,
   secondaryMesRework,
   type MesDefect,
   type MesOpPlan,
-  type MesReworkOp,
 } from '@/api/mes'
+import OrderStatusTag from '@/views/components/OrderStatusTag.vue'
 
 const userStore = useUserStore()
 const canCreate = computed(() => userStore.hasPermission('mes:rework:create'))
@@ -38,9 +38,6 @@ const form = reactive({
   reworkProcessCodes: [] as string[],
 })
 const plans = ref<MesOpPlan[]>([])
-const seqVisible = ref(false)
-const seqOps = ref<MesReworkOp[]>([])
-const seqTitle = ref('')
 
 async function loadData() {
   loading.value = true
@@ -66,13 +63,6 @@ async function handleCreate() {
   const vo = await createMesDefect({ ...form, moNo: form.moNo.trim() })
   ElMessage.success(`已创建返工 ${vo.defect?.defectNo}`)
   loadData()
-}
-
-async function showSeq(row: MesDefect) {
-  const vo = await getMesReworkSequence(row.defectNo!)
-  seqTitle.value = `返工序列 ${row.defectNo}`
-  seqOps.value = vo.operations || []
-  seqVisible.value = true
 }
 
 async function confirmAction(row: MesDefect, text: string, fn: (no: string) => Promise<unknown>) {
@@ -173,7 +163,13 @@ onMounted(loadData)
           </el-form-item>
         </el-form>
         <el-table v-loading="loading" :data="tableData" stripe>
-          <el-table-column prop="defectNo" label="不良单号" width="150" />
+          <el-table-column label="不良单号" width="150">
+            <template #default="{ row }">
+              <RouterLink class="detail-link" :to="`/mes/rework/${encodeURIComponent(row.defectNo)}`">
+                {{ row.defectNo }}
+              </RouterLink>
+            </template>
+          </el-table-column>
           <el-table-column prop="moNo" label="工单" width="130" />
           <el-table-column prop="sourceProcessName" label="源工序" width="110" />
           <el-table-column prop="defectQty" label="不良数" width="80" />
@@ -191,9 +187,8 @@ onMounted(loadData)
               <OrderStatusTag :status="row.reworkSyncStatus" pending-label="待同步" failed-label="同步失败" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="350" fixed="right">
+          <el-table-column label="操作" width="280" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="showSeq(row)">返工序列</el-button>
               <el-button
                 v-if="
                   (row.defectSyncStatus === 'FAILED' || row.defectSyncStatus === 'MANUAL_REQUIRED'
@@ -243,26 +238,10 @@ onMounted(loadData)
       </el-card>
     </el-col>
   </el-row>
-
-  <el-dialog v-model="seqVisible" :title="seqTitle" width="720px">
-    <el-steps :active="seqOps.length" align-center finish-status="success">
-      <el-step
-        v-for="op in seqOps"
-        :key="op.seqNo"
-        :title="op.processName || op.processCode"
-        :description="`计划 ${op.planQty} / 已报 ${op.reportedQty}`"
-        :status="op.opStatus === 'DONE' ? 'success' : 'process'"
-      />
-    </el-steps>
-    <el-table :data="seqOps" stripe style="margin-top: 20px">
-      <el-table-column prop="seqNo" label="#" width="50" />
-      <el-table-column prop="processCode" label="工序编码" width="120" />
-      <el-table-column prop="processName" label="工序名称" />
-      <el-table-column prop="planQty" label="计划" width="80" />
-      <el-table-column prop="reportedQty" label="已报" width="80" />
-      <el-table-column label="状态" width="90">
-        <template #default="{ row }"><OrderStatusTag :status="row.opStatus" /></template>
-      </el-table-column>
-    </el-table>
-  </el-dialog>
 </template>
+
+<style scoped>
+.detail-link {
+  color: var(--el-color-primary);
+}
+</style>

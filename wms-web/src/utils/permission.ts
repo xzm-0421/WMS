@@ -20,6 +20,10 @@ export const MENU_PERMISSIONS: Record<string, string> = {
 
   '/system/roles': 'system:role:list',
 
+  '/system/operation-logs': 'system:operation-log:list',
+
+  '/system/alerts': 'system:alert:list',
+
   '/base/materials': 'base:material:list',
 
   '/base/warehouses': 'base:warehouse:list',
@@ -62,11 +66,13 @@ export const MENU_PERMISSIONS: Record<string, string> = {
 
   '/report/overview': 'report:view',
 
-  '/mes/materials': 'mes:material:list',
   '/mes/boms': 'mes:bom:list',
   '/mes/process': 'mes:process:list',
   '/mes/equipment': 'mes:equipment:list',
   '/mes/routes': 'mes:route:list',
+  '/mes/work-centers': 'mes:workcenter:list',
+  '/mes/resources': 'mes:resource:list',
+  '/mes/personnel': 'mes:personnel:list',
   '/mes/plans': 'mes:plan:list',
   '/mes/report': 'mes:report:submit',
   '/mes/transfer': 'mes:transfer:submit',
@@ -99,6 +105,20 @@ export function hasPermission(
 
 
 
+/** 详情路由前缀 → 复用列表权限 */
+const DETAIL_PERMISSION_PREFIXES: Array<[string, string]> = [
+  ['/mes/plans/', 'mes:plan:list'],
+  ['/mes/routes/', 'mes:route:list'],
+  ['/mes/process/', 'mes:process:list'],
+  ['/mes/equipment/', 'mes:equipment:list'],
+  ['/mes/reports/', 'mes:report:list'],
+  ['/mes/transfers/', 'mes:transfer:list'],
+  ['/mes/rework/', 'mes:rework:view'],
+  ['/mes/work-centers/', 'mes:workcenter:list'],
+  ['/mes/resources/', 'mes:resource:list'],
+  ['/mes/personnel/', 'mes:personnel:list'],
+]
+
 export function canAccessPath(
 
   path: string,
@@ -111,14 +131,26 @@ export function canAccessPath(
 
   const code = MENU_PERMISSIONS[path]
 
-  if (hasPermission(permissions, roles, code)) {
-    return true
+  if (code) {
+
+    if (hasPermission(permissions, roles, code)) {
+      return true
+    }
+    if (path === '/mes/process' || path === '/mes/equipment' || path === '/mes/routes'
+      || path === '/mes/boms') {
+      return hasPermission(permissions, roles, 'mes:master:list')
+    }
+    return false
+
   }
-  if (path === '/mes/process' || path === '/mes/equipment' || path === '/mes/routes'
-    || path === '/mes/materials' || path === '/mes/boms') {
-    return hasPermission(permissions, roles, 'mes:master:list')
+
+  const prefix = DETAIL_PERMISSION_PREFIXES.find(([p]) => path.startsWith(p))
+
+  if (prefix) {
+    return hasPermission(permissions, roles, prefix[1])
   }
-  return false
+
+  return true
 
 }
 

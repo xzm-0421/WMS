@@ -81,6 +81,7 @@ onMounted(loadData)
     <el-table v-loading="loading" :data="tableData" stripe>
       <el-table-column prop="bomCode" label="BOM编码" width="160" />
       <el-table-column prop="productCode" label="父项物料" width="140" />
+      <el-table-column prop="erpMaterialId" label="父项内码" width="120" />
       <el-table-column prop="versionNo" label="版本" width="100" />
       <el-table-column label="状态" width="80">
         <template #default="{ row }"><WmsStatusTag :status="row.status" /></template>
@@ -110,6 +111,7 @@ onMounted(loadData)
     <el-table :data="details" stripe style="margin-top: 12px">
       <el-table-column prop="lineNo" label="#" width="60" />
       <el-table-column prop="materialCode" label="子项物料" width="140" />
+      <el-table-column prop="erpMaterialId" label="子项内码" width="120" />
       <el-table-column prop="materialName" label="名称" min-width="160" />
       <el-table-column prop="unitCode" label="单位" width="80" />
       <el-table-column prop="qtyPer" label="用量" width="100" />

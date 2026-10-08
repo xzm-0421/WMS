@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMesProcesses, refreshMesProcesses, type MesProcess } from '@/api/mes'
 import { useUserStore } from '@/stores/user'
+import OrderStatusTag from '@/views/components/OrderStatusTag.vue'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -10,8 +12,6 @@ const syncing = ref(false)
 const tableData = ref<MesProcess[]>([])
 const total = ref(0)
 const query = reactive({ processCode: '', processName: '', status: undefined as number | undefined, current: 1, size: 20 })
-const detailVisible = ref(false)
-const current = ref<MesProcess | null>(null)
 
 async function loadData() {
   loading.value = true
@@ -34,11 +34,6 @@ async function handleSync() {
   } finally {
     syncing.value = false
   }
-}
-
-function showDetail(row: MesProcess) {
-  current.value = row
-  detailVisible.value = true
 }
 
 onMounted(loadData)
@@ -73,7 +68,13 @@ onMounted(loadData)
     </el-form>
 
     <el-table v-loading="loading" :data="tableData" stripe>
-      <el-table-column prop="processCode" label="工序编码" width="130" />
+      <el-table-column label="工序编码" width="130">
+        <template #default="{ row }">
+          <RouterLink class="detail-link" :to="`/mes/process/${encodeURIComponent(row.processCode)}`">
+            {{ row.processCode }}
+          </RouterLink>
+        </template>
+      </el-table-column>
       <el-table-column prop="processName" label="工序名称" min-width="160" />
       <el-table-column prop="deptName" label="所属部门" width="140" />
       <el-table-column label="报工" width="70">
@@ -94,11 +95,6 @@ onMounted(loadData)
         </template>
       </el-table-column>
       <el-table-column prop="lastSyncTime" label="最后同步" width="170" />
-      <el-table-column label="操作" width="100" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="showDetail(row)">查看详情</el-button>
-        </template>
-      </el-table-column>
     </el-table>
     <el-pagination
       v-model:current-page="query.current"
@@ -109,17 +105,10 @@ onMounted(loadData)
       @current-change="loadData"
     />
   </el-card>
-
-  <el-dialog v-model="detailVisible" title="工序详情" width="520px">
-    <el-descriptions v-if="current" :column="1" border>
-      <el-descriptions-item label="工序编码">{{ current.processCode }}</el-descriptions-item>
-      <el-descriptions-item label="工序名称">{{ current.processName }}</el-descriptions-item>
-      <el-descriptions-item label="所属部门">{{ current.deptName }} ({{ current.deptCode || '-' }})</el-descriptions-item>
-      <el-descriptions-item label="报工工序">{{ current.reportFlag === 1 ? '是' : '否' }}</el-descriptions-item>
-      <el-descriptions-item label="转移工序">{{ current.transferFlag === 1 ? '是' : '否' }}</el-descriptions-item>
-      <el-descriptions-item label="质检工序">{{ current.inspectFlag === 1 ? '是' : '否' }}</el-descriptions-item>
-      <el-descriptions-item label="超收比例">{{ current.overReceiveRatio ?? '-' }}</el-descriptions-item>
-      <el-descriptions-item label="最后同步">{{ current.lastSyncTime || '-' }}</el-descriptions-item>
-    </el-descriptions>
-  </el-dialog>
 </template>
+
+<style scoped>
+.detail-link {
+  color: var(--el-color-primary);
+}
+</style>

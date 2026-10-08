@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getMesPlan, getMesPlans, refreshMesPlans, retryMesPlan, type MesOpPlan, type MesRouteOp } from '@/api/mes'
+import { getMesPlans, refreshMesPlans, retryMesPlan, type MesOpPlan } from '@/api/mes'
+import OrderStatusTag from '@/views/components/OrderStatusTag.vue'
 
 const loading = ref(false)
 const tableData = ref<MesOpPlan[]>([])
@@ -13,9 +15,6 @@ const query = reactive({
   current: 1,
   size: 20,
 })
-const drawerVisible = ref(false)
-const current = ref<MesOpPlan | null>(null)
-const routeOps = ref<MesRouteOp[]>([])
 
 async function loadData() {
   loading.value = true
@@ -26,13 +25,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-async function showDetail(row: MesOpPlan) {
-  const vo = await getMesPlan(row.id!)
-  current.value = vo.plan
-  routeOps.value = vo.routeOps || []
-  drawerVisible.value = true
 }
 
 async function handleRefresh() {
@@ -74,8 +66,13 @@ onMounted(loadData)
     </el-form>
 
     <el-table v-loading="loading" :data="tableData" stripe>
-      <el-table-column prop="moNo" label="工单号" width="150" />
+      <el-table-column label="工单号" width="150">
+        <template #default="{ row }">
+          <RouterLink class="detail-link" :to="`/mes/plans/${row.id}`">{{ row.moNo }}</RouterLink>
+        </template>
+      </el-table-column>
       <el-table-column prop="productCode" label="产品编码" width="130" />
+      <el-table-column prop="erpMaterialId" label="物料内码" width="110" />
       <el-table-column prop="productName" label="产品名称" min-width="140" show-overflow-tooltip />
       <el-table-column prop="processCode" label="工序编码" width="110" />
       <el-table-column prop="processName" label="工序名称" width="120" />
@@ -107,9 +104,8 @@ onMounted(loadData)
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="showDetail(row)">查看详情</el-button>
           <el-button
             v-if="row.syncStatus === 'FAILED'"
             link
@@ -130,24 +126,10 @@ onMounted(loadData)
       @current-change="loadData"
     />
   </el-card>
-
-  <el-drawer v-model="drawerVisible" title="工序计划详情" size="520px">
-    <el-descriptions v-if="current" :column="1" border>
-      <el-descriptions-item label="工单号">{{ current.moNo }}</el-descriptions-item>
-      <el-descriptions-item label="产品">{{ current.productCode }} {{ current.productName }}</el-descriptions-item>
-      <el-descriptions-item label="工序">{{ current.processCode }} {{ current.processName }}</el-descriptions-item>
-      <el-descriptions-item label="车间">{{ current.workShopName || current.workShopCode || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="计划/已报">{{ current.planQty }} / {{ current.reportedQty }}</el-descriptions-item>
-      <el-descriptions-item label="ERP单号">{{ current.erpBillNo || '-' }}</el-descriptions-item>
-      <el-descriptions-item v-if="current.changeRejectReason" label="变更拒绝">
-        {{ current.changeRejectReason }}
-      </el-descriptions-item>
-    </el-descriptions>
-    <h4 style="margin: 16px 0 8px">工艺路线</h4>
-    <el-table :data="routeOps" stripe>
-      <el-table-column prop="seqNo" label="#" width="50" />
-      <el-table-column prop="processCode" label="工序" width="110" />
-      <el-table-column prop="processName" label="名称" />
-    </el-table>
-  </el-drawer>
 </template>
+
+<style scoped>
+.detail-link {
+  color: var(--el-color-primary);
+}
+</style>
