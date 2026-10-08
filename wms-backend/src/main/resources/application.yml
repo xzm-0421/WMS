@@ -30,6 +30,9 @@ wms:
     secret: wms-jwt-secret-key-change-in-production-min-256-bits-required!!
     access-token-expire: 43200
     refresh-token-expire: 604800
+  security:
+    # 密码有效期（天）；超过仅提醒，不阻断登录
+    password-expire-days: 90
   cors:
     allowed-origins: "*"
   barcode:

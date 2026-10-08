@@ -12,7 +12,7 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "kingdee.cloud")
 public class KingdeeCloudProperties {
 
-    /** 是否启用金蝶云星空企业版对接；false 时不调金蝶 */
+    /** 是否启用金蝶云星空AI旗舰版对接；false 时不调金蝶 */
     private boolean enabled = false;
 
     /**
@@ -29,6 +29,24 @@ public class KingdeeCloudProperties {
     private String username = "admin";
 
     private String password = "";
+
+    /**
+     * 认证模式：session（用户名密码会话 Cookie，默认，兼容旧行为）
+     * 或 oauth2（金蝶 AI 苍穹 kapi OAuth2：getToken 获取 access_token，请求头 Authorization: Bearer）。
+     */
+    private String authMode = "session";
+
+    /** OAuth2 第三方应用系统编码（client_id / appId） */
+    private String appId = "";
+
+    /** OAuth2 第三方应用认证密钥（client_secret / appSecret） */
+    private String appSecret = "";
+
+    /** getToken 语言串，如 zh_CN */
+    private String language = "zh_CN";
+
+    /** access_token 剩余有效期低于该毫秒数时提前刷新（默认 10 分钟） */
+    private long refreshThresholdMs = 600_000L;
 
     /** 金蝶用户 FormId（解析 FUserID） */
     private String secUserFormId = "SEC_User";
@@ -415,7 +433,8 @@ public class KingdeeCloudProperties {
      * BOM 列表查询字段（ExecuteBillQuery FieldKeys，逗号分隔）
      */
     private String bomListFieldKeys =
-            "FNumber,FMaterialId.FNumber,FMaterialId.FName,FBOMVERSION,FDocumentStatus,FForbidStatus";
+            "FNumber,FMaterialId.FNumber,FMaterialId.FName,FBOMVERSION,FDocumentStatus,FForbidStatus,"
+                    + "FMaterialId";
 
     /**
      * BOM 明细查询字段（含 FTreeEntity 子件行）
@@ -423,7 +442,8 @@ public class KingdeeCloudProperties {
     private String bomDetailFieldKeys =
             "FNumber,FMaterialId.FNumber,FMaterialId.FName,FBOMVERSION,"
                     + "FTreeEntity_FSEQ,FTreeEntity_FMaterialIdChild.FNumber,FTreeEntity_FMaterialIdChild.FName,"
-                    + "FTreeEntity_FNumerator,FTreeEntity_FDenominator,FTreeEntity_FUnitID.FNumber";
+                    + "FTreeEntity_FNumerator,FTreeEntity_FDenominator,FTreeEntity_FUnitID.FNumber,"
+                    + "FMaterialId,FTreeEntity_FMaterialIdChild";
 
     /** 单次 BOM 明细查询上限 */
     private int bomQueryLimit = 2000;
@@ -435,7 +455,8 @@ public class KingdeeCloudProperties {
 
     /** 物料主数据同步 FieldKeys（含规格、单位、状态） */
     private String materialSyncFieldKeys =
-            "FNumber,FName,FSpecification,FBaseUnitId.FNumber,FIsBatchManage,FIsSNManage,FForbidStatus,FDocumentStatus";
+            "FNumber,FName,FSpecification,FBaseUnitId.FNumber,FIsBatchManage,FIsSNManage,FForbidStatus,FDocumentStatus,"
+                    + "FMATERIALID";
 
     /** 仓库主数据 FormId */
     private String warehouseFormId = "BD_STOCK";
@@ -461,7 +482,7 @@ public class KingdeeCloudProperties {
 
     private int barcodeQueryLimit = 500;
 
-    /** 物料盘点作业 FormId（云星空企业版-库存管理） */
+    /** 物料盘点作业 FormId（云星空AI旗舰版-库存管理） */
     private String stockCountFormId = "STK_StockCountInput";
 
     /**
@@ -485,7 +506,7 @@ public class KingdeeCloudProperties {
     /** 盘点列表仅显示近 N 天（按 FDate），0 表示不限制 */
     private int stockCountListDays = 0;
 
-    /** 收料通知单 FormId（云星空企业版-采购管理） */
+    /** 收料通知单 FormId（云星空AI旗舰版-采购管理） */
     private String receiveBillFormId = "PUR_ReceiveBill";
 
     /**
@@ -740,6 +761,24 @@ public class KingdeeCloudProperties {
     private String mesEquipmentFieldKeys =
             "FNumber,FName,FProcessId.FNumber,FModel,FSpecification,FForbidStatus,FDocumentStatus";
 
+    /** 轻 MES：工作中心 FormId（按现场覆盖） */
+    private String mesWorkCenterFormId = "ENG_WorkCenter";
+    private String mesWorkCenterFieldKeys =
+            "FNumber,FName,FWorkShopId.FNumber,FWorkShopId.FName,FDeptId.FNumber,FDeptId.FName,"
+                    + "FCapacity,FCalendarId.FNumber,FCalendarId.FName,FForbidStatus,FDocumentStatus";
+
+    /** 轻 MES：资源 FormId（按现场覆盖）；资源类别含 设备/团队/人员 */
+    private String mesResourceFormId = "ENG_Resource";
+    private String mesResourceFieldKeys =
+            "FNumber,FName,FResourceType,FWorkCenterId.FNumber,FWorkCenterId.FName,"
+                    + "FCapacity,FUnitId.FNumber,FRefNumber,FRefName,FForbidStatus,FDocumentStatus";
+
+    /** 轻 MES：人员 FormId（金蝶员工，按现场覆盖） */
+    private String mesPersonnelFormId = "BD_Empinfo";
+    private String mesPersonnelFieldKeys =
+            "FNumber,FName,FDepartment.FNumber,FDepartment.FName,FPositionId.FNumber,FPositionId.FName,"
+                    + "FWorkCenterId.FNumber,FIsProduce,FForbidStatus,FDocumentStatus";
+
     /**
      * 工艺路线 FormId。OpenAPI：ENG_ROUTE。
      * 云星空部分环境为 ENG_Route，拉取时会自动回退。
@@ -753,11 +792,13 @@ public class KingdeeCloudProperties {
                     + "FWorkShopId.FNumber,FWorkShopId.FName,FForbidStatus,FDocumentStatus,"
                     + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,"
                     + "FEntity_FWorkCenterId.FNumber,FEntity_FWorkCenterId.FName,"
-                    + "FEntity_FPrepareTime,FEntity_FProcessTime,FEntity_FTransferTime,FEntity_FStdHour";
+                    + "FEntity_FPrepareTime,FEntity_FProcessTime,FEntity_FTransferTime,FEntity_FStdHour,"
+                    + "FMaterialID";
     /** 工艺路线备用 FieldKeys（FormId 回退到 ENG_Route 时使用） */
     private String mesRouteAltFieldKeys =
             "FNumber,FName,FMaterialId.FNumber,FMaterialId.FName,FVersion,FForbidStatus,FDocumentStatus,"
-                    + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,FEntity_FStdHour";
+                    + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,FEntity_FStdHour,"
+                    + "FMaterialId";
 
     /**
      * 工序计划单 FormId。OpenAPI：PRD_PROCESSCHEDULE。
@@ -769,13 +810,15 @@ public class KingdeeCloudProperties {
                     + "FWorkShopId.FNumber,FWorkShopId.FName,FQty,FDocumentStatus,"
                     + "FEntity_FSeq,FEntity_FProcessId.FNumber,FEntity_FProcessId.FName,"
                     + "FEntity_FWorkCenterId.FNumber,FEntity_FPlanStartDate,FEntity_FPlanFinishDate,"
-                    + "FEntity_FPlanQty,FEntity_FReportQty,FEntity_FEntryID";
+                    + "FEntity_FPlanQty,FEntity_FReportQty,FEntity_FEntryID,"
+                    + "FMaterialID";
     /** 工序计划备用（SFC_OperationPlanning） */
     private String mesOpPlanAltFormId = "SFC_OperationPlanning";
     private String mesOpPlanAltFieldKeys =
             "FBillNo,FID,FMoNumber,FProductId.FNumber,FProductId.FName,"
                     + "FOperID.FNumber,FOperID.FName,FOperNumber,FPlanQty,FDocumentStatus,"
-                    + "FPlanStartDate,FPlanFinishDate,FEntryID";
+                    + "FPlanStartDate,FPlanFinishDate,FEntryID,"
+                    + "FProductId";
     private String mesOpPlanFilter = "FDocumentStatus='C'";
 
     /** 轻 MES：工序汇报回写 FormId */

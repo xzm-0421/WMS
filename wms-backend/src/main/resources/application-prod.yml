@@ -56,6 +56,13 @@ kingdee:
     acct-id: 6a6bfc83694892
     username: cloudee
     password: "jd123456."
+    # 认证模式：session（默认）| oauth2（金蝶 AI 苍穹 kapi：getToken + Bearer 头）
+    auth-mode: session
+    # oauth2 模式凭据（生产密钥请用环境变量或外部化配置注入，勿提交到版本库）
+    # app-id: ""
+    # app-secret: ""
+    # language: zh_CN
+    # refresh-threshold-ms: 600000
     mes-process-form-id: ENG_Process
     mes-equipment-form-id: ENG_Equipment
     mes-route-form-id: ENG_ROUTE

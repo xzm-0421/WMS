@@ -6,7 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 /**
- * 金蝶云星空企业版发起的物料标签打印请求
+ * 金蝶云星空AI旗舰版发起的物料标签打印请求
  */
 @Data
 public class KingdeeLabelPrintRequest {

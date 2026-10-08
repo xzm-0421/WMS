@@ -32,16 +32,16 @@ kingdee:
     enabled: true
     # 生产必须 false；true 时 PDA 会显示 SLD/SCL 等内存模拟单
     mock-enabled: false
-    # 金蝶云星空企业版 WebAPI 站点
-    base-url: http://192.168.0.134/k3cloud
-#    acct-id: 6a6bfc83694892
-    acct-id: 6a69d365692d62
-#    base-url: http://10.0.1.177/K3Cloud
-#    acct-id: 6a82bc99a6e77e
-#    username: cloudee
-#    password: "jd123456."
-    username: mes
-    password: "jd123321."
+    # 金蝶云星空AI旗舰版 WebAPI 站点
+    base-url: http://192.168.0.176:8080/ierp
+    acct-id: 2566635945101099008
+    username: kingdee
+    password: "jd123456."
+    # 认证模式：默认 session（用户名密码会话 Cookie）；oauth2（金蝶 AI 苍穹 kapi：getToken + Bearer 头）
+    # 启用 oauth2 时在 application-dev-local.yml 配置 auth-mode: oauth2 与 app-id/app-secret（勿提交）
+    # auth-mode: session
+    # language: zh_CN
+    # refresh-threshold-ms: 600000
     stock-in-form-id: STK_InStock
     stock-in-auto-audit: true
     feed-mtrl-form-id: PRD_FeedMtrl

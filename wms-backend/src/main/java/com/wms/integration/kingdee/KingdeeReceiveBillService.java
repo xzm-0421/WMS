@@ -24,7 +24,7 @@ import java.util.Comparator;
 import java.util.stream.Collectors;
 
 /**
- * 金蝶云星空企业版 - 收料通知单（PUR_ReceiveBill）
+ * 金蝶云星空AI旗舰版 - 收料通知单（PUR_ReceiveBill）
  * 列表通过 ExecuteBillQuery 拉取；明细优先 View(Number=单号)，失败时回退 ExecuteBillQuery。
  */
 @Slf4j

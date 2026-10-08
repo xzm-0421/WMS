@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 金蝶云星空 WebAPI 对接（企业版）
+ * 金蝶云星空 WebAPI 对接（AI旗舰版）
  * 认证：AuthService.ValidateUser · 查询：ExecuteBillQuery · 保存：Save · 提交：Submit · 审核：Audit
  */
 @Slf4j
@@ -27,6 +27,7 @@ public class KingdeeCloudService {
 
     private final KingdeeCloudProperties properties;
     private final ObjectMapper objectMapper;
+    private final KingdeeOpenApiTokenService openApiTokenService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     /** 金蝶会话缓存，避免每次 ExecuteBillQuery / View 都 ValidateUser */
@@ -36,6 +37,11 @@ public class KingdeeCloudService {
 
     public boolean isEnabled() {
         return properties.isEnabled();
+    }
+
+    /** 是否使用 OAuth2（kapi access_token + Bearer 头）认证。 */
+    public boolean isOAuth2() {
+        return "oauth2".equalsIgnoreCase(properties.getAuthMode());
     }
 
     /**
@@ -1588,6 +1594,13 @@ public class KingdeeCloudService {
     }
 
     private String login() throws Exception {
+        if (isOAuth2()) {
+            String token = openApiTokenService.getValidToken();
+            if (!StringUtils.hasText(token)) {
+                throw new IllegalStateException("金蝶 OAuth2 未获取到 access_token");
+            }
+            return token;
+        }
         long now = System.currentTimeMillis();
         String cached = cachedSessionCookie;
         if (StringUtils.hasText(cached) && now < sessionExpireAtMs) {
@@ -1634,6 +1647,9 @@ public class KingdeeCloudService {
         synchronized (sessionLock) {
             cachedSessionCookie = null;
             sessionExpireAtMs = 0L;
+        }
+        if (isOAuth2()) {
+            openApiTokenService.invalidate();
         }
     }
 
@@ -1765,7 +1781,11 @@ public class KingdeeCloudService {
         String url = properties.getBaseUrl() + "/" + servicePath;
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        if (StringUtils.hasText(sessionCookie)) {
+        if (isOAuth2()) {
+            if (StringUtils.hasText(sessionCookie)) {
+                headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + sessionCookie);
+            }
+        } else if (StringUtils.hasText(sessionCookie)) {
             headers.set(HttpHeaders.COOKIE, sessionCookie);
         }
         ObjectNode root = objectMapper.createObjectNode();
@@ -1787,7 +1807,12 @@ public class KingdeeCloudService {
                 || lower.contains("会话已过期")
                 || lower.contains("contextlost")
                 || lower.contains("\"msgcode\":\"1\"")
-                || lower.contains("\"msgcode\":1");
+                || lower.contains("\"msgcode\":1")
+                || lower.contains("\"errorcode\":\"401\"")
+                || lower.contains("\"errorcode\":401")
+                || lower.contains("\"errorcode\":\"612\"")
+                || lower.contains("\"errorcode\":612")
+                || lower.contains("accesstoken verify failed");
     }
 
     private List<List<String>> parseBillQueryRows(String responseJson) throws Exception {

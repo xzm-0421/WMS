@@ -28,7 +28,7 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * 金蝶云星空企业版 → WMS 物料标签打印接入（免登录，可选 API Key）。
+ * 金蝶云星空AI旗舰版 → WMS 物料标签打印接入（免登录，可选 API Key）。
  */
 @Tag(name = "金蝶-标签打印")
 @RestController

@@ -1,0 +1,24 @@
+@baseUrl = http://localhost:9980
+@api = {{baseUrl}}/api/v1
+@username = admin
+# 客户端约定：密码传 SHA-256(明文) 十六进制；下面是 "123456" 的 SHA-256
+@passwordSha256 = 8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92
+
+### 1. 登录（移动端，免验证码）—— 取 accessToken
+# @name login
+POST {{api}}/auth/mobile/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{passwordSha256}}",
+  "deviceNo": "verify-script"
+}
+
+### 2. 校验金蝶 access_token（期望 active=true、expiresInMs>0）
+GET {{api}}/integration/kingdee/master-data/token/verify
+Authorization: Bearer {{login.response.body.data.accessToken}}
+
+### 3. 只读探测内码字段键（不写库；验证 FMATERIALID 是否可查）
+POST {{api}}/integration/kingdee/master-data/probe?formId=BD_MATERIAL&fieldKeys=FNumber,FMATERIALID
+Authorization: Bearer {{login.response.body.data.accessToken}}

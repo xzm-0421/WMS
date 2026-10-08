@@ -44,25 +44,39 @@ MES 主体链路（基础资料 → 工序计划 → 报工 → 转移 → 返�
 ## 2. 阶段 B：MES 现场作业落地（平板 + 标签，约 2–3 周）
 
 > 决策：重量先手动输入，代码预留秤适配口；框料标签新建 MES 模板 + 蓝牙打印。
+> 实现现状：平板称重/打印**初版已由组员完成**（提交 `32fe3cc`「完善平板端的称重打印功能」，2026-09-24）。当前为可用雏形，仍有关键缺口待补。
 
-### B1. 平板现场作业（场景一 / US3.2）
+### B0. 组员已完成（提交 32fe3cc）
 
-- 重写 `MES-tablet/src/pages/station/station.vue`：工序检索 → `GET /mobile/mes/reports/context` → 选工序/设备/操作员 → 输入重量/数量 → `POST /mobile/mes/reports`。
-- 新建 `MES-tablet/src/api/mes.js`，复用 `src/utils/http.js`，对齐 `MES-mobile/src/api/mes.js`。
-- 新增 `src/utils/scale.js` 抽象层（当前实现为手动输入；预留蓝牙/串口适配接口与 `utils/config.js` 的 `scale` 配置）。
+- `MES-tablet/src/pages/station/station.vue`：工单/工序计划列表（`GET /mes/plans`）→ 选工单 → 手动输入重量「确认称重」→ `POST /mobile/mes/reports` → 加入打印队列 →「打印」调 `POST /mobile/print/label/resolve`。
+- 新增 `MES-tablet/src/api/mes.js`（`getMesPlanList/getReportContext/submitReport/printLabel`），复用 `utils/http.js`（含 `withDevice`）。
+- 显示设置、模拟数据模式（无数据/异常时回退 `MOCK_PLAN_DATA`）；`utils/config.js`、`index.html`、`pages.json` 微调。
+
+### B1. 平板现场作业（待补全 / 修复）
+
+- [ ] 修复报工类型：`reportType` 由非法值 `WEIGH` 改为 `NORMAL`（后端仅认 `NORMAL/REWORK`；`WEIGH` 会绕过「正常工序已完成」校验）。
+- [ ] 数量来源：去掉 `qty = floor(weight*4)` 硬编码，改为手工输入或按规则/配置换算。
+- [ ] 设备与工序：去掉 `equipmentCode='SCALE-001'`、`processCode||'DEFAULT'` 硬编码；改用 `GET /mobile/mes/reports/context` 选择工序/设备/操作员。
+- [ ] 检索：`/mes/plans` 不支持 `keyword`，改用 `moNo/productCode/status` 过滤。
+- [ ] 生产防护：移除或用开关限制 `MOCK_PLAN_DATA` 回退（生产环境禁止模拟数据）。
+- [ ] 新增 `MES-tablet/src/utils/scale.js` 抽象层 + `utils/config.js` 的 `scale` 配置（当前手动输入，预留蓝牙/串口适配口）。
 
 ### B2. MES 框料标签（新建模板 + 蓝牙打印）
 
-- 后端新增 `com.wms.mes.label` 包：
-  - 新增 `GET/POST /mobile/mes/labels`（报工成功后按框生成标签数据：工单/物料/工序/重量/条码）。
-  - 新增 MES 专用标签模板与生成器。
-- 平板 `print-panel` 6 个占位框接真实框数；“标签打印”调用蓝牙打印（uni-app 蓝牙/打印插件），失败可重试。
-- Flyway 新增 `V1_0_48__mes_label.sql`（H2 + SQLServer 双份）记录打印任务（如确需留痕）。
+- 现状：平板调用的是 **WMS** 的 `POST /mobile/print/label/resolve`，其 DTO `MobileLabelResolveRequest` 仅接收 `barcodeContent/warehouseCode`，平板传入的 `reportNo/moNo/weightKg/qty` 被忽略——**接口不匹配，需替换**。
+- [ ] 后端新增 `com.wms.mes.label` 包：`GET/POST /mobile/mes/labels`（报工后按框生成标签数据：工单/物料/工序/重量/条码）+ MES 专用模板生成器。
+- [ ] 平板 `print-panel` 由报工记录改为**按框**列表；接入蓝牙打印（uni-app 打印插件），失败可重试。
+- [ ] Flyway `V1_0_49__mes_label.sql`（H2 + SQLServer；`V1_0_48` 已被出站队列占用）。
 
 ### B3. 后端支撑
 
-- 报工提交复用现有 `MesReportSubmitRequest.weightKg`；不新建称重表（后续接秤再评估 `mes_weighing`）。
-- 冲压称重工序判定：`mes_process` 增“是否称重工序”标识或按工序编码配置。
+- 报工提交复用现有 `MesReportSubmitRequest.weightKg`；不新建称重表。
+- [ ] 冲压/称重工序判定：`mes_process` 增「是否称重工序」标识或按工序编码配置。
+
+### B4. 联调与验收
+
+- [ ] 平板 + 电子秤（手动→自动）+ 蓝牙打印机 + 金蝶联调。
+- [ ] 阶段 B 验收。
 
 ## 3. 阶段 C：可靠性与安全非功能（需求 §4、§5）
 
@@ -71,6 +85,7 @@ MES 主体链路（基础资料 → 工序计划 → 报工 → 转移 → 返�
 - **C3** 数据埋点：§5.2 的 8 个事件。
 - **C4** 告警通道：队列满 / 5 分钟 SLA / 长期未同步（现 `sendAlert` 仅日志）。
 - **C5** MES↔ERP 强制 HTTPS/TLS、本地每日备份、按车间数据隔离。
+- **D** 商用许可：双许可（部署许可 + 账号授权）、许可码在线激活（Ed25519/RSA 非对称签名）、未授权只读并拦截全部写操作、SUPER_ADMIN 豁免、存量仅超管授权。
 
 ## 4. 里程碑与工时
 
@@ -79,6 +94,7 @@ MES 主体链路（基础资料 → 工序计划 → 报工 → 转移 → 返�
 | A | 转移列表 / 同步中心 / 首页 / 返工图谱 / 测试 | 1–1.5 周 |
 | B | 平板现场 + 手动称重 + 蓝牙标签 | 2–3 周 |
 | C | 离线 / 安全 / 埋点 / 告警 | 2–3 周 |
+| D | 商用许可（双许可 / 许可码激活 / 未授权只读） | 1–1.5 周 |
 
 ## 5. 风险与依赖
 
@@ -128,14 +144,20 @@ MES 主体链路（基础资料 → 工序计划 → 报工 → 转移 → 返�
 
 ### 阶段 B — 平板现场 + 手动称重 + 蓝牙标签
 
-- [ ] B1.1 新建 `MES-tablet/src/api/mes.js`
-- [ ] B1.2 重写 `station.vue`：工序检索 + 报工上下文加载
-- [ ] B1.3 报工表单：工序 / 设备 / 操作员 / 重量 / 数量 / 提交
-- [ ] B1.4 新增 `utils/scale.js` 抽象层 + `config.js` 的 `scale` 配置
+> 初版由组员完成（提交 32fe3cc）
+
+- [x] B1.1 新建 `MES-tablet/src/api/mes.js`（组员）
+- [x] B1.2 `station.vue` 工单列表 + 工序计划检索（组员；改用 context 待补）
+- [x] B1.3 报工表单：手动重量 + 提交报工（组员；工序/设备/操作员待补）
+- [ ] B1.4 修复 `reportType`(WEIGH→NORMAL) / 数量 / 设备编码硬编码
+- [ ] B1.5 改用 `/mobile/mes/reports/context` 选择工序/设备/操作员
+- [ ] B1.6 移除生产环境 `MOCK_PLAN_DATA` 回退（或加开关）
+- [ ] B1.7 新增 `utils/scale.js` 抽象层 + `config.js` 的 `scale` 配置
+- [ ] B2.0 替换不匹配的 `/mobile/print/label/resolve` 调用
 - [ ] B2.1 后端新增 `GET/POST /mobile/mes/labels`
 - [ ] B2.2 新增 MES 专用标签模板与生成器
-- [ ] B2.3 Flyway `V1_0_49__mes_label.sql`（H2 + SQLServer；V1_0_48 已被出站队列占用）
-- [ ] B2.4 平板 `print-panel` 接真实框数 + 蓝牙打印
+- [ ] B2.3 Flyway `V1_0_49__mes_label.sql`（H2 + SQLServer）
+- [ ] B2.4 平板 `print-panel` 按框 + 蓝牙打印
 - [ ] B3.1 冲压/称重工序标识（`mes_process`）
 - [ ] B4.1 平板 + 蓝牙打印机 + 金蝶联调
 - [ ] B5.1 阶段 B 验收
@@ -148,11 +170,26 @@ MES 主体链路（基础资料 → 工序计划 → 报工 → 转移 → 返�
 - [ ] C2.1 ERP IP 白名单
 - [ ] C2.2 API 签名校验
 - [ ] C2.3 敏感字段 AES-256 加密
-- [ ] C2.4 密码强度 + 90 天过期
-- [ ] C2.5 操作日志查询页
-- [ ] C3.1 埋点 §5.2 八个事件
-- [ ] C4.1 告警通道（队列满 / SLA / 长期未同步）
+- [x] C2.4 密码强度 + 90 天过期
+- [x] C2.5 操作日志查询页
+- [x] C3.1 埋点 §5.2 八个事件
+- [x] C4.1 告警通道（队列满 / SLA / 长期未同步）
 - [ ] C5.1 HTTPS/TLS、每日备份、车间数据隔离
+
+### 阶段 D — 商用许可（双许可 / 许可码激活 / 未授权只读）
+
+- [ ] D0.1 Flyway `V1_0_55`：`sys_user.licensed/license_expire_at`（存量仅 SUPER_ADMIN 授权）+ 新表 `sys_license`（h2 + SQLServer）
+- [ ] D1.1 `LicenseCodec`（Ed25519/RSA 载荷+签名编解码，内置公钥验签）+ 厂商签发工具 + `LicenseCodecTest`
+- [ ] D2.1 `LicenseService` + `SysLicense`（`current/activate/isDeploymentValid/revoke`，缓存与定时刷新）
+- [ ] D2.2 登录/`userinfo` 返回 `licensed/readonly/deploymentLicensed/licenseExpireAt/machineCode`
+- [ ] D3.1 `LicenseReadonlyFilter`（全部写操作拦截 + 白名单 + SUPER_ADMIN 豁免）
+- [ ] D3.2 前端只读 banner + `request` 统一处理 + 写按钮禁用
+- [ ] D4.1 `views/system/LicenseManage.vue`（机器码/状态/到期/激活/吊销）
+- [ ] D4.2 `UserList.vue` 授权开关/到期日 + `PUT /system/users/{id}/license`
+- [ ] D4.3 权限码 `system:license:list` / `system:license:manage` + 路由/菜单映射
+- [ ] D5.1 配置 `wms.license.*`（`enabled/public-key/grace-days/product/edition`）
+- [ ] D6.1 单测 `LicenseCodecTest` / `LicenseServiceTest` + 构建验证
+- [ ] D7.1 阶段 D 验收（未激活 / 激活 / 过期 / 未授权 / 超管 / 开关）
 
 ---
 
