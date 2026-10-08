@@ -8,6 +8,13 @@
         </view>
         <view class="tool-actions">
           <text class="res-hint">{{ sizeHint }}</text>
+          <text 
+            class="tool-btn" 
+            :class="{ 'printer-connected': bluetoothConnected }"
+            @click="handleConnectPrinter"
+          >
+            {{ bluetoothConnected ? '🖨️ 已连接' : '🖨️ 连接打印机' }}
+          </text>
           <text class="tool-btn" @click="openSettings">显示设置</text>
           <text class="tool-btn" @click="goSystemSettings">系统设置</text>
           <text class="tool-btn" @click="logout">退出</text>
@@ -86,7 +93,49 @@
             <view class="weigh-plan-info">
               <text class="weigh-mo-no">{{ selectedPlan.moNo }}</text>
               <text class="weigh-product">{{ selectedPlan.productName }}</text>
+              <text v-if="reportContext?.plans?.length > 0" class="weigh-process-info">
+                工序: {{ reportContext.plans[0].processCode }} - {{ reportContext.plans[0].processName || '' }}
+              </text>
             </view>
+
+            <!-- #4: 设备选择 -->
+            <view v-if="equipmentList.length > 0" class="equipment-select-row">
+              <view class="equip-label">
+                <text>设备</text>
+              </view>
+              <picker
+                :value="equipmentList.findIndex(e => (e.code || e.equipmentCode) === selectedEquipment)"
+                :range="equipmentList"
+                range-key="name"
+                @change="onEquipmentChange"
+              >
+                <view class="equip-picker">
+                  <text :class="{ placeholder: !selectedEquipment }">
+                    {{ getSelectedEquipmentName() || '请选择设备' }}
+                  </text>
+                  <text class="picker-arrow">▼</text>
+                </view>
+              </picker>
+            </view>
+
+            <!-- #6: 电子秤连接和自动读取 -->
+            <view class="scale-control-row">
+              <view
+                class="scale-btn"
+                :class="{ 'scale-connected': scaleConnected }"
+                @click="handleConnectScale"
+              >
+                <text>{{ scaleConnected ? '⚖️ 电子秤已连接' : '⚖️ 连接电子秤' }}</text>
+              </view>
+              <view
+                class="auto-read-toggle"
+                :class="{ active: autoReadWeight }"
+                @click="toggleAutoRead"
+              >
+                <text>{{ autoReadWeight ? '🔄 自动读取中' : '▶️ 自动读取' }}</text>
+              </view>
+            </view>
+
             <view class="weigh-input-row">
               <view class="weigh-label">
                 <text>重量 (kg)</text>
@@ -178,7 +227,27 @@ import {
   resolveTabletCanvas,
   saveTabletDisplay,
 } from '@/utils/tabletDisplay.js'
-import { getMesPlanList, submitReport, printLabel } from '@/api/mes.js'
+import {
+  getMesPlanList,
+  getReportContext,
+  submitReport,
+  printLabel,
+  printMesLabel,
+} from '@/api/mes.js'
+import {
+  connectScale,
+  readWeight as readScaleWeight,
+  disconnectScale,
+  isScaleConnected,
+} from '@/utils/scale.js'
+import {
+  initBluetooth,
+  selectPrinter,
+  connectPrinter,
+  disconnectPrinter,
+  sendToPrinter,
+  isPrinterConnected,
+} from '@/utils/bluetoothPrinter.js'
 
 const presets = TABLET_PRESETS
 const display = reactive(loadTabletDisplay())
@@ -196,6 +265,15 @@ const loading = ref(false)
 const inputWeight = ref('')
 const printQueue = ref([])
 let useMockData = false
+const bluetoothConnected = ref(false)
+const connectingPrinter = ref(false)
+
+const reportContext = ref(null)  // #4: 报工上下文
+const equipmentList = ref([])    // 设备列表
+const selectedEquipment = ref('') // 选中的设备
+const scaleConnected = ref(false)  // 电子秤连接状态
+const connectingScale = ref(false)  // 电子秤连接中
+const autoReadWeight = ref(false)  // 自动读取重量开关
 
 const canvas = computed(() => resolveTabletCanvas(display, winW.value, winH.value))
 
@@ -339,14 +417,135 @@ async function searchPlans() {
   }
 }
 
-function selectPlan(plan) {
+async function selectPlan(plan) {
   selectedPlan.value = plan
   inputWeight.value = ''
+  selectedEquipment.value = ''
+  reportContext.value = null
+  equipmentList.value = []
+
+  // #4: 加载报工上下文（设备列表、工序信息等）
+  try {
+    loading.value = true
+    uni.showToast({ title: '加载工序信息...', icon: 'loading', duration: 1000 })
+    const context = await getReportContext(plan.moNo)
+    reportContext.value = context
+
+    if (context.equipment && context.equipment.length > 0) {
+      equipmentList.value = context.equipment
+      if (context.equipment.length === 1) {
+        selectedEquipment.value = context.equipment[0].code || context.equipment[0].equipmentCode
+        console.log('✅ 自动选择唯一设备:', selectedEquipment.value)
+      }
+    }
+
+    if (context.plans && context.plans.length > 0) {
+      console.log('✅ 可执行工序数:', context.plans.length)
+      context.plans.forEach((p, i) => {
+        console.log(`   ${i + 1}. ${p.processCode} - ${p.processName || ''}`)
+      })
+    }
+
+    console.log('📋 报工上下文加载成功:', context)
+  } catch (error) {
+    console.error('❌ 加载报工上下文失败:', error)
+    uni.showToast({ title: '加载工序信息失败', icon: 'none' })
+  } finally {
+    loading.value = false
+  }
 }
 
 function clearSelection() {
   selectedPlan.value = null
   inputWeight.value = ''
+  reportContext.value = null
+  equipmentList.value = []
+  selectedEquipment.value = ''
+  autoReadWeight.value = false
+}
+
+// #4: 设备选择相关函数
+function onEquipmentChange(e) {
+  const index = e.detail.value
+  if (index >= 0 && index < equipmentList.value.length) {
+    const equip = equipmentList.value[index]
+    selectedEquipment.value = equip.code || equip.equipmentCode
+    console.log('✅ 选择设备:', selectedEquipment.value, '-', equip.name)
+  }
+}
+
+function getSelectedEquipmentName() {
+  if (!selectedEquipment.value || !equipmentList.value.length) return ''
+  const equip = equipmentList.value.find(e => (e.code || e.equipmentCode) === selectedEquipment.value)
+  return equip?.name || ''
+}
+
+// #6: 电子秤连接和自动读取
+let autoReadTimer = null
+
+async function handleConnectScale() {
+  if (scaleConnected.value) {
+    try {
+      await disconnectScale()
+      scaleConnected.value = false
+      autoReadWeight.value = false
+      if (autoReadTimer) {
+        clearInterval(autoReadTimer)
+        autoReadTimer = null
+      }
+      uni.showToast({ title: '电子秤已断开', icon: 'none' })
+    } catch (e) {
+      console.error('断开电子秤失败:', e)
+      uni.showToast({ title: '断开失败', icon: 'none' })
+    }
+    return
+  }
+
+  try {
+    connectingScale.value = true
+    uni.showToast({ title: '正在连接电子秤...', icon: 'loading', duration: 2000 })
+
+    await connectScale()
+    scaleConnected.value = true
+    uni.showToast({ title: '✅ 电子秤连接成功', icon: 'success' })
+  } catch (e) {
+    console.error('连接电子秤失败:', e)
+    uni.showModal({
+      title: '连接失败',
+      content: `${e.message}\n\n提示：\n1. 确保电子秤已开启蓝牙\n2. 确保手机/平板蓝牙已打开\n3. 确保距离电子秤 < 10米\n\n当前将使用模拟模式（开发测试用）`,
+      showCancel: false,
+    })
+  } finally {
+    connectingScale.value = false
+  }
+}
+
+async function toggleAutoRead() {
+  if (!scaleConnected.value && !useMockData) {
+    uni.showToast({ title: '请先连接电子秤', icon: 'none' })
+    return
+  }
+
+  autoReadWeight.value = !autoReadWeight.value
+
+  if (autoReadWeight.value) {
+    uni.showToast({ title: '🔄 开始自动读取重量', icon: 'none' })
+    autoReadTimer = setInterval(async () => {
+      try {
+        const weight = await readScaleWeight()
+        inputWeight.value = String(weight)
+        console.log('⚖️ 读取到重量:', weight, 'kg')
+      } catch (e) {
+        console.error('读取重量失败:', e)
+      }
+    }, 1000) // 每秒读取一次
+  } else {
+    if (autoReadTimer) {
+      clearInterval(autoReadTimer)
+      autoReadTimer = null
+    }
+    uni.showToast({ title: '⏹️ 已停止自动读取', icon: 'none' })
+  }
 }
 
 async function confirmWeigh() {
@@ -364,13 +563,18 @@ async function confirmWeigh() {
   try {
     uni.showLoading({ title: useMockData ? '模拟提交中...' : '提交报工中...' })
     
+    if (!selectedPlan.value.processCode) {
+      uni.showToast({ title: '该工单未配置工序编码', icon: 'none' })
+      return
+    }
+
     const reportData = {
       moNo: selectedPlan.value.moNo,
-      processCode: selectedPlan.value.processCode || 'DEFAULT',
-      reportType: 'WEIGH',
-      qty: Math.floor(weight * 4),
+      processCode: selectedPlan.value.processCode,
+      reportType: 'NORMAL',
+      qty: weight,
       weightKg: weight,
-      equipmentCode: 'SCALE-001',
+      equipmentCode: selectedEquipment.value || (reportContext.value?.equipment?.[0]?.code) || '',
       remark: `平板端称重 - ${new Date().toLocaleString()}`,
     }
     
@@ -416,32 +620,115 @@ async function confirmWeigh() {
 
 async function handlePrint(item) {
   if (item.printing) return
-  
+
   item.printing = true
-  
+
   try {
     if (useMockData) {
       await new Promise(resolve => setTimeout(resolve, 800))
       console.log('ℹ️ 模拟打印成功:', item.reportNo)
     } else {
-      await printLabel({
+      const labelData = {
         reportNo: item.reportNo,
         moNo: item.moNo,
+        productCode: item.productCode,
+        productName: item.productName,
         weightKg: item.weightKg,
         qty: item.qty,
-      })
+      }
+
+      await printMesLabel(labelData)
+
+      if (bluetoothConnected.value) {
+        try {
+          await sendToPrinter(labelData)
+        } catch (printError) {
+          console.warn('⚠️ 蓝牙打印失败，已记录打印任务:', printError.message)
+        }
+      }
     }
-    
-    uni.showToast({ 
-      title: '标签打印成功', 
-      icon: 'success' 
+
+    uni.showToast({
+      title: '标签打印成功',
+      icon: 'success'
     })
-    
+
   } catch (e) {
     console.error('打印失败:', e)
     uni.showToast({ title: '打印失败: ' + (e.message || '未知错误'), icon: 'none' })
   } finally {
     item.printing = false
+  }
+}
+
+async function handleConnectPrinter() {
+  if (connectingPrinter.value) return
+
+  connectingPrinter.value = true
+
+  try {
+    if (bluetoothConnected.value) {
+      await disconnectPrinter()
+      bluetoothConnected.value = false
+      uni.showToast({ title: '打印机已断开', icon: 'success' })
+      return
+    }
+
+    // 初始化蓝牙（自动检测环境：Web Bluetooth 或 UniApp）
+    await initBluetooth()
+
+    // 选择打印机（自动适配不同环境的交互方式）
+    const printer = await selectPrinter()
+
+    if (!printer) return
+
+    // 连接选中的打印机
+    uni.showLoading({ title: `连接 ${printer.name}...` })
+    await connectPrinter(printer)
+    uni.hideLoading()
+
+    bluetoothConnected.value = true
+    uni.showToast({
+      title: `已连接: ${printer.name}`,
+      icon: 'success'
+    })
+
+  } catch (error) {
+    uni.hideLoading()
+    console.error('连接打印机失败:', error)
+
+    // 用户取消选择设备（Web Bluetooth）
+    if (error.name === 'NotFoundError') {
+      return
+    }
+
+    // 环境不支持蓝牙
+    if (error.message?.includes('不支持')) {
+      uni.showModal({
+        title: '提示',
+        content: '当前浏览器或环境不支持 Web Bluetooth。\n\n' +
+                 '✅ 支持的环境：\n' +
+                 '   • Chrome 浏览器（推荐）\n' +
+                 '   • Edge 浏览器（Chromium内核）\n' +
+                 '   • Android 手机 Chrome\n' +
+                 '   • 原生 APP\n\n' +
+                 '❌ 不支持：\n' +
+                 '   • Safari (iOS)\n' +
+                 '   • Firefox\n' +
+                 '   • 微信内置浏览器\n\n' +
+                 '💡 提示：打印任务会正常记录到后端系统。',
+        showCancel: false,
+        confirmText: '我知道了'
+      })
+      return
+    }
+
+    uni.showToast({
+      title: error.message || '连接失败',
+      icon: 'none'
+    })
+  } finally {
+    connectingPrinter.value = false
   }
 }
 
@@ -462,6 +749,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   uni.offWindowResize?.(syncWindow)
+  if (bluetoothConnected.value) {
+    disconnectPrinter().catch(console.error)
+    bluetoothConnected.value = false
+  }
 })
 </script>
 
@@ -519,6 +810,13 @@ onUnmounted(() => {
   font-size: 14px;
   color: #666;
   background: #fff;
+}
+
+.printer-connected {
+  border-color: #52c41a;
+  color: #52c41a;
+  background: #f6ffed;
+  font-weight: 600;
 }
 
 .mock-badge {
@@ -811,6 +1109,105 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 12px;
   color: #ad8b00;
+}
+
+/* #4: 设备选择样式 */
+.weigh-process-info {
+  display: block;
+  font-size: 13px;
+  color: #1890ff;
+  margin-top: 4px;
+}
+
+.equipment-select-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 4px;
+}
+
+.equip-label {
+  width: 50px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #52c41a;
+}
+
+.equip-picker {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #333;
+}
+
+.equip-picker .placeholder {
+  color: #bfbfbf;
+}
+
+.picker-arrow {
+  color: #999;
+  font-size: 12px;
+}
+
+/* #6: 电子秤控制样式 */
+.scale-control-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.scale-btn,
+.auto-read-toggle {
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.scale-btn {
+  background: white;
+  border: 1px solid #d9d9d9;
+  color: #666;
+}
+
+.scale-btn:active {
+  background: #f5f5f5;
+}
+
+.scale-connected {
+  background: #f6ffed;
+  border-color: #52c41a;
+  color: #52c41a;
+  font-weight: 600;
+}
+
+.auto-read-toggle {
+  background: white;
+  border: 1px solid #d9d9d9;
+  color: #666;
+}
+
+.auto-read-toggle:active {
+  background: #f5f5f5;
+}
+
+.auto-read-toggle.active {
+  background: #e6f7ff;
+  border-color: #1890ff;
+  color: #1890ff;
+  font-weight: 600;
 }
 
 .print-list {

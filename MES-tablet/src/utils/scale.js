@@ -1,0 +1,476 @@
+/**
+ * 电子秤蓝牙连接与读取模块
+ * 支持 Web Bluetooth API (Chrome/Edge) 和 UniApp 蓝牙 API (APP)
+ * 支持多种品牌电子秤的串口协议解析
+ */
+
+// ==================== 配置 ====================
+export const scaleConfig = {
+  // 蓝牙配置
+  bluetooth: {
+    enabled: true,
+    deviceId: null,
+    deviceName: '',
+    serviceName: '00001101-0000-1000-8000-00805f9b34fb', // SPP 串口服务（小写！）
+    writeCharacteristic: null,
+    notifyCharacteristic: null,
+  },
+
+  // 模拟模式（开发测试用）
+  mock: {
+    enabled: true,  // 设为 false 则使用真实电子秤
+    minWeight: 0.1,
+    maxWeight: 1000,
+    precision: 2,
+  },
+
+  // 单位转换
+  conversion: {
+    factor: 1,
+    unit: 'kg',
+  },
+
+  // 协议配置
+  protocol: {
+    autoDetect: true,  // 自动检测协议类型
+    type: null,        // 检测到的协议类型
+    baudRate: 9600,   // 波特率（串口）
+  },
+}
+
+// ==================== 状态变量 ====================
+let currentDevice = null
+let currentServer = null
+let connected = false
+
+// ==================== 环境检测 ====================
+function getBluetoothAPI() {
+  if (typeof window !== 'undefined' && window.navigator && window.navigator.bluetooth) {
+    return window.navigator.bluetooth
+  }
+  if (typeof navigator !== 'undefined' && navigator.bluetooth) {
+    return navigator.bluetooth
+  }
+  return null
+}
+
+const hasWebBluetooth = !!getBluetoothAPI()
+const hasUniBluetooth = typeof uni !== 'undefined' && uni.openBluetoothAdapter !== undefined
+
+console.log('⚖️ 电子秤模块初始化:')
+console.log('   - Web Bluetooth:', hasWebBluetooth)
+console.log('   - UniApp Bluetooth:', hasUniBluetooth)
+
+// ==================== 核心函数 ====================
+
+/**
+ * 连接电子秤
+ * 自动选择最佳方式：Web Bluetooth > UniApp > Mock
+ */
+export async function connectScale() {
+  console.log('⚖️ 开始连接电子秤...')
+
+  try {
+    if (hasWebBluetooth) {
+      console.log('🌐 使用 Web Bluetooth 连接电子秤')
+      await connectScaleWeb()
+    } else if (hasUniBluetooth) {
+      console.log('📱 使用 UniApp 蓝牙连接电子秤')
+      await connectScaleUniApp()
+    } else {
+      throw new Error('当前环境不支持蓝牙连接')
+    }
+
+    connected = true
+    scaleConfig.bluetooth.enabled = true
+    console.log('✅ 电子秤连接成功!')
+    return true
+  } catch (error) {
+    console.error('❌ 连接电子秤失败:', error)
+
+    // 如果真实连接失败且允许模拟模式，则回退到模拟
+    if (scaleConfig.mock.enabled) {
+      console.warn('⚠️ 回退到模拟模式')
+      scaleConfig.bluetooth.enabled = false
+      return true
+    }
+
+    throw error
+  }
+}
+
+/**
+ * Web Bluetooth 方式连接电子秤
+ */
+async function connectScaleWeb() {
+  const bluetooth = getBluetoothAPI()
+
+  if (!bluetooth) {
+    throw new Error('Web Bluetooth API 不可用')
+  }
+
+  console.log('🔍 搜索电子秤设备...')
+
+  // 请求用户选择蓝牙设备
+  const device = await bluetooth.requestDevice({
+    filters: [
+      { services: [scaleConfig.bluetooth.serviceName] },
+      { namePrefix: 'Scale' },
+      { namePrefix: 'scale' },
+      { namePrefix: 'SCALE' },
+      { namePrefix: 'GP-' },     // 佳博
+      { namePrefix: 'CP-' },     // 芯容
+      { namePrefix: 'DTP-' },    // 致研
+      { namePrefix: 'HPRT' },    // 汉印
+    ],
+    optionalServices: [
+      '00001800-0000-1000-8000-00805f9b34fb',
+      '0000180a-0000-1000-8000-00805f9b34fb',
+      '0000ffe0-0000-1000-8000-00805f9b34fb',
+    ],
+  })
+
+  console.log('✅ 用户选择了设备:', device.name)
+
+  // 建立 GATT 连接
+  const server = await device.gatt.connect()
+  console.log('✅ GATT 连接建立')
+
+  // 获取服务
+  const service = await server.getPrimaryService(scaleConfig.bluetooth.serviceName)
+  console.log('✅ 获取服务成功')
+
+  // 获取特征值（用于接收数据）
+  const characteristics = await service.getCharacteristics()
+  console.log(`📋 发现 ${characteristics.length} 个特征值`)
+
+  let notifyChar = null
+  let writeChar = null
+
+  for (const char of characteristics) {
+    if (char.properties.notify || char.properties.indicate) {
+      notifyChar = char
+    }
+    if (char.properties.write || char.properties?.writeWithoutResponse) {
+      writeChar = char
+    }
+  }
+
+  if (!notifyChar) {
+    throw new Error('未找到可读的特征值')
+  }
+
+  // 启用通知
+  await notifyChar.startNotifications()
+  console.log('✅ 启用数据通知')
+
+  // 监听数据
+  notifyChar.addEventListener('characteristicvaluechanged', handleScaleData)
+
+  // 保存连接信息
+  currentDevice = device
+  currentServer = server
+  scaleConfig.bluetooth.deviceId = device.id
+  scaleConfig.bluetooth.deviceName = device.name
+  scaleConfig.bluetooth.notifyCharacteristic = notifyChar
+  scaleConfig.bluetooth.writeCharacteristic = writeChar
+
+  // 断开监听
+  device.addEventListener('gattserverdisconnected', () => {
+    console.warn('⚠️ 电子秤连接断开')
+    connected = false
+    scaleConfig.bluetooth.enabled = false
+  })
+}
+
+/**
+ * UniApp 蓝牙方式连接电子秤
+ */
+async function connectScaleUniApp() {
+  // 初始化蓝牙适配器
+  await new Promise((resolve, reject) => {
+    uni.openBluetoothAdapter({
+      success: resolve,
+      fail: (err) => reject(new Error(err.errMsg || '初始化蓝牙失败')),
+    })
+  })
+  console.log('✅ 蓝牙适配器初始化成功')
+
+  // 开始搜索设备
+  await new Promise((resolve, reject) => {
+    uni.startBluetoothDevicesDiscovery({
+      services: [scaleConfig.bluetooth.serviceName],
+      success: resolve,
+      fail: (err) => reject(new Error(err.errMsg || '搜索设备失败')),
+    })
+  })
+
+  // 等待用户选择设备（这里简化处理，实际应该弹出列表让用户选）
+  console.log('⚠️ UniApp 模式需要手动实现设备选择逻辑')
+  throw new Error('UniApp 蓝牙模式需要进一步实现')
+}
+
+/**
+ * 处理电子秤数据
+ */
+function handleScaleData(event) {
+  const value = event.target.value
+  const data = new Uint8Array(value.buffer)
+
+  console.log('📥 收到原始数据:', Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' '))
+
+  // 解析重量数据
+  const weight = parseWeightData(data)
+  if (weight !== null) {
+    console.log('⚖️ 解析到重量:', weight, scaleConfig.conversion.unit)
+
+    // 触发自定义事件，供外部监听
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('scaleData', { detail: { weight } }))
+    }
+  }
+}
+
+/**
+ * 解析不同协议的重量数据
+ * 支持多种常见电子秤协议
+ */
+function parseWeightData(data) {
+  if (!data || data.length === 0) return null
+
+  // 尝试自动检测协议
+  if (scaleConfig.protocol.autoDetect && !scaleConfig.protocol.type) {
+    scaleConfig.protocol.type = detectProtocol(data)
+    console.log('🔍 检测到协议类型:', scaleConfig.protocol.type)
+  }
+
+  switch (scaleConfig.protocol.type) {
+    case 'continuous':
+      return parseContinuousProtocol(data)
+    case 'command':
+      return parseCommandProtocol(data)
+    case 'ascii':
+      return parseAsciiProtocol(data)
+    default:
+      // 尝试所有解析器
+      let weight = parseContinuousProtocol(data)
+      if (weight === null) weight = parseAsciiProtocol(data)
+      return weight
+  }
+}
+
+/**
+ * 检测协议类型
+ */
+function detectProtocol(data) {
+  // ASCII 协议：包含数字和单位字符
+  const asciiStr = String.fromCharCode(...data)
+  if (/[\d.]+(kg|g|lb|oz)/i.test(asciiStr)) {
+    return 'ascii'
+  }
+
+  // 连续流协议：固定长度，特定字节位置是数值
+  if (data.length >= 4 && data[0] === 0x02 && data[data.length - 1] === 0x03) {
+    return 'continuous'
+  }
+
+  // 默认尝试连续协议
+  return 'continuous'
+}
+
+/**
+ * 解析连续流协议（最常用）
+ * 格式示例：[STX][符号][整数部分][.][小数部分][单位][ETX]
+ */
+function parseContinuousProtocol(data) {
+  try {
+    // 移除 STX/ETX 标记
+    let payload = data
+    if (data[0] === 0x02) payload = data.slice(1, -1)
+    if (data[0] === 0x3a) payload = data.slice(1) // 以 ':' 开头
+
+    // 转换为字符串
+    const str = String.fromCharCode(...payload).trim()
+
+    // 提取数字（支持正负号和小数点）
+    const match = str.match(/-?\d+\.?\d*/)
+    if (match) {
+      return parseFloat(match[0])
+    }
+
+    return null
+  } catch (e) {
+    console.error('解析连续协议失败:', e)
+    return null
+  }
+}
+
+/**
+ * 解析 ASCII 协议
+ * 格式示例："ST,+12.345,kg\r\n"
+ */
+function parseAsciiProtocol(data) {
+  try {
+    const str = String.fromCharCode(...data).trim()
+    const match = str.match(/([+-]?\d+\.?\d*)\s*(kg|g|lb|oz)?/i)
+    if (match && match[1]) {
+      return parseFloat(match[1])
+    }
+    return null
+  } catch (e) {
+    console.error('解析 ASCII 协议失败:', e)
+    return null
+  }
+}
+
+/**
+ * 解析命令响应协议
+ */
+function parseCommandProtocol(data) {
+  // TODO: 实现命令协议解析
+  console.log('⚠️ 命令协议解析待实现')
+  return null
+}
+
+/**
+ * 读取一次重量
+ * @returns {Promise<number>} 重量值（kg）
+ */
+export async function readWeight() {
+  // 如果使用模拟模式
+  if (!scaleConfig.bluetooth.enabled || scaleConfig.mock.enabled) {
+    return readMockWeight()
+  }
+
+  // 如果已连接，等待下一次数据
+  if (connected) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('读取超时'))
+      }, 5000) // 5秒超时
+
+      const handler = (event) => {
+        clearTimeout(timeout)
+        window.removeEventListener('scaleData', handler)
+        resolve(event.detail.weight)
+      }
+
+      window.addEventListener('scaleData', handler)
+
+      // 发送读取命令（如果支持）
+      sendReadCommand().catch(() => {
+        // 忽略发送命令失败
+      })
+    })
+  }
+
+  throw new Error('电子秤未连接')
+}
+
+/**
+ * 读取模拟重量（用于开发和测试）
+ */
+function readMockWeight() {
+  const { minWeight, maxWeight, precision } = scaleConfig.mock
+  const weight = (
+    Math.random() * (maxWeight - minWeight) + minWeight
+  ).toFixed(precision)
+  return parseFloat(weight)
+}
+
+/**
+ * 发送读取命令（可选，某些电子秤需要）
+ */
+async function sendReadCommand() {
+  const writeChar = scaleConfig.bluetooth.writeCharacteristic
+  if (!writeChar) return
+
+  // 常见读取命令（根据具体型号调整）
+  const commands = [
+    new Uint8Array([0x1B, 0x70]),  // ESC p (打印/读取)
+    new Uint8Array([0x05]),         // ENQ (查询)
+    new Uint8Array([0x52]),         // 'R' (Read)
+  ]
+
+  for (const cmd of commands) {
+    try {
+      await writeChar.writeValue(cmd)
+      console.log('📤 发送读取命令:', cmd)
+      break
+    } catch (e) {
+      console.warn('⚠️ 发送命令失败:', e.message)
+    }
+  }
+}
+
+/**
+ * 断开电子秤连接
+ */
+export async function disconnectScale() {
+  console.log('⚖️ 断开电子秤连接...')
+
+  try {
+    if (currentServer) {
+      // Web Bluetooth
+      if (currentDevice && currentDevice.gatt) {
+        currentDevice.gatt.disconnect()
+      }
+    } else if (hasUniBluetooth) {
+      // UniApp
+      await new Promise((resolve, reject) => {
+        uni.closeBluetoothAdapter({
+          success: resolve,
+          fail: reject,
+        })
+      })
+    }
+
+    connected = false
+    currentDevice = null
+    currentServer = null
+    scaleConfig.bluetooth.deviceId = null
+    scaleConfig.bluetooth.deviceName = ''
+    scaleConfig.bluetooth.enabled = false
+
+    console.log('✅ 电子秤已断开')
+  } catch (e) {
+    console.error('❌ 断开电子秤失败:', e)
+    throw e
+  }
+}
+
+/**
+ * 检查是否已连接
+ */
+export function isScaleConnected() {
+  return connected || scaleConfig.mock.enabled
+}
+
+/**
+ * 格式化重量显示
+ */
+export function formatWeight(weight) {
+  if (weight == null) return ''
+  return `${Number(weight).toFixed(scaleConfig.mock.precision)} ${scaleConfig.conversion.unit}`
+}
+
+/**
+ * 设置模拟模式的范围
+ */
+export function setMockRange(min, max, precision = 2) {
+  scaleConfig.mock.minWeight = min
+  scaleConfig.mock.maxWeight = max
+  scaleConfig.mock.precision = precision
+}
+
+/**
+ * 切换模拟模式
+ */
+export function setMockEnabled(enabled) {
+  scaleConfig.mock.enabled = enabled
+  if (enabled) {
+    console.log('⚖️ 已启用模拟模式')
+  } else {
+    console.log('⚖️ 已禁用模拟模式，将使用真实电子秤')
+  }
+}

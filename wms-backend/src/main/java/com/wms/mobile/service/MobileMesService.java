@@ -16,9 +16,11 @@ import com.wms.mes.service.MesReportService;
 import com.wms.mes.service.MesSummaryService;
 import com.wms.mes.service.MesSyncWorkerService;
 import com.wms.mes.service.MesEventService;
+import com.wms.mobile.dto.MobileMesPrintRequest;
 import com.wms.mobile.dto.MobileMesSummaryVo;
 import com.wms.mobile.dto.MobileMesSyncRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +34,7 @@ import java.util.Map;
 /**
  * 移动端 MES 现场作业门面：报工、工序转移、返工、同步。
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MobileMesService {
@@ -101,6 +104,12 @@ public class MobileMesService {
 
     public MobileMesSummaryVo summary() {
         return summaryService.summary();
+    }
+
+    public void printMesLabel(MobileMesPrintRequest request) {
+        log.info("MES标签打印请求: reportNo={}, moNo={}, weightKg={}, qty={}",
+                request.getReportNo(), request.getMoNo(),
+                request.getWeightKg(), request.getQty());
     }
 
     /**

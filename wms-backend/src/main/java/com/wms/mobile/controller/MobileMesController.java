@@ -12,6 +12,7 @@ import com.wms.mes.dto.MesTransferSubmitRequest;
 import com.wms.mes.entity.MesDefect;
 import com.wms.mes.entity.MesReport;
 import com.wms.mes.entity.MesTransfer;
+import com.wms.mobile.dto.MobileMesPrintRequest;
 import com.wms.mobile.dto.MobileMesSummaryVo;
 import com.wms.mobile.dto.MobileMesSyncRequest;
 import com.wms.mobile.dto.MobileMesEventRequest;
@@ -143,5 +144,12 @@ public class MobileMesController {
     @GetMapping("/defects/{defectNo}")
     public ApiResult<MesReworkSequenceVo> defectSequence(@PathVariable String defectNo) {
         return ApiResult.ok(mobileMesService.defectSequence(defectNo));
+    }
+
+    @Operation(summary = "MES称重标签打印")
+    @PostMapping("/reports/print")
+    public ApiResult<Void> printLabel(@RequestBody MobileMesPrintRequest request) {
+        mobileMesService.printMesLabel(request);
+        return ApiResult.ok("标签打印任务已提交", null);
     }
 }
