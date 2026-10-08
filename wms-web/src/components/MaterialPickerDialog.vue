@@ -72,6 +72,7 @@ watch(visible, (open) => {
       @row-dblclick="handleSelect"
     >
       <el-table-column prop="materialCode" label="物料编码" width="140" />
+      <el-table-column prop="erpMaterialId" label="内码" width="100" />
       <el-table-column prop="materialName" label="物料名称" min-width="180" show-overflow-tooltip />
       <el-table-column prop="materialType" label="类型" width="90">
         <template #default="{ row }">

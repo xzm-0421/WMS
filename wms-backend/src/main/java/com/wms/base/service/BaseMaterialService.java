@@ -7,7 +7,6 @@ import com.wms.base.mapper.BaseMaterialMapper;
 import com.wms.common.constant.ErrorCode;
 import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
-import com.wms.common.util.CodeAutoGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -43,47 +42,28 @@ public class BaseMaterialService {
         return material;
     }
 
-    public void create(BaseMaterial material) {
-        material.setMaterialCode(CodeAutoGenerator.ensureOrGenerate(material.getMaterialCode(), "MAT"));
-        if (!StringUtils.hasText(material.getMaterialName())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "物料名称不能为空");
-        }
-        Long count = materialMapper.selectCount(new LambdaQueryWrapper<BaseMaterial>()
-                .eq(BaseMaterial::getMaterialCode, material.getMaterialCode()));
-        if (count > 0) {
-            throw new BusinessException(ErrorCode.CONFLICT, "物料编码已存在", "MATERIAL_CODE_EXISTS");
-        }
-        materialMapper.insert(material);
-    }
-
-    public void update(String materialCode, BaseMaterial material) {
-        BaseMaterial existing = getByCode(materialCode);
-        material.setId(existing.getId());
-        material.setMaterialCode(materialCode);
-        materialMapper.updateById(material);
-    }
-
     public void delete(String materialCode) {
         BaseMaterial existing = getByCode(materialCode);
         materialMapper.deleteById(existing.getId());
     }
 
     /**
-     * 从金蝶主数据 upsert 物料，编码与金蝶 FNumber 一致。
+     * 从金蝶主数据 upsert 物料，编码与金蝶 FNumber 一致，内码取 FMATERIALID。
+     * 逻辑删除的物料在重新同步时会被复活，避免 uk_material_code 冲突。
      *
      * @return INSERTED / UPDATED / SKIPPED
      */
     public String upsertFromKingdee(String materialCode, String materialName, String specification,
                                     String unitCode, boolean batchManaged, boolean serialManaged,
-                                    boolean active) {
+                                    boolean active, Long erpMaterialId) {
         if (!StringUtils.hasText(materialCode)) {
             return "SKIPPED";
         }
         String code = materialCode.trim();
-        BaseMaterial existing = materialMapper.selectOne(new LambdaQueryWrapper<BaseMaterial>()
-                .eq(BaseMaterial::getMaterialCode, code));
+        BaseMaterial existing = materialMapper.selectAnyByCode(code);
         if (existing == null) {
             BaseMaterial material = new BaseMaterial();
+            material.setErpMaterialId(erpMaterialId);
             material.setMaterialCode(code);
             material.setMaterialName(defaultName(materialName, code));
             material.setSpecification(trimToNull(specification));
@@ -96,6 +76,11 @@ public class BaseMaterialService {
             materialMapper.insert(material);
             return "INSERTED";
         }
+        boolean revived = existing.getDeleted() != null && existing.getDeleted() != 0;
+        if (revived) {
+            materialMapper.reviveById(existing.getId());
+        }
+        existing.setErpMaterialId(erpMaterialId);
         existing.setMaterialName(defaultName(materialName, code));
         if (StringUtils.hasText(specification)) {
             existing.setSpecification(specification.trim());
@@ -106,6 +91,7 @@ public class BaseMaterialService {
         existing.setBatchManaged(batchManaged ? 1 : 0);
         existing.setSerialManaged(serialManaged ? 1 : 0);
         existing.setStatus(active ? 1 : 0);
+        existing.setDeleted(0);
         materialMapper.updateById(existing);
         return "UPDATED";
     }

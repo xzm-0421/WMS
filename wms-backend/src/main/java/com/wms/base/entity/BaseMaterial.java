@@ -17,6 +17,7 @@ public class BaseMaterial extends BaseEntity {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long erpMaterialId;
     private String materialCode;
     private String materialName;
     private String categoryCode;

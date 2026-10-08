@@ -68,7 +68,8 @@ public class KingdeeMasterDataSyncService {
                         cell(row, 3),
                         isTrue(cell(row, 4)),
                         isTrue(cell(row, 5)),
-                        active);
+                        active,
+                        parseLong(cell(row, 8)));
                 if ("INSERTED".equals(action)) {
                     inserted++;
                 } else if ("UPDATED".equals(action)) {
@@ -219,5 +220,16 @@ public class KingdeeMasterDataSyncService {
 
     private static boolean isTrue(String val) {
         return "1".equals(val) || "true".equalsIgnoreCase(val);
+    }
+
+    private static Long parseLong(String val) {
+        if (!StringUtils.hasText(val)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(val.trim().split("\\.")[0]);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 }

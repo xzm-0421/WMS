@@ -1,57 +1,17 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  getMaterials,
-  createMaterial,
-  updateMaterial,
-  deleteMaterial,
-  MATERIAL_TYPE_LABEL,
-  type Material,
-} from '@/api/material'
+import { getMaterials, deleteMaterial, MATERIAL_TYPE_LABEL, type Material } from '@/api/material'
 import { syncKingdeeMaterials } from '@/api/kingdeeMasterData'
-import { getBarcodeRules, type BarcodeRule } from '@/api/barcode'
+import { useUserStore } from '@/stores/user'
 import PrintActions from '@/components/PrintActions.vue'
 
+const userStore = useUserStore()
 const loading = ref(false)
 const syncing = ref(false)
 const tableData = ref<Material[]>([])
 const total = ref(0)
 const query = reactive({ materialCode: '', materialName: '', current: 1, size: 20 })
-const barcodeRules = ref<BarcodeRule[]>([])
-
-const dialogVisible = ref(false)
-const dialogTitle = ref('新增物料')
-const editingCode = ref<string | null>(null)
-const form = reactive<Material>({
-  materialCode: '',
-  materialName: '',
-  categoryCode: 'CAT001',
-  unitCode: 'KG',
-  materialType: 'RAW',
-  batchManaged: 1,
-  barcodeRule: '',
-  status: 1,
-})
-
-function resetForm() {
-  Object.assign(form, {
-    materialCode: '',
-    materialName: '',
-    categoryCode: 'CAT001',
-    unitCode: 'KG',
-    materialType: 'RAW',
-    batchManaged: 1,
-    barcodeRule: '',
-    status: 1,
-  })
-  editingCode.value = null
-}
-
-async function loadBarcodeRules() {
-  const res = await getBarcodeRules({ current: 1, size: 200, status: 1 })
-  barcodeRules.value = res.records
-}
 
 async function loadData() {
   loading.value = true
@@ -62,40 +22,6 @@ async function loadData() {
   } finally {
     loading.value = false
   }
-}
-
-function handleAdd() {
-  resetForm()
-  dialogTitle.value = '新增物料'
-  dialogVisible.value = true
-}
-
-function handleEdit(row: Material) {
-  resetForm()
-  editingCode.value = row.materialCode
-  Object.assign(form, row)
-  dialogTitle.value = '编辑物料'
-  dialogVisible.value = true
-}
-
-async function handleSave() {
-  if (!form.materialName?.trim()) {
-    ElMessage.warning('请填写物料名称')
-    return
-  }
-  if (editingCode.value) {
-    if (!form.materialCode?.trim()) {
-      ElMessage.warning('物料编码不能为空')
-      return
-    }
-    await updateMaterial(editingCode.value, form)
-    ElMessage.success('更新成功')
-  } else {
-    await createMaterial({ ...form, materialCode: form.materialCode?.trim() || '' })
-    ElMessage.success('创建成功（编码可自动生成）')
-  }
-  dialogVisible.value = false
-  loadData()
 }
 
 async function handleSyncFromKingdee() {
@@ -119,20 +45,23 @@ async function handleSyncFromKingdee() {
 }
 
 async function handleDelete(row: Material) {
-  await ElMessageBox.confirm(`确定删除物料 ${row.materialCode}？`, '提示')
+  await ElMessageBox.confirm(`确定删除物料 ${row.materialCode}？（逻辑删除）`, '提示')
   await deleteMaterial(row.materialCode)
   ElMessage.success('删除成功')
   loadData()
 }
 
-onMounted(() => {
-  loadBarcodeRules()
-  loadData()
-})
+onMounted(loadData)
 </script>
 
 <template>
   <el-card shadow="never">
+    <el-alert
+      title="物料以金蝶 BD_MATERIAL 为权威源，本地只读；仅支持从金蝶同步与逻辑删除。"
+      type="info"
+      :closable="false"
+      style="margin-bottom: 16px"
+    />
     <el-form :inline="true" :model="query">
       <el-form-item label="物料编码">
         <el-input v-model="query.materialCode" clearable />
@@ -142,13 +71,20 @@ onMounted(() => {
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadData">查询</el-button>
-        <el-button @click="handleAdd">新增</el-button>
-        <el-button type="success" :loading="syncing" @click="handleSyncFromKingdee">从金蝶同步</el-button>
+        <el-button
+          v-if="userStore.hasPermission('base:material:sync')"
+          type="success"
+          :loading="syncing"
+          @click="handleSyncFromKingdee"
+        >
+          从金蝶同步
+        </el-button>
       </el-form-item>
     </el-form>
 
     <el-table v-loading="loading" :data="tableData" stripe>
       <el-table-column prop="materialCode" label="物料编码" width="140" />
+      <el-table-column prop="erpMaterialId" label="内码" width="110" />
       <el-table-column prop="materialName" label="物料名称" min-width="180" />
       <el-table-column prop="specification" label="规格" min-width="120" show-overflow-tooltip />
       <el-table-column prop="materialType" label="类型" width="100">
@@ -164,9 +100,8 @@ onMounted(() => {
           <WmsStatusTag :status="row.status" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
           <PrintActions biz="material_label" :doc-no="row.materialCode" />
           <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -182,55 +117,4 @@ onMounted(() => {
       @current-change="loadData"
     />
   </el-card>
-
-  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="480px" @closed="resetForm">
-    <el-form :model="form" label-width="100px">
-      <el-form-item label="物料编码">
-        <el-input
-          v-model="form.materialCode"
-          :disabled="!!editingCode"
-          :placeholder="editingCode ? '' : '留空则系统自动生成'"
-        />
-      </el-form-item>
-      <el-form-item label="物料名称" required>
-        <el-input v-model="form.materialName" />
-      </el-form-item>
-      <el-form-item label="分类编码">
-        <el-input v-model="form.categoryCode" />
-      </el-form-item>
-      <el-form-item label="单位">
-        <el-input v-model="form.unitCode" />
-      </el-form-item>
-      <el-form-item label="物料类型">
-        <WmsSelect v-model="form.materialType" block>
-          <el-option label="原材料" value="RAW" />
-          <el-option label="成品" value="FINISHED" />
-          <el-option label="辅料" value="AUX" />
-        </WmsSelect>
-      </el-form-item>
-      <el-form-item label="批次管理">
-        <el-switch v-model="form.batchManaged" :active-value="1" :inactive-value="0" />
-      </el-form-item>
-      <el-form-item label="条码规则">
-        <WmsSelect v-model="form.barcodeRule" block clearable placeholder="不绑定则按全量规则匹配">
-          <el-option
-            v-for="rule in barcodeRules"
-            :key="rule.ruleCode"
-            :label="`${rule.ruleCode} - ${rule.ruleName}`"
-            :value="rule.ruleCode"
-          />
-        </WmsSelect>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-radio-group v-model="form.status">
-          <el-radio :value="1">启用</el-radio>
-          <el-radio :value="0">禁用</el-radio>
-        </el-radio-group>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="handleSave">确定</el-button>
-    </template>
-  </el-dialog>
 </template>

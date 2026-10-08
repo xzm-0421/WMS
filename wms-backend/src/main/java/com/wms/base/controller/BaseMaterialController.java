@@ -35,21 +35,7 @@ public class BaseMaterialController {
         return ApiResult.ok(materialService.getByCode(materialCode));
     }
 
-    @Operation(summary = "新增物料")
-    @PostMapping
-    public ApiResult<Void> create(@RequestBody BaseMaterial material) {
-        materialService.create(material);
-        return ApiResult.ok("创建成功", null);
-    }
-
-    @Operation(summary = "更新物料")
-    @PutMapping("/{materialCode}")
-    public ApiResult<Void> update(@PathVariable String materialCode, @RequestBody BaseMaterial material) {
-        materialService.update(materialCode, material);
-        return ApiResult.ok("更新成功", null);
-    }
-
-    @Operation(summary = "删除物料")
+    @Operation(summary = "删除物料（逻辑删除）")
     @DeleteMapping("/{materialCode}")
     public ApiResult<Void> delete(@PathVariable String materialCode) {
         materialService.delete(materialCode);
