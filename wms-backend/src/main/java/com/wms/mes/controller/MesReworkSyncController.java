@@ -1,5 +1,6 @@
 package com.wms.mes.controller;
 
+import com.wms.common.audit.OperationLog;
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
 import com.wms.mes.dto.MesDefectCreateRequest;
@@ -40,6 +41,7 @@ public class MesReworkSyncController {
     }
 
     @Operation(summary = "发起返工")
+    @OperationLog(module = "轻MES", type = "CREATE", content = "发起返工")
     @PostMapping("/defects")
     public ApiResult<MesReworkSequenceVo> create(@RequestBody MesDefectCreateRequest request) {
         return ApiResult.ok("返工序列已创建", reworkService.create(request));
@@ -52,18 +54,21 @@ public class MesReworkSyncController {
     }
 
     @Operation(summary = "完成返工")
+    @OperationLog(module = "轻MES", type = "COMPLETE", content = "完成返工")
     @PostMapping("/defects/{defectNo}/complete")
     public ApiResult<MesDefect> complete(@PathVariable String defectNo) {
         return ApiResult.ok("已标记返工完成", reworkService.complete(defectNo));
     }
 
     @Operation(summary = "标记二次返工")
+    @OperationLog(module = "轻MES", type = "SECONDARY", content = "标记二次返工")
     @PostMapping("/defects/{defectNo}/secondary")
     public ApiResult<MesDefect> secondary(@PathVariable String defectNo) {
         return ApiResult.ok("已标记二次返工", reworkService.markSecondary(defectNo));
     }
 
     @Operation(summary = "关闭返工")
+    @OperationLog(module = "轻MES", type = "CLOSE", content = "关闭返工")
     @PostMapping("/defects/{defectNo}/close")
     public ApiResult<MesDefect> close(@PathVariable String defectNo) {
         return ApiResult.ok("已关闭返工", reworkService.close(defectNo));
@@ -87,6 +92,7 @@ public class MesReworkSyncController {
     }
 
     @Operation(summary = "重试不良/返工同步任务")
+    @OperationLog(module = "轻MES", type = "RETRY", content = "不良/返工同步重试")
     @PostMapping("/sync/outbox/{id}/retry")
     public ApiResult<Void> retryOutbox(@PathVariable Long id) {
         syncWorkerService.retryOutbox(id);

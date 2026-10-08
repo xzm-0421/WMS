@@ -60,14 +60,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import AppTabBar from '@/components/AppTabBar.vue'
 import RippleBg from '@/components/RippleBg.vue'
 import { requireSession } from '@/utils/authStorage.js'
 import { comingSoon } from '@/utils/ui.js'
 import { flushQueue, getQueueCount } from '@/utils/offlineQueue.js'
-import { syncReports, getSummary } from '@/api/mes.js'
+import { syncReports, getSummary, reportEvent } from '@/api/mes.js'
 
 const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 20)
 
@@ -124,6 +124,30 @@ onShow(() => {
   if (!requireSession()) return
   tryFlush()
   loadSummary()
+})
+
+let offlineSince = 0
+function handleNetwork(status) {
+  if (status && status.isConnected === false) {
+    if (!offlineSince) {
+      offlineSince = Date.now()
+      reportEvent('mes_offline_enter', { time: new Date().toISOString(), networkType: status.networkType }).catch(() => {})
+    }
+  } else if (offlineSince) {
+    reportEvent('mes_offline_exit', { durationMs: Date.now() - offlineSince, queueCount: getQueueCount() }).catch(() => {})
+    offlineSince = 0
+  }
+}
+
+onMounted(() => {
+  uni.getNetworkType({
+    success: (res) => handleNetwork({ isConnected: res.networkType !== 'none', networkType: res.networkType }),
+  })
+  uni.onNetworkStatusChange(handleNetwork)
+})
+
+onUnmounted(() => {
+  uni.offNetworkStatusChange?.(handleNetwork)
 })
 </script>
 

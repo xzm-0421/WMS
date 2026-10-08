@@ -15,4 +15,6 @@ public class LoginResponse {
     private String tokenType;
     private long expiresIn;
     private Map<String, Object> userInfo;
+    /** 密码是否已超过有效期（仅提醒，不阻断登录） */
+    private Boolean passwordExpired;
 }

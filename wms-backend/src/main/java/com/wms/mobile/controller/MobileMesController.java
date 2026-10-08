@@ -14,6 +14,7 @@ import com.wms.mes.entity.MesReport;
 import com.wms.mes.entity.MesTransfer;
 import com.wms.mobile.dto.MobileMesSummaryVo;
 import com.wms.mobile.dto.MobileMesSyncRequest;
+import com.wms.mobile.dto.MobileMesEventRequest;
 import com.wms.mobile.service.MobileMesService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -89,6 +90,13 @@ public class MobileMesController {
     @GetMapping("/summary")
     public ApiResult<MobileMesSummaryVo> summary() {
         return ApiResult.ok(mobileMesService.summary());
+    }
+
+    @Operation(summary = "埋点事件上报（离线进入/退出）")
+    @PostMapping("/events")
+    public ApiResult<Void> events(@RequestBody MobileMesEventRequest request) {
+        mobileMesService.trackEvent(request.getEventName(), request.getBizNo(), request.getProperties());
+        return ApiResult.ok("事件已记录", null);
     }
 
     @Operation(summary = "提交工序转移")

@@ -2,6 +2,7 @@ package com.wms.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.wms.auth.domain.PasswordPolicy;
 import com.wms.auth.service.AuthService;
 import com.wms.common.constant.ErrorCode;
 import com.wms.common.exception.BusinessException;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -66,7 +68,9 @@ public class SysUserService {
         }
         SysUser user = new SysUser();
         user.setUsername(request.getUsername());
+        PasswordPolicy.validate(request.getPassword(), request.getUsername());
         user.setPassword(passwordEncoder.encode(AuthService.sha256Hex(request.getPassword())));
+        user.setPwdUpdatedAt(LocalDateTime.now());
         user.setRealName(request.getRealName());
         user.setPhone(request.getPhone());
         user.setEmail(request.getEmail());
@@ -109,9 +113,11 @@ public class SysUserService {
 
     public void resetPassword(Long id, ResetPasswordRequest request) {
         SysUser user = getUser(id);
+        PasswordPolicy.validate(request.getNewPassword(), user.getUsername());
         SysUser update = new SysUser();
         update.setId(user.getId());
         update.setPassword(passwordEncoder.encode(AuthService.sha256Hex(request.getNewPassword())));
+        update.setPwdUpdatedAt(LocalDateTime.now());
         userMapper.updateById(update);
     }
 

@@ -12,6 +12,7 @@ export interface UserInfo {
   warehouseScope?: string[] | null
   dataScope?: number
   isSuperAdmin?: boolean
+  passwordExpired?: boolean
 }
 
 export const useUserStore = defineStore('user', () => {

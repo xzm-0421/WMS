@@ -7,6 +7,8 @@ import com.wms.common.entity.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("sys_user")
@@ -22,4 +24,6 @@ public class SysUser extends BaseEntity {
     private Long deptId;
     private Integer status;
     private String warehouseScopeJson;
+    /** 最近一次密码修改时间（用于 90 天过期提醒） */
+    private LocalDateTime pwdUpdatedAt;
 }

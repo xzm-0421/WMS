@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { changePassword } from '@/api/auth'
 import { canAccessPath, MENU_PERMISSIONS } from '@/utils/permission'
 import {
   ArrowDown,
@@ -41,6 +43,8 @@ const menus = [
     children: [
       { path: '/system/users', title: '用户管理', permission: MENU_PERMISSIONS['/system/users'] },
       { path: '/system/roles', title: '角色管理', permission: MENU_PERMISSIONS['/system/roles'] },
+      { path: '/system/operation-logs', title: '操作日志', permission: MENU_PERMISSIONS['/system/operation-logs'] },
+      { path: '/system/alerts', title: '告警中心', permission: MENU_PERMISSIONS['/system/alerts'] },
       { path: '/system/rules', title: '业务规则', permission: MENU_PERMISSIONS['/system/rules'] },
       { path: '/system/business-flow', title: '业务流程手册', permission: MENU_PERMISSIONS['/system/business-flow'] },
     ],
@@ -103,11 +107,13 @@ const menus = [
     title: '轻MES',
     icon: Cpu,
     children: [
-      { path: '/mes/materials', title: '物料管理', permission: MENU_PERMISSIONS['/mes/materials'] },
       { path: '/mes/boms', title: 'BOM管理', permission: MENU_PERMISSIONS['/mes/boms'] },
       { path: '/mes/process', title: '工序管理', permission: MENU_PERMISSIONS['/mes/process'] },
       { path: '/mes/equipment', title: '设备管理', permission: MENU_PERMISSIONS['/mes/equipment'] },
       { path: '/mes/routes', title: '工艺路线', permission: MENU_PERMISSIONS['/mes/routes'] },
+      { path: '/mes/work-centers', title: '工作中心', permission: MENU_PERMISSIONS['/mes/work-centers'] },
+      { path: '/mes/resources', title: '资源管理', permission: MENU_PERMISSIONS['/mes/resources'] },
+      { path: '/mes/personnel', title: '人员管理', permission: MENU_PERMISSIONS['/mes/personnel'] },
       { path: '/mes/plans', title: '工序计划', permission: MENU_PERMISSIONS['/mes/plans'] },
       { path: '/mes/report', title: '工序报工', permission: MENU_PERMISSIONS['/mes/report'] },
       { path: '/mes/transfer', title: '工序转移', permission: MENU_PERMISSIONS['/mes/transfer'] },
@@ -155,6 +161,39 @@ onMounted(() => {
 function handleLogout() {
   userStore.logout()
   router.push('/login')
+}
+
+const pwdVisible = ref(false)
+const pwdSubmitting = ref(false)
+const pwdForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
+
+function onUserCommand(cmd: string) {
+  if (cmd === 'logout') {
+    handleLogout()
+  } else if (cmd === 'changePassword') {
+    pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+    pwdVisible.value = true
+  }
+}
+
+async function submitChangePassword() {
+  const { oldPassword, newPassword, confirmPassword } = pwdForm.value
+  if (!oldPassword || !newPassword) {
+    ElMessage.warning('请填写原密码与新密码')
+    return
+  }
+  if (newPassword !== confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  pwdSubmitting.value = true
+  try {
+    await changePassword({ oldPassword, newPassword })
+    ElMessage.success('密码修改成功')
+    pwdVisible.value = false
+  } finally {
+    pwdSubmitting.value = false
+  }
 }
 </script>
 
@@ -209,7 +248,7 @@ function handleLogout() {
           </el-breadcrumb-item>
         </el-breadcrumb>
 
-        <el-dropdown trigger="click" @command="(cmd: string) => cmd === 'logout' && handleLogout()">
+        <el-dropdown trigger="click" @command="onUserCommand">
           <div class="user-trigger">
             <el-avatar :size="32" class="user-avatar">
               <el-icon><TrendCharts /></el-icon>
@@ -219,6 +258,7 @@ function handleLogout() {
           </div>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
               <el-dropdown-item command="logout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -230,6 +270,24 @@ function handleLogout() {
       </el-main>
     </el-container>
   </el-container>
+
+  <el-dialog v-model="pwdVisible" title="修改密码" width="420px">
+    <el-form label-width="90px">
+      <el-form-item label="原密码">
+        <el-input v-model="pwdForm.oldPassword" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="新密码">
+        <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="≥8位，含3类字符" />
+      </el-form-item>
+      <el-form-item label="确认密码">
+        <el-input v-model="pwdForm.confirmPassword" type="password" show-password />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="pwdVisible = false">取消</el-button>
+      <el-button type="primary" :loading="pwdSubmitting" @click="submitChangePassword">确定</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>

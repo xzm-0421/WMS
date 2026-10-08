@@ -22,10 +22,15 @@ export function login(data: LoginParams) {
     refreshToken: string
     expiresIn: number
     userInfo: Record<string, unknown>
+    passwordExpired?: boolean
   }>('/auth/login', {
     ...data,
     password: sha256(data.password),
   })
+}
+
+export function changePassword(data: { oldPassword: string; newPassword: string }) {
+  return request.put('/auth/password', data)
 }
 
 export function getUserInfo() {

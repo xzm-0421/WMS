@@ -15,6 +15,7 @@ import com.wms.mes.service.MesReworkService;
 import com.wms.mes.service.MesReportService;
 import com.wms.mes.service.MesSummaryService;
 import com.wms.mes.service.MesSyncWorkerService;
+import com.wms.mes.service.MesEventService;
 import com.wms.mobile.dto.MobileMesSummaryVo;
 import com.wms.mobile.dto.MobileMesSyncRequest;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,12 @@ public class MobileMesService {
     private final MesReworkService reworkService;
     private final MesSyncWorkerService syncWorkerService;
     private final MesSummaryService summaryService;
+    private final MesEventService mesEventService;
+
+    /** 移动端埋点上报（离线进入/退出等客户端事件）。 */
+    public void trackEvent(String eventName, String bizNo, Map<String, Object> properties) {
+        mesEventService.track(eventName, "MOBILE", bizNo, properties);
+    }
 
     public MesReportContextVo context(String moNo) {
         return reportService.context(moNo);
@@ -49,7 +56,7 @@ public class MobileMesService {
     }
 
     public PageResult<MesReport> pageReports(String reportNo, String moNo, String syncStatus, long current, long size) {
-        return reportService.page(reportNo, moNo, syncStatus, true, true, current, size);
+        return reportService.page(reportNo, moNo, null, syncStatus, true, true, current, size);
     }
 
     public MesReport reportDetail(String reportNo) {

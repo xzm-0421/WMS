@@ -2,6 +2,7 @@ package com.wms.auth.controller;
 
 import com.wms.auth.dto.*;
 import com.wms.auth.service.AuthService;
+import com.wms.common.audit.OperationLog;
 import com.wms.common.result.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,12 +21,14 @@ public class AuthController {
     private final AuthService authService;
 
     @Operation(summary = "Web后台登录")
+    @OperationLog(module = "认证", type = "LOGIN", content = "后台登录")
     @PostMapping("/login")
     public ApiResult<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResult.ok("登录成功", authService.login(request));
     }
 
     @Operation(summary = "PDA移动端登录")
+    @OperationLog(module = "认证", type = "LOGIN", content = "移动端登录")
     @PostMapping("/mobile/login")
     public ApiResult<LoginResponse> mobileLogin(@Valid @RequestBody MobileLoginRequest request) {
         return ApiResult.ok("登录成功", authService.mobileLogin(request));
@@ -56,6 +59,7 @@ public class AuthController {
     }
 
     @Operation(summary = "修改密码")
+    @OperationLog(module = "认证", type = "UPDATE", content = "修改密码")
     @PutMapping("/password")
     public ApiResult<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(request);

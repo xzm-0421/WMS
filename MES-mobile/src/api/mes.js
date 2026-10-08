@@ -60,3 +60,7 @@ export function getDefects(params = {}) {
 export function getDefectSequence(defectNo) {
   return request({ url: `/mobile/mes/defects/${defectNo}` })
 }
+
+export function reportEvent(eventName, properties = {}) {
+  return request({ url: '/mobile/mes/events', method: 'POST', data: { eventName, properties } })
+}

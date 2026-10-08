@@ -1,5 +1,6 @@
 package com.wms.mes.controller;
 
+import com.wms.common.audit.OperationLog;
 import com.wms.common.excel.ExcelHttpHelper;
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
@@ -39,6 +40,7 @@ public class MesReportController {
     }
 
     @Operation(summary = "提交报工")
+    @OperationLog(module = "轻MES", type = "SUBMIT", content = "提交报工")
     @PostMapping("/reports")
     public ApiResult<MesReport> submit(@RequestBody MesReportSubmitRequest request) {
         return ApiResult.ok("报工成功", reportService.submit(request));
@@ -49,11 +51,12 @@ public class MesReportController {
     public ApiResult<PageResult<MesReport>> list(
             @RequestParam(required = false) String reportNo,
             @RequestParam(required = false) String moNo,
+            @RequestParam(required = false) String processCode,
             @RequestParam(required = false) String syncStatus,
             @RequestParam(defaultValue = "1") long current,
             @RequestParam(defaultValue = "20") long size) {
         boolean all = reportService.canViewAllReports();
-        return ApiResult.ok(reportService.page(reportNo, moNo, syncStatus, true, !all, current, size));
+        return ApiResult.ok(reportService.page(reportNo, moNo, processCode, syncStatus, true, !all, current, size));
     }
 
     @Operation(summary = "报工记录详情")
@@ -63,6 +66,7 @@ public class MesReportController {
     }
 
     @Operation(summary = "取消暂存")
+    @OperationLog(module = "轻MES", type = "CANCEL", content = "取消报工暂存")
     @PostMapping("/reports/{reportNo}/cancel")
     public ApiResult<Void> cancel(@PathVariable String reportNo, @RequestBody MesCancelRequest request) {
         reportService.cancelReport(reportNo, request);
@@ -70,6 +74,7 @@ public class MesReportController {
     }
 
     @Operation(summary = "手动重试同步")
+    @OperationLog(module = "轻MES", type = "RETRY", content = "报工同步重试")
     @PostMapping("/reports/{reportNo}/retry")
     public ApiResult<Void> retry(@PathVariable String reportNo) {
         reportService.retryReport(reportNo);
@@ -89,6 +94,7 @@ public class MesReportController {
     }
 
     @Operation(summary = "提交工序转移")
+    @OperationLog(module = "轻MES", type = "SUBMIT", content = "提交工序转移")
     @PostMapping("/transfers")
     public ApiResult<MesTransfer> submitTransfer(@RequestBody MesTransferSubmitRequest request) {
         return ApiResult.ok("转移成功", reportService.submitTransfer(request));
@@ -112,6 +118,7 @@ public class MesReportController {
     }
 
     @Operation(summary = "转移单重试")
+    @OperationLog(module = "轻MES", type = "RETRY", content = "工序转移同步重试")
     @PostMapping("/transfers/{transferNo}/retry")
     public ApiResult<Void> retryTransfer(@PathVariable String transferNo) {
         reportService.retryTransfer(transferNo);

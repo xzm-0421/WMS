@@ -4,6 +4,7 @@ import cn.hutool.captcha.CaptchaUtil;
 import cn.hutool.captcha.LineCaptcha;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.StrUtil;
+import com.wms.auth.domain.PasswordPolicy;
 import com.wms.auth.dto.*;
 import com.wms.auth.security.JwtTokenProvider;
 import com.wms.auth.security.LoginUser;
@@ -14,6 +15,7 @@ import com.wms.system.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,6 +27,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +47,9 @@ public class AuthService {
 
     @Autowired(required = false)
     private StringRedisTemplate redisTemplate;
+
+    @Value("${wms.security.password-expire-days:90}")
+    private int passwordExpireDays;
 
     private final Map<String, String> memoryCaptcha = new ConcurrentHashMap<>();
 
@@ -102,6 +108,7 @@ public class AuthService {
         info.put("warehouseScope", user.getWarehouseScope());
         info.put("dataScope", user.getDataScope());
         info.put("isSuperAdmin", user.isSuperAdmin());
+        info.put("passwordExpired", isPasswordExpired(userMapper.selectById(user.getUserId())));
         return info;
     }
 
@@ -111,10 +118,16 @@ public class AuthService {
         if (!passwordEncoder.matches(sha256Hex(request.getOldPassword()), sysUser.getPassword())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "原密码错误");
         }
+        PasswordPolicy.validate(request.getNewPassword(), sysUser.getUsername());
         SysUser update = new SysUser();
         update.setId(user.getUserId());
         update.setPassword(passwordEncoder.encode(sha256Hex(request.getNewPassword())));
+        update.setPwdUpdatedAt(LocalDateTime.now());
         userMapper.updateById(update);
+    }
+
+    private boolean isPasswordExpired(SysUser sysUser) {
+        return sysUser != null && PasswordPolicy.isExpired(sysUser.getPwdUpdatedAt(), passwordExpireDays);
     }
 
     private LoginResponse doLogin(String username, String password, boolean mobile, String deviceNo) {
@@ -139,12 +152,15 @@ public class AuthService {
             userInfo.put("dataScope", user.getDataScope());
             userInfo.put("isSuperAdmin", user.isSuperAdmin());
         }
+        boolean passwordExpired = isPasswordExpired(userMapper.selectById(user.getUserId()));
+        userInfo.put("passwordExpired", passwordExpired);
         return LoginResponse.builder()
                 .accessToken(jwtTokenProvider.createAccessToken(user.getUserId(), user.getUsername()))
                 .refreshToken(jwtTokenProvider.createRefreshToken(user.getUserId(), user.getUsername()))
                 .tokenType("Bearer")
                 .expiresIn(jwtTokenProvider.getAccessTokenExpire())
                 .userInfo(userInfo)
+                .passwordExpired(passwordExpired)
                 .build();
     }
 

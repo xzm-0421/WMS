@@ -27,6 +27,7 @@ import com.wms.mes.mapper.MesErpOutboxMapper;
 import com.wms.mes.mapper.MesReportMapper;
 import com.wms.mes.mapper.MesReworkOpMapper;
 import com.wms.mes.mapper.MesTransferMapper;
+import com.wms.system.service.AlertService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,7 +35,9 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 报工/转移异步回写 ERP：指数退避、失败人工介入、同步面板统计。
@@ -54,6 +57,8 @@ public class MesSyncWorkerService {
     private final MesProperties mesProperties;
     private final MesHealthService healthService;
     private final ObjectMapper objectMapper;
+    private final MesEventService mesEventService;
+    private final AlertService alertService;
 
     public void drainQueue() {
         long queueSize = countReport(MesConstants.SYNC_PENDING) + countTransfer(MesConstants.SYNC_PENDING);
@@ -74,8 +79,18 @@ public class MesSyncWorkerService {
     }
 
     private void sendAlert(String title, String content) {
-        // TODO: 集成钉钉/邮件/短信告警通道
-        log.warn("告警: {} - {}", title, content);
+        alertService.raise(AlertService.TYPE_QUEUE_FULL, "ERROR", title, content, null);
+    }
+
+    private void trackSync(boolean success, String bizType, String bizNo, String reason) {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("bizType", bizType);
+        props.put("success", success);
+        if (reason != null) {
+            props.put("reason", reason);
+        }
+        mesEventService.track(success ? MesEventService.SYNC_SUCCESS : MesEventService.SYNC_FAIL,
+                bizType, bizNo, props);
     }
 
     public MesSyncPanelVo panel() {
@@ -182,6 +197,7 @@ public class MesSyncWorkerService {
             report.setSyncTime(LocalDateTime.now());
             report.setFailReason(null);
             reportMapper.updateById(report);
+            trackSync(true, "REPORT", report.getReportNo(), null);
             return;
         }
         applyReportFailure(report, result == null ? "ERP无响应" : result.getMessage());
@@ -194,6 +210,7 @@ public class MesSyncWorkerService {
             transfer.setSyncTime(LocalDateTime.now());
             transfer.setFailReason(null);
             transferMapper.updateById(transfer);
+            trackSync(true, "TRANSFER", transfer.getTransferNo(), null);
             return;
         }
         applyTransferFailure(transfer, result == null ? "ERP无响应" : result.getMessage());
@@ -214,6 +231,7 @@ public class MesSyncWorkerService {
             report.setNextRetryTime(MesRetryBackoff.nextRetryTime(retry - 1, LocalDateTime.now()));
         }
         reportMapper.updateById(report);
+        trackSync(false, "REPORT", report.getReportNo(), report.getFailReason());
     }
 
     private void applyTransferFailure(MesTransfer transfer, String message) {
@@ -231,6 +249,7 @@ public class MesSyncWorkerService {
             transfer.setNextRetryTime(MesRetryBackoff.nextRetryTime(retry - 1, LocalDateTime.now()));
         }
         transferMapper.updateById(transfer);
+        trackSync(false, "TRANSFER", transfer.getTransferNo(), transfer.getFailReason());
     }
 
     private void markStale() {
@@ -336,6 +355,7 @@ public class MesSyncWorkerService {
             task.setLastSyncTime(LocalDateTime.now());
             task.setFailReason(null);
             outboxMapper.updateById(task);
+            trackSync(true, task.getBizType(), task.getBizNo(), null);
             return;
         }
         applyOutboxFailure(task, result == null ? "ERP无响应" : result.getMessage());
@@ -355,6 +375,7 @@ public class MesSyncWorkerService {
             task.setNextRetryTime(MesRetryBackoff.nextRetryTime(retry - 1, LocalDateTime.now()));
         }
         outboxMapper.updateById(task);
+        trackSync(false, task.getBizType(), task.getBizNo(), task.getFailReason());
     }
 
     private void markOutboxManual(MesErpOutbox task, String reason) {

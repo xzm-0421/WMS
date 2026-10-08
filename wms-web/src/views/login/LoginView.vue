@@ -55,8 +55,12 @@ async function handleLogin() {
   try {
     localStorage.removeItem('wms_token')
     localStorage.removeItem('wms_refresh_token')
-    await userStore.login(form)
-    ElMessage.success('登录成功')
+    const res = await userStore.login(form)
+    if (res?.passwordExpired || (res?.userInfo as { passwordExpired?: boolean })?.passwordExpired) {
+      ElMessage.warning('您的密码已超过 90 天有效期，建议尽快修改密码')
+    } else {
+      ElMessage.success('登录成功')
+    }
     router.push('/dashboard')
   } catch (err) {
     const msg = err instanceof Error ? err.message : '登录失败'

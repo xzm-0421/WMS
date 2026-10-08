@@ -1,5 +1,6 @@
 package com.wms.system.controller;
 
+import com.wms.common.audit.OperationLog;
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
 import com.wms.integration.kingdee.dto.KingdeeSecUserVo;
@@ -45,6 +46,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "新增用户")
+    @OperationLog(module = "系统管理", type = "CREATE", content = "新增用户")
     @PostMapping
     public ApiResult<Void> create(@RequestBody SysUserCreateRequest request) {
         userService.create(request);
@@ -52,6 +54,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "更新用户")
+    @OperationLog(module = "系统管理", type = "UPDATE", content = "更新用户")
     @PutMapping("/{id}")
     public ApiResult<Void> update(@PathVariable Long id, @RequestBody SysUserUpdateRequest request) {
         userService.update(id, request);
@@ -59,6 +62,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "删除用户")
+    @OperationLog(module = "系统管理", type = "DELETE", content = "删除用户")
     @DeleteMapping("/{id}")
     public ApiResult<Void> delete(@PathVariable Long id) {
         userService.delete(id);
@@ -66,6 +70,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "重置密码")
+    @OperationLog(module = "系统管理", type = "RESET_PASSWORD", content = "重置用户密码")
     @PutMapping("/{id}/reset-password")
     public ApiResult<Void> resetPassword(@PathVariable Long id, @RequestBody ResetPasswordRequest request) {
         userService.resetPassword(id, request);
@@ -73,6 +78,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "更新状态")
+    @OperationLog(module = "系统管理", type = "UPDATE", content = "更新用户状态")
     @PutMapping("/{id}/status")
     public ApiResult<Void> updateStatus(@PathVariable Long id, @RequestBody UpdateStatusRequest request) {
         userService.updateStatus(id, request);
