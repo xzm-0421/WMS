@@ -59,6 +59,13 @@
       </view>
 
       <view class="field">
+        <text class="label">生产人员</text>
+        <picker mode="selector" :range="personnelLabels" :value="personnelIndex" @change="onPersonnelChange">
+          <view class="picker">{{ currentPersonnelLabel || '请选择生产人员' }}</view>
+        </picker>
+      </view>
+
+      <view class="field">
         <text class="label">备注</text>
         <input class="input" v-model="form.remark" placeholder="选填" />
       </view>
@@ -86,6 +93,7 @@ const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight || 20)
 const context = ref({})
 const plans = ref([])
 const equipment = ref([])
+const personnel = ref([])
 const queueCount = ref(getQueueCount())
 const form = reactive({
   moNo: '',
@@ -95,6 +103,7 @@ const form = reactive({
   qty: '',
   weightKg: '',
   equipmentCode: '',
+  personnelCode: '',
   remark: '',
 })
 
@@ -114,6 +123,21 @@ const equipIndex = computed(() => {
 })
 const currentEquipLabel = computed(() => (equipmentLabels.value.length ? equipmentLabels.value[equipIndex.value] : ''))
 
+const personnelOptions = computed(() => [
+  { personnelCode: '', personnelName: '（不指定）' },
+  ...personnel.value,
+])
+const personnelLabels = computed(() =>
+  personnelOptions.value.map((p) => p.personnelName || p.personnelCode),
+)
+const personnelIndex = computed(() => {
+  const i = personnelOptions.value.findIndex((p) => p.personnelCode === form.personnelCode)
+  return i < 0 ? 0 : i
+})
+const currentPersonnelLabel = computed(
+  () => personnelLabels.value[personnelIndex.value] || '',
+)
+
 const defectLabels = computed(() => context.value.openDefectNos || [])
 
 const canSubmit = computed(
@@ -132,6 +156,10 @@ function onDefectChange(e) {
 
 function onEquipChange(e) {
   form.equipmentCode = equipment.value[Number(e.detail.value)]?.equipmentCode || ''
+}
+
+function onPersonnelChange(e) {
+  form.personnelCode = personnelOptions.value[Number(e.detail.value)]?.personnelCode || ''
 }
 
 function setType(type) {
@@ -161,6 +189,7 @@ async function loadContext() {
     context.value = ctx || {}
     plans.value = ctx?.plans || []
     equipment.value = ctx?.equipment || []
+    personnel.value = ctx?.personnel || []
     if (plans.value.length) {
       form.processCode = plans.value[0].processCode
     }
@@ -199,6 +228,7 @@ async function handleSubmit() {
     qty: Number(form.qty),
     weightKg: form.weightKg ? Number(form.weightKg) : null,
     equipmentCode: form.equipmentCode,
+    personnelCode: form.personnelCode || null,
     defectNo: form.reportType === 'REWORK' ? form.defectNo : null,
     remark: form.remark || null,
   }

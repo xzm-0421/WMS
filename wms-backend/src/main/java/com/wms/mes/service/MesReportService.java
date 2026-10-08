@@ -21,6 +21,7 @@ import com.wms.mes.dto.MesTransferSubmitRequest;
 import com.wms.mes.entity.MesDefect;
 import com.wms.mes.entity.MesEquipment;
 import com.wms.mes.entity.MesOpPlan;
+import com.wms.mes.entity.MesPersonnel;
 import com.wms.mes.entity.MesProcess;
 import com.wms.mes.entity.MesReport;
 import com.wms.mes.entity.MesReworkOp;
@@ -44,7 +45,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.alibaba.excel.EasyExcel;
@@ -66,11 +69,12 @@ public class MesReportService {
     private final MesDefectMapper defectMapper;
     private final MesReworkOpMapper reworkOpMapper;
     private final MesRouteMapper routeMapper;
+    private final MesEventService mesEventService;
 
-    public PageResult<MesReport> page(String reportNo, String moNo, String syncStatus,
+    public PageResult<MesReport> page(String reportNo, String moNo, String processCode, String syncStatus,
                                       boolean maskName, boolean onlySelf,
                                       long current, long size) {
-        LambdaQueryWrapper<MesReport> wrapper = buildReportWrapper(reportNo, moNo, syncStatus, onlySelf);
+        LambdaQueryWrapper<MesReport> wrapper = buildReportWrapper(reportNo, moNo, processCode, syncStatus, onlySelf);
         Page<MesReport> page = reportMapper.selectPage(new Page<>(current, size), wrapper);
         if (maskName) {
             page.getRecords().forEach(row -> row.setOperatorName(MesNameMask.mask(row.getOperatorName())));
@@ -108,6 +112,7 @@ public class MesReportService {
         vo.setAllowedReportTypes(MesReworkTypeRule.allowedReportTypes(allCompleted, hasRework));
         vo.setTypeHint(allCompleted && hasRework ? MesReworkTypeRule.completedHint() : null);
         vo.setEquipment(masterDataService.listActiveEquipment(null));
+        vo.setPersonnel(masterDataService.listActivePersonnel(null));
         vo.setOpenDefectNos(openDefects.stream().map(MesDefect::getDefectNo).collect(Collectors.toList()));
         if (!openDefects.isEmpty()) {
             List<String> defectNos = openDefects.stream().map(MesDefect::getDefectNo).toList();
@@ -165,6 +170,7 @@ public class MesReportService {
         }
         LoginUser user = SecurityUtils.currentUser();
         MesEquipment equipment = requireEquipment(request.getEquipmentCode(), processCode);
+        MesPersonnel personnel = resolvePersonnel(request.getPersonnelCode());
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime reportTime = resolveReportTime(request, now);
         MesReport report = new MesReport();
@@ -178,6 +184,8 @@ public class MesReportService {
         report.setWeightKg(request.getWeightKg());
         report.setEquipmentCode(equipment.getEquipmentCode());
         report.setEquipmentName(equipment.getEquipmentName());
+        report.setPersonnelCode(personnel == null ? null : personnel.getPersonnelCode());
+        report.setPersonnelName(personnel == null ? null : personnel.getPersonnelName());
         report.setOperatorId(String.valueOf(user.getUserId()));
         report.setOperatorName(StringUtils.hasText(user.getRealName()) ? user.getRealName() : user.getUsername());
         report.setRemark(request.getRemark());
@@ -211,6 +219,13 @@ public class MesReportService {
         plan.setPlanStatus(MesConstants.PLAN_RUNNING);
         opPlanMapper.updateById(plan);
         maybeAutoTransfer(plan, request.getQty(), user);
+        Map<String, Object> eventProps = new LinkedHashMap<>();
+        eventProps.put("moNo", moNo);
+        eventProps.put("processCode", processCode);
+        eventProps.put("qty", request.getQty());
+        eventProps.put("operator", report.getOperatorName());
+        eventProps.put("equipment", report.getEquipmentCode());
+        mesEventService.track(MesEventService.REPORT_SUBMIT, "REPORT", report.getReportNo(), eventProps);
         return report;
     }
 
@@ -234,9 +249,16 @@ public class MesReportService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "转移数量不能大于已报工数量");
             }
             LoginUser user = SecurityUtils.currentUser();
-            return insertTransfer(moNo, from, fromPlan.getProcessName(),
+            MesTransfer transfer = insertTransfer(moNo, from, fromPlan.getProcessName(),
                     request.getToProcessCode().trim(), null, request.getQty(),
                     request.getRemark(), 0, user);
+            Map<String, Object> eventProps = new LinkedHashMap<>();
+            eventProps.put("moNo", moNo);
+            eventProps.put("fromProcess", from);
+            eventProps.put("toProcess", request.getToProcessCode().trim());
+            eventProps.put("qty", request.getQty());
+            mesEventService.track(MesEventService.TRANSFER_SUBMIT, "TRANSFER", transfer.getTransferNo(), eventProps);
+            return transfer;
         });
     }
 
@@ -304,7 +326,7 @@ public class MesReportService {
 
     public void exportReports(String reportNo, String moNo, String syncStatus, boolean onlySelf,
                               OutputStream outputStream) {
-        LambdaQueryWrapper<MesReport> wrapper = buildReportWrapper(reportNo, moNo, syncStatus, onlySelf);
+        LambdaQueryWrapper<MesReport> wrapper = buildReportWrapper(reportNo, moNo, null, syncStatus, onlySelf);
         List<MesReport> records = reportMapper.selectList(wrapper);
         List<MesReportExcelRow> rows = records.stream().map(item -> {
             MesReportExcelRow row = new MesReportExcelRow();
@@ -336,11 +358,12 @@ public class MesReportService {
         return perms != null && (perms.contains("mes:report:list:all") || perms.contains("mes:sync:panel"));
     }
 
-    private LambdaQueryWrapper<MesReport> buildReportWrapper(String reportNo, String moNo, String syncStatus,
-                                                             boolean onlySelf) {
+    private LambdaQueryWrapper<MesReport> buildReportWrapper(String reportNo, String moNo, String processCode,
+                                                             String syncStatus, boolean onlySelf) {
         LambdaQueryWrapper<MesReport> wrapper = new LambdaQueryWrapper<>();
         wrapper.like(StringUtils.hasText(reportNo), MesReport::getReportNo, reportNo)
                 .like(StringUtils.hasText(moNo), MesReport::getMoNo, moNo)
+                .eq(StringUtils.hasText(processCode), MesReport::getProcessCode, processCode)
                 .eq(StringUtils.hasText(syncStatus), MesReport::getSyncStatus, syncStatus)
                 .orderByDesc(MesReport::getReportTime);
         if (onlySelf) {
@@ -352,7 +375,7 @@ public class MesReportService {
     }
 
     private void maybeAutoTransfer(MesOpPlan plan, BigDecimal qty, LoginUser user) {
-        List<MesRouteOp> ops = masterDataService.listRouteOps(plan.getProductCode());
+        List<MesRouteOp> ops = masterDataService.listRouteOps(plan.getErpMaterialId(), plan.getProductCode());
         if (ops.isEmpty()) {
             return;
         }
@@ -428,23 +451,48 @@ public class MesReportService {
         return matched;
     }
 
+    /** 生产人员可选（单选）；提供编码时校验启用与生产人员标记。 */
+    private MesPersonnel resolvePersonnel(String personnelCode) {
+        if (!StringUtils.hasText(personnelCode)) {
+            return null;
+        }
+        List<MesPersonnel> list = masterDataService.listActivePersonnel(null);
+        MesPersonnel matched = list.stream()
+                .filter(item -> personnelCode.trim().equals(item.getPersonnelCode()))
+                .findFirst()
+                .orElse(null);
+        if (matched == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "生产人员不存在或已停用");
+        }
+        return matched;
+    }
+
     private BigDecimal resolveRatio(MesOpPlan plan, MesProcess process) {
         BigDecimal processRatio = process == null ? null : process.getOverReceiveRatio();
         if (processRatio == null && plan.getOverReceiveRatio() != null) {
             processRatio = plan.getOverReceiveRatio();
         }
         BigDecimal productRatio = null;
-        if (StringUtils.hasText(plan.getProductCode())) {
-            Page<MesRoute> page = routeMapper.selectPage(new Page<>(1, 1),
-                    new LambdaQueryWrapper<MesRoute>()
-                            .eq(MesRoute::getProductCode, plan.getProductCode())
-                            .eq(MesRoute::getStatus, MesConstants.STATUS_ACTIVE)
-                            .orderByDesc(MesRoute::getVersionNo));
-            if (!page.getRecords().isEmpty()) {
-                productRatio = page.getRecords().get(0).getOverReceiveRatio();
-            }
+        MesRoute route = null;
+        if (plan.getErpMaterialId() != null) {
+            route = latestActiveRoute(new LambdaQueryWrapper<MesRoute>()
+                    .eq(MesRoute::getErpMaterialId, plan.getErpMaterialId()));
+        }
+        if (route == null && StringUtils.hasText(plan.getProductCode())) {
+            route = latestActiveRoute(new LambdaQueryWrapper<MesRoute>()
+                    .eq(MesRoute::getProductCode, plan.getProductCode()));
+        }
+        if (route != null) {
+            productRatio = route.getOverReceiveRatio();
         }
         return MesQtyControl.resolveRatio(processRatio, productRatio, mesProperties.getDefaultOverReceiveRatio());
+    }
+
+    private MesRoute latestActiveRoute(LambdaQueryWrapper<MesRoute> wrapper) {
+        wrapper.eq(MesRoute::getStatus, MesConstants.STATUS_ACTIVE)
+                .orderByDesc(MesRoute::getVersionNo);
+        Page<MesRoute> page = routeMapper.selectPage(new Page<>(1, 1), wrapper);
+        return page.getRecords().isEmpty() ? null : page.getRecords().get(0);
     }
 
     private void assertQueueCapacity() {

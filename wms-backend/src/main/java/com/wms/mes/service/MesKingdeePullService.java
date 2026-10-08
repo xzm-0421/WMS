@@ -1,6 +1,8 @@
 package com.wms.mes.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.wms.base.entity.BaseMaterial;
+import com.wms.base.mapper.BaseMaterialMapper;
 import com.wms.common.exception.BusinessException;
 import com.wms.common.constant.ErrorCode;
 import com.wms.integration.kingdee.KingdeeBomService;
@@ -14,16 +16,22 @@ import com.wms.mes.domain.MesPlanKey;
 import com.wms.mes.dto.MesSyncResult;
 import com.wms.mes.entity.MesEquipment;
 import com.wms.mes.entity.MesOpPlan;
+import com.wms.mes.entity.MesPersonnel;
 import com.wms.mes.entity.MesProcess;
+import com.wms.mes.entity.MesResource;
 import com.wms.mes.entity.MesRoute;
 import com.wms.mes.entity.MesRouteOp;
+import com.wms.mes.entity.MesWorkCenter;
 import com.wms.mes.kingdee.MesKingdeeFormIds;
 import com.wms.mes.kingdee.MesKingdeeRow;
 import com.wms.mes.mapper.MesEquipmentMapper;
 import com.wms.mes.mapper.MesOpPlanMapper;
+import com.wms.mes.mapper.MesPersonnelMapper;
 import com.wms.mes.mapper.MesProcessMapper;
+import com.wms.mes.mapper.MesResourceMapper;
 import com.wms.mes.mapper.MesRouteMapper;
 import com.wms.mes.mapper.MesRouteOpMapper;
+import com.wms.mes.mapper.MesWorkCenterMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +42,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -53,6 +62,11 @@ public class MesKingdeePullService {
     private final MesRouteMapper routeMapper;
     private final MesRouteOpMapper routeOpMapper;
     private final MesOpPlanMapper opPlanMapper;
+    private final MesWorkCenterMapper workCenterMapper;
+    private final MesResourceMapper resourceMapper;
+    private final MesPersonnelMapper personnelMapper;
+    private final BaseMaterialMapper baseMaterialMapper;
+    private final MesEventService mesEventService;
 
     public List<MesSyncResult> syncMasterData() {
         List<MesSyncResult> results = new ArrayList<>();
@@ -61,7 +75,21 @@ public class MesKingdeePullService {
         results.add(syncProcesses());
         results.add(syncEquipment());
         results.add(syncRoutes());
+        results.add(syncWorkCenters());
+        results.add(syncResources());
+        results.add(syncPersonnel());
+        results.forEach(this::trackBasicDataSync);
         return results;
+    }
+
+    private void trackBasicDataSync(MesSyncResult result) {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("type", result.getType());
+        props.put("fetched", result.getFetched());
+        props.put("inserted", result.getInserted());
+        props.put("updated", result.getUpdated());
+        props.put("success", result.isSuccess());
+        mesEventService.track(MesEventService.BASICDATA_SYNC, "BASICDATA", result.getType(), props);
     }
 
     public MesSyncResult syncMaterials() {
@@ -122,6 +150,21 @@ public class MesKingdeePullService {
     public MesSyncResult syncEquipment() {
         return pull("设备", kingdeeProperties.getMesEquipmentFormId(), kingdeeProperties.getMesEquipmentFieldKeys(),
                 this::upsertEquipment);
+    }
+
+    public MesSyncResult syncWorkCenters() {
+        return pull("工作中心", kingdeeProperties.getMesWorkCenterFormId(),
+                kingdeeProperties.getMesWorkCenterFieldKeys(), this::upsertWorkCenter);
+    }
+
+    public MesSyncResult syncResources() {
+        return pull("资源", kingdeeProperties.getMesResourceFormId(),
+                kingdeeProperties.getMesResourceFieldKeys(), this::upsertResource);
+    }
+
+    public MesSyncResult syncPersonnel() {
+        return pull("人员", kingdeeProperties.getMesPersonnelFormId(),
+                kingdeeProperties.getMesPersonnelFieldKeys(), this::upsertPersonnel);
     }
 
     public MesSyncResult syncRoutes() {
@@ -365,6 +408,142 @@ public class MesKingdeePullService {
         equipment.setFailReason(null);
     }
 
+    private String upsertWorkCenter(MesKingdeeRow row) {
+        String code = row.get("FNumber");
+        if (!StringUtils.hasText(code)) {
+            return "SKIP";
+        }
+        boolean active = row.isActive(kingdeeProperties.isMasterDataApprovedOnly());
+        MesWorkCenter existing = workCenterMapper.selectOne(new LambdaQueryWrapper<MesWorkCenter>()
+                .eq(MesWorkCenter::getWorkCenterCode, code.trim()));
+        LocalDateTime now = LocalDateTime.now();
+        if (existing == null) {
+            MesWorkCenter workCenter = new MesWorkCenter();
+            workCenter.setWorkCenterCode(code.trim());
+            fillWorkCenter(workCenter, row, active, now);
+            workCenterMapper.insert(workCenter);
+            return "INSERTED";
+        }
+        fillWorkCenter(existing, row, active, now);
+        workCenterMapper.updateById(existing);
+        return "UPDATED";
+    }
+
+    private void fillWorkCenter(MesWorkCenter workCenter, MesKingdeeRow row, boolean active, LocalDateTime now) {
+        workCenter.setErpId(row.longVal("FID", "FId", "FWorkCenterId"));
+        workCenter.setWorkCenterName(firstNonBlank(row.get("FName"), workCenter.getWorkCenterCode()));
+        workCenter.setWorkShopCode(row.get("FWorkShopId.FNumber", "FWorkShopId"));
+        workCenter.setWorkShopName(row.get("FWorkShopId.FName"));
+        workCenter.setDeptCode(row.get("FDeptId.FNumber", "FDepartment.FNumber"));
+        workCenter.setDeptName(row.get("FDeptId.FName", "FDepartment.FName"));
+        workCenter.setCapacity(row.decimal("FCapacity"));
+        workCenter.setCalendarCode(row.get("FCalendarId.FNumber"));
+        workCenter.setCalendarName(row.get("FCalendarId.FName"));
+        workCenter.setStatus(active ? MesConstants.STATUS_ACTIVE : MesConstants.STATUS_DISABLED);
+        workCenter.setSyncStatus(MesConstants.SYNC_SYNCED);
+        workCenter.setLastSyncTime(now);
+        workCenter.setFailReason(null);
+    }
+
+    private String upsertResource(MesKingdeeRow row) {
+        String code = row.get("FNumber");
+        if (!StringUtils.hasText(code)) {
+            return "SKIP";
+        }
+        boolean active = row.isActive(kingdeeProperties.isMasterDataApprovedOnly());
+        MesResource existing = resourceMapper.selectOne(new LambdaQueryWrapper<MesResource>()
+                .eq(MesResource::getResourceCode, code.trim()));
+        LocalDateTime now = LocalDateTime.now();
+        if (existing == null) {
+            MesResource resource = new MesResource();
+            resource.setResourceCode(code.trim());
+            fillResource(resource, row, active, now);
+            resourceMapper.insert(resource);
+            return "INSERTED";
+        }
+        fillResource(existing, row, active, now);
+        resourceMapper.updateById(existing);
+        return "UPDATED";
+    }
+
+    private void fillResource(MesResource resource, MesKingdeeRow row, boolean active, LocalDateTime now) {
+        resource.setErpId(row.longVal("FID", "FId", "FResourceId"));
+        resource.setResourceName(firstNonBlank(row.get("FName"), resource.getResourceCode()));
+        String rawType = firstNonBlank(row.get("FResourceType"),
+                row.get("FResourceTypeId.FNumber"), row.get("FResourceTypeId.FName"));
+        resource.setResourceTypeCode(StringUtils.hasText(rawType) ? rawType : null);
+        resource.setResourceType(mapResourceType(rawType));
+        resource.setWorkCenterCode(row.get("FWorkCenterId.FNumber", "FWorkCenterId"));
+        resource.setWorkCenterName(row.get("FWorkCenterId.FName"));
+        resource.setCapacity(row.decimal("FCapacity"));
+        resource.setUnitCode(row.get("FUnitId.FNumber"));
+        String refCode = firstNonBlank(row.get("FRefNumber"), row.get("FRefId.FNumber"), row.get("FObjectNumber"));
+        if (StringUtils.hasText(refCode)) {
+            resource.setRefType(resource.getResourceType());
+            resource.setRefCode(refCode);
+            resource.setRefName(firstNonBlank(row.get("FRefName"), row.get("FRefId.FName"), row.get("FObjectName")));
+        }
+        resource.setStatus(active ? MesConstants.STATUS_ACTIVE : MesConstants.STATUS_DISABLED);
+        resource.setSyncStatus(MesConstants.SYNC_SYNCED);
+        resource.setLastSyncTime(now);
+        resource.setFailReason(null);
+    }
+
+    private static String mapResourceType(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "OTHER";
+        }
+        String value = raw.trim().toUpperCase(Locale.ROOT);
+        if (value.contains("EQUIP") || raw.contains("设备")) {
+            return "EQUIPMENT";
+        }
+        if (value.contains("TEAM") || raw.contains("团队") || raw.contains("班组")) {
+            return "TEAM";
+        }
+        if (value.contains("PERSON") || value.contains("EMP") || raw.contains("人员") || raw.contains("员工")) {
+            return "PERSONNEL";
+        }
+        return "OTHER";
+    }
+
+    private String upsertPersonnel(MesKingdeeRow row) {
+        String code = row.get("FNumber");
+        if (!StringUtils.hasText(code)) {
+            return "SKIP";
+        }
+        boolean active = row.isActive(kingdeeProperties.isMasterDataApprovedOnly());
+        MesPersonnel existing = personnelMapper.selectOne(new LambdaQueryWrapper<MesPersonnel>()
+                .eq(MesPersonnel::getPersonnelCode, code.trim()));
+        LocalDateTime now = LocalDateTime.now();
+        if (existing == null) {
+            MesPersonnel personnel = new MesPersonnel();
+            personnel.setPersonnelCode(code.trim());
+            fillPersonnel(personnel, row, active, now);
+            personnelMapper.insert(personnel);
+            return "INSERTED";
+        }
+        fillPersonnel(existing, row, active, now);
+        personnelMapper.updateById(existing);
+        return "UPDATED";
+    }
+
+    /** 不覆盖本地字段 sysUserId / sysUsername。 */
+    private void fillPersonnel(MesPersonnel personnel, MesKingdeeRow row, boolean active, LocalDateTime now) {
+        personnel.setErpId(row.longVal("FID", "FId", "FEmpId"));
+        personnel.setPersonnelName(firstNonBlank(row.get("FName"), personnel.getPersonnelCode()));
+        personnel.setDeptCode(row.get("FDepartment.FNumber", "FDeptId.FNumber"));
+        personnel.setDeptName(row.get("FDepartment.FName", "FDeptId.FName"));
+        personnel.setPostCode(row.get("FPositionId.FNumber", "FPostId.FNumber"));
+        personnel.setPostName(row.get("FPositionId.FName", "FPostId.FName"));
+        personnel.setSkillLevel(row.get("FSkillLevel", "FGrade"));
+        personnel.setWorkCenterCode(row.get("FWorkCenterId.FNumber"));
+        personnel.setProductionFlag(row.flagOrDefault(MesConstants.FLAG_YES, "FIsProduce", "FIsProduction"));
+        personnel.setStatus(active ? MesConstants.STATUS_ACTIVE : MesConstants.STATUS_DISABLED);
+        personnel.setSyncStatus(MesConstants.SYNC_SYNCED);
+        personnel.setLastSyncTime(now);
+        personnel.setFailReason(null);
+    }
+
     private String upsertRoute(List<MesKingdeeRow> rows) {
         if (rows == null || rows.isEmpty()) {
             return "SKIP";
@@ -392,6 +571,8 @@ public class MesKingdeePullService {
         header.setRouteCode(StringUtils.hasText(routeCode) ? routeCode.trim() : null);
         header.setRouteName(first.get("FName"));
         header.setProductCode(StringUtils.hasText(product) ? product.trim() : routeCode.trim());
+        header.setErpMaterialId(resolveErpMaterialId(
+                first.longVal("FMaterialID", "FMaterialId", "FMATERIALID"), header.getProductCode()));
         header.setProductName(first.get("FMaterialID.FName", "FMaterialId.FName", "FProductId.FName"));
         header.setVersionNo(version.trim());
         header.setOverReceiveRatio(first.decimal("FOverRate", "FOverReceiveRate"));
@@ -414,6 +595,7 @@ public class MesKingdeePullService {
             MesRouteOp op = new MesRouteOp();
             op.setRouteId(header.getId());
             op.setProductCode(header.getProductCode());
+            op.setErpMaterialId(header.getErpMaterialId());
             op.setVersionNo(header.getVersionNo());
             Integer rowSeq = row.intVal("FEntity_FSeq", "FSeq");
             op.setSeqNo(rowSeq == null ? seq : rowSeq);
@@ -482,6 +664,8 @@ public class MesKingdeePullService {
         plan.setProcessName(row.get("FEntity_FProcessId.FName", "FOperID.FName", "FProcessId.FName", "FOperId.FName"));
         plan.setProductCode(row.get("FMaterialID.FNumber", "FMaterialId.FNumber",
                 "FProductId.FNumber", "FPRODUCTID.FNumber"));
+        plan.setErpMaterialId(resolveErpMaterialId(
+                row.longVal("FMaterialID", "FMaterialId", "FProductId", "FPRODUCTID"), plan.getProductCode()));
         plan.setProductName(row.get("FMaterialID.FName", "FMaterialId.FName", "FProductId.FName", "FPRODUCTID.FName"));
         plan.setErpBillNo(erpBillNo);
         plan.setErpEntryId(entryId);
@@ -525,6 +709,18 @@ public class MesKingdeePullService {
 
     private static String escape(String value) {
         return value == null ? "" : value.trim().replace("'", "''");
+    }
+
+    /** 金蝶未返回内码时按编码从本地物料表补内码（纯本地，不依赖金蝶）。 */
+    private Long resolveErpMaterialId(Long erpMaterialId, String materialCode) {
+        if (erpMaterialId != null) {
+            return erpMaterialId;
+        }
+        if (!StringUtils.hasText(materialCode)) {
+            return null;
+        }
+        BaseMaterial material = baseMaterialMapper.selectAnyByCode(materialCode.trim());
+        return material == null ? null : material.getErpMaterialId();
     }
 
     private static String firstNonBlank(String... values) {

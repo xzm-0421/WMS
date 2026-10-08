@@ -2,6 +2,7 @@ package com.wms.mes.dto;
 
 import com.wms.mes.entity.MesEquipment;
 import com.wms.mes.entity.MesOpPlan;
+import com.wms.mes.entity.MesPersonnel;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ public class MesReportContextVo {
     private String typeHint;
     private List<MesOpPlan> plans = new ArrayList<>();
     private List<MesEquipment> equipment = new ArrayList<>();
+    private List<MesPersonnel> personnel = new ArrayList<>();
     private List<String> reworkProcessCodes = new ArrayList<>();
     private List<String> openDefectNos = new ArrayList<>();
 }

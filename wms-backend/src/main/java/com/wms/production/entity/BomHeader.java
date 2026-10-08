@@ -15,6 +15,7 @@ public class BomHeader {
     private Long id;
     private String bomCode;
     private String productCode;
+    private Long erpMaterialId;
     private String versionNo;
     private Integer status;
     private LocalDateTime createTime;

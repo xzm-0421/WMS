@@ -12,18 +12,22 @@ import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("mes_route")
-public class MesRoute extends BaseEntity {
+@TableName("mes_work_center")
+public class MesWorkCenter extends BaseEntity {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String productCode;
-    private Long erpMaterialId;
-    private String productName;
-    private String routeCode;
-    private String routeName;
-    private String versionNo;
-    private BigDecimal overReceiveRatio;
+    /** 金蝶内码 FID */
+    private Long erpId;
+    private String workCenterCode;
+    private String workCenterName;
+    private String workShopCode;
+    private String workShopName;
+    private String deptCode;
+    private String deptName;
+    private BigDecimal capacity;
+    private String calendarCode;
+    private String calendarName;
     private Integer status;
     private String syncStatus;
     private LocalDateTime lastSyncTime;

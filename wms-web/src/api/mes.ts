@@ -24,6 +24,7 @@ export interface MesProcess {
   reportFlag?: number
   transferFlag?: number
   inspectFlag?: number
+  isConvergeOp?: boolean
   overReceiveRatio?: number
   status?: number
   syncStatus?: string
@@ -43,21 +44,83 @@ export interface MesEquipment {
   failReason?: string
 }
 
+export interface MesWorkCenter {
+  id?: number
+  erpId?: number
+  workCenterCode?: string
+  workCenterName?: string
+  workShopCode?: string
+  workShopName?: string
+  deptCode?: string
+  deptName?: string
+  capacity?: number
+  calendarCode?: string
+  calendarName?: string
+  status?: number
+  syncStatus?: string
+  lastSyncTime?: string
+  failReason?: string
+}
+
+export interface MesResource {
+  id?: number
+  erpId?: number
+  resourceCode?: string
+  resourceName?: string
+  resourceTypeCode?: string
+  resourceType?: string
+  workCenterCode?: string
+  workCenterName?: string
+  capacity?: number
+  unitCode?: string
+  refType?: string
+  refCode?: string
+  refName?: string
+  status?: number
+  syncStatus?: string
+  lastSyncTime?: string
+  failReason?: string
+}
+
+export interface MesPersonnel {
+  id?: number
+  erpId?: number
+  personnelCode?: string
+  personnelName?: string
+  deptCode?: string
+  deptName?: string
+  postCode?: string
+  postName?: string
+  skillLevel?: string
+  workCenterCode?: string
+  productionFlag?: number
+  sysUserId?: number
+  sysUsername?: string
+  status?: number
+  syncStatus?: string
+  lastSyncTime?: string
+  failReason?: string
+}
+
 export interface MesRoute {
   id?: number
   productCode?: string
+  erpMaterialId?: number
   productName?: string
   routeCode?: string
   routeName?: string
   versionNo?: string
+  overReceiveRatio?: number
   status?: number
   syncStatus?: string
   lastSyncTime?: string
+  failReason?: string
 }
 
 export interface MesRouteOp {
   seqNo?: number
   processCode?: string
+  erpMaterialId?: number
   processName?: string
   stdHours?: number
   inspectFlag?: number
@@ -70,14 +133,17 @@ export interface MesOpPlan {
   id?: number
   moNo?: string
   productCode?: string
+  erpMaterialId?: number
   productName?: string
   processCode?: string
   processName?: string
   planQty?: number
   reportedQty?: number
   reworkReportedQty?: number
+  overReceiveRatio?: number
   planStart?: string
   planEnd?: string
+  erpStatus?: string
   planStatus?: string
   syncStatus?: string
   lastSyncTime?: string
@@ -89,6 +155,7 @@ export interface MesOpPlan {
 }
 
 export interface MesReport {
+  id?: number
   reportNo?: string
   moNo?: string
   processCode?: string
@@ -98,6 +165,8 @@ export interface MesReport {
   weightKg?: number
   equipmentCode?: string
   equipmentName?: string
+  personnelCode?: string
+  personnelName?: string
   operatorName?: string
   remark?: string
   defectNo?: string
@@ -106,6 +175,11 @@ export interface MesReport {
   syncTime?: string
   erpBillNo?: string
   failReason?: string
+  retryCount?: number
+  nextRetryTime?: string
+  cancelReason?: string
+  clientReportNo?: string
+  clientTime?: string
 }
 
 export interface MesTransfer {
@@ -125,6 +199,8 @@ export interface MesTransfer {
   erpBillNo?: string
   failReason?: string
   retryCount?: number
+  nextRetryTime?: string
+  cancelReason?: string
 }
 
 export interface MesDefect {
@@ -162,6 +238,7 @@ export interface MesReportContext {
   typeHint?: string
   plans?: MesOpPlan[]
   equipment?: MesEquipment[]
+  personnel?: MesPersonnel[]
   reworkProcessCodes?: string[]
   openDefectNos?: string[]
 }
@@ -222,19 +299,73 @@ export function getMesEquipmentDetail(equipmentCode: string) {
   return request.get<any, MesEquipment>(`/mes/master/equipment/${encodeURIComponent(equipmentCode)}`)
 }
 
-export interface MesMaterial {
-  materialCode?: string
-  materialName?: string
-  specification?: string
-  unitCode?: string
-  materialType?: string
-  status?: number
+export function getMesProcessDetail(processCode: string) {
+  return request.get<any, MesProcess>(`/mes/master/processes/${encodeURIComponent(processCode)}`)
+}
+
+export const RESOURCE_TYPE_LABEL: Record<string, string> = {
+  EQUIPMENT: '设备',
+  TEAM: '团队',
+  PERSONNEL: '人员',
+  OTHER: '其他',
+}
+
+export function getMesWorkCenters(params: Record<string, unknown>) {
+  return request.get<any, PageResult<MesWorkCenter>>('/mes/master/work-centers', { params })
+}
+
+export function getMesWorkCenter(workCenterCode: string) {
+  return request.get<any, MesWorkCenter>(`/mes/master/work-centers/${encodeURIComponent(workCenterCode)}`)
+}
+
+export function getMesWorkCenterOptions() {
+  return request.get<any, MesWorkCenter[]>('/mes/master/work-centers/options')
+}
+
+export function refreshMesWorkCenters() {
+  return request.post<any, MesSyncResult>('/mes/master/work-centers/refresh')
+}
+
+export function getMesResources(params: Record<string, unknown>) {
+  return request.get<any, PageResult<MesResource>>('/mes/master/resources', { params })
+}
+
+export function getMesResource(resourceCode: string) {
+  return request.get<any, MesResource>(`/mes/master/resources/${encodeURIComponent(resourceCode)}`)
+}
+
+export function refreshMesResources() {
+  return request.post<any, MesSyncResult>('/mes/master/resources/refresh')
+}
+
+export function getMesPersonnels(params: Record<string, unknown>) {
+  return request.get<any, PageResult<MesPersonnel>>('/mes/master/personnel', { params })
+}
+
+export function getMesPersonnel(personnelCode: string) {
+  return request.get<any, MesPersonnel>(`/mes/master/personnel/${encodeURIComponent(personnelCode)}`)
+}
+
+export function getMesPersonnelOptions(params?: Record<string, unknown>) {
+  return request.get<any, MesPersonnel[]>('/mes/master/personnel/options', { params })
+}
+
+export function refreshMesPersonnels() {
+  return request.post<any, MesSyncResult>('/mes/master/personnel/refresh')
+}
+
+export function bindMesPersonnel(personnelCode: string, data: { sysUserId?: number; sysUsername?: string }) {
+  return request.put<any, MesPersonnel>(
+    `/mes/master/personnel/${encodeURIComponent(personnelCode)}/binding`,
+    data,
+  )
 }
 
 export interface MesBomHeader {
   id?: number
   bomCode?: string
   productCode?: string
+  erpMaterialId?: number
   versionNo?: string
   status?: number
 }
@@ -242,17 +373,10 @@ export interface MesBomHeader {
 export interface MesBomDetail {
   lineNo?: number
   materialCode?: string
+  erpMaterialId?: number
   materialName?: string
   unitCode?: string
   qtyPer?: number
-}
-
-export function getMesMaterials(params: Record<string, unknown>) {
-  return request.get<any, PageResult<MesMaterial>>('/mes/master/materials', { params })
-}
-
-export function refreshMesMaterials() {
-  return request.post<any, MesSyncResult>('/mes/master/materials/refresh')
 }
 
 export function getMesBoms(params: Record<string, unknown>) {

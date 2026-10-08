@@ -6,6 +6,7 @@ import {
   submitMesReport,
   type MesEquipment,
   type MesOpPlan,
+  type MesPersonnel,
   type MesReportContext,
 } from '@/api/mes'
 
@@ -19,12 +20,14 @@ const form = reactive({
   qty: 1,
   weightKg: undefined as number | undefined,
   equipmentCode: '',
+  personnelCode: '',
   defectNo: '',
   remark: '',
 })
 
 const plans = ref<MesOpPlan[]>([])
 const equipment = ref<MesEquipment[]>([])
+const personnel = ref<MesPersonnel[]>([])
 
 async function loadContext() {
   if (!form.moNo.trim()) {
@@ -36,6 +39,7 @@ async function loadContext() {
     context.value = await getMesReportContext(form.moNo.trim())
     plans.value = context.value.plans || []
     equipment.value = context.value.equipment || []
+    personnel.value = context.value.personnel || []
     const types = context.value.allowedReportTypes || ['NORMAL']
     if (!types.includes(form.reportType)) {
       form.reportType = types[0]
@@ -138,6 +142,16 @@ async function handleSubmit() {
             :key="eq.equipmentCode"
             :label="`${eq.equipmentName} (${eq.equipmentCode})`"
             :value="eq.equipmentCode"
+          />
+        </WmsSelect>
+      </el-form-item>
+      <el-form-item label="生产人员">
+        <WmsSelect v-model="form.personnelCode" filterable clearable placeholder="选择生产人员（可空）">
+          <el-option
+            v-for="p in personnel"
+            :key="p.personnelCode"
+            :label="`${p.personnelName} (${p.personnelCode})`"
+            :value="p.personnelCode"
           />
         </WmsSelect>
       </el-form-item>

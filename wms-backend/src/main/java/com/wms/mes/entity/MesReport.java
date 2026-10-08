@@ -27,6 +27,9 @@ public class MesReport extends BaseEntity {
     private BigDecimal weightKg;
     private String equipmentCode;
     private String equipmentName;
+    /** 生产人员（报工选择，单选） */
+    private String personnelCode;
+    private String personnelName;
     private String operatorId;
     private String operatorName;
     private String remark;

@@ -18,6 +18,7 @@ public class MesRouteOp extends BaseEntity {
     private Long id;
     private Long routeId;
     private String productCode;
+    private Long erpMaterialId;
     private String versionNo;
     private Integer seqNo;
     private String processCode;

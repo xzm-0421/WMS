@@ -43,6 +43,18 @@ public final class MesKingdeeFormIds {
                 ids.add("ENG_Equipment");
                 ids.add("ENG_EQUIPMENT");
             }
+            case "ENG_WORKCENTER" -> {
+                ids.add("ENG_WorkCenter");
+                ids.add("ENG_WORKCENTER");
+            }
+            case "ENG_RESOURCE" -> {
+                ids.add("ENG_Resource");
+                ids.add("ENG_RESOURCE");
+            }
+            case "BD_EMPINFO" -> {
+                ids.add("BD_Empinfo");
+                ids.add("BD_EMPINFO");
+            }
             case "ENG_PROCESS" -> {
                 ids.add("ENG_Process");
                 ids.add("ENG_PROCESS");

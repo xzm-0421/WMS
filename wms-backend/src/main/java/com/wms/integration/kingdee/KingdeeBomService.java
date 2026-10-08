@@ -2,6 +2,8 @@ package com.wms.integration.kingdee;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.wms.base.entity.BaseMaterial;
+import com.wms.base.mapper.BaseMaterialMapper;
 import com.wms.common.constant.ErrorCode;
 import com.wms.common.exception.BusinessException;
 import com.wms.common.result.PageResult;
@@ -37,6 +39,7 @@ public class KingdeeBomService {
     private final KingdeeCloudProperties properties;
     private final BomHeaderMapper bomHeaderMapper;
     private final BomDetailMapper bomDetailMapper;
+    private final BaseMaterialMapper baseMaterialMapper;
 
     public PageResult<BomHeader> pageBom(String bomCode, String productCode, long current, long size) {
         if (kingdeeCloudService.isEnabled()) {
@@ -166,6 +169,7 @@ public class KingdeeBomService {
             bomHeaderMapper.insert(header);
         } else {
             existing.setProductCode(header.getProductCode());
+            existing.setErpMaterialId(header.getErpMaterialId());
             existing.setVersionNo(header.getVersionNo());
             existing.setStatus(header.getStatus() == null ? 1 : header.getStatus());
             bomHeaderMapper.updateById(existing);
@@ -253,6 +257,8 @@ public class KingdeeBomService {
         BomHeader header = new BomHeader();
         header.setBomCode(val(first, idx, "FNumber", "FBillNo"));
         header.setProductCode(val(first, idx, "FMaterialId.FNumber", "FMaterialID.FNumber"));
+        header.setErpMaterialId(resolveErpMaterialId(
+                parseLong(val(first, idx, "FMaterialId", "FMaterialID", "FMaterialId.FID")), header.getProductCode()));
         header.setVersionNo(val(first, idx, "FBOMVERSION", "FBOMID", "FVersion"));
         header.setStatus(1);
 
@@ -274,6 +280,8 @@ public class KingdeeBomService {
             d.setBomCode(bomCode);
             d.setLineNo(parseInt(val(row, idx, "FTreeEntity_FSEQ", "SubHeadEntity.FSeq", "SubHeadEntity_FSeq"), lineNo));
             d.setMaterialCode(childCode);
+            d.setErpMaterialId(resolveErpMaterialId(parseLong(val(row, idx,
+                    "FTreeEntity_FMaterialIdChild", "FTreeEntity_FMaterialIdChild.FID")), childCode));
             d.setMaterialName(val(row, idx,
                     "FTreeEntity_FMaterialIdChild.FName",
                     "SubHeadEntity.FMaterialID2.FName",
@@ -304,6 +312,8 @@ public class KingdeeBomService {
         BomHeader h = new BomHeader();
         h.setBomCode(bomCode);
         h.setProductCode(val(row, idx, "FMaterialId.FNumber", "FMaterialID.FNumber"));
+        h.setErpMaterialId(resolveErpMaterialId(
+                parseLong(val(row, idx, "FMaterialId", "FMaterialID", "FMaterialId.FID")), h.getProductCode()));
         h.setVersionNo(val(row, idx, "FBOMVERSION", "FBOMID", "FVersion"));
         h.setStatus("A".equals(val(row, idx, "FForbidStatus")) ? 1 : 0);
         return h;
@@ -330,6 +340,18 @@ public class KingdeeBomService {
                 .eq(BomDetail::getBomCode, bomCode)
                 .orderByAsc(BomDetail::getLineNo)));
         return vo;
+    }
+
+    /** 金蝶未返回内码时按编码从本地物料表补内码（纯本地，不依赖金蝶）。 */
+    private Long resolveErpMaterialId(Long erpMaterialId, String materialCode) {
+        if (erpMaterialId != null) {
+            return erpMaterialId;
+        }
+        if (!StringUtils.hasText(materialCode)) {
+            return null;
+        }
+        BaseMaterial material = baseMaterialMapper.selectAnyByCode(materialCode.trim());
+        return material == null ? null : material.getErpMaterialId();
     }
 
     private static Map<String, Integer> indexOf(String[] keys) {
@@ -391,6 +413,17 @@ public class KingdeeBomService {
             return Integer.parseInt(s);
         } catch (Exception ex) {
             return fallback;
+        }
+    }
+
+    private static Long parseLong(String s) {
+        if (!StringUtils.hasText(s)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(s.split("\\.")[0].trim());
+        } catch (NumberFormatException ex) {
+            return null;
         }
     }
 

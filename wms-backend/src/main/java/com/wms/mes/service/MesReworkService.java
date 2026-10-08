@@ -42,6 +42,7 @@ public class MesReworkService {
     private final MesErpOutboxMapper outboxMapper;
     private final MesOpPlanService opPlanService;
     private final MesMasterDataService masterDataService;
+    private final MesEventService mesEventService;
 
     public PageResult<MesDefect> page(String moNo, String reworkStatus, long current, long size) {
         LambdaQueryWrapper<MesDefect> wrapper = new LambdaQueryWrapper<>();
@@ -139,6 +140,12 @@ public class MesReworkService {
             reworkOpMapper.insert(op);
         }
         enqueue(defect.getDefectNo(), MesConstants.ACTION_CREATE);
+        java.util.Map<String, Object> eventProps = new java.util.LinkedHashMap<>();
+        eventProps.put("moNo", plan.getMoNo());
+        eventProps.put("sourceProcess", plan.getProcessCode());
+        eventProps.put("defectQty", request.getDefectQty());
+        eventProps.put("reworkProcesses", processCodes);
+        mesEventService.track(MesEventService.REWORK_CREATE, "DEFECT", defect.getDefectNo(), eventProps);
         return sequence(defect.getDefectNo());
     }
 
@@ -210,7 +217,7 @@ public class MesReworkService {
                     .distinct()
                     .toList();
         }
-        List<MesRouteOp> ops = masterDataService.listRouteOps(plan.getProductCode());
+        List<MesRouteOp> ops = masterDataService.listRouteOps(plan.getErpMaterialId(), plan.getProductCode());
         if (ops.isEmpty()) {
             return List.of(plan.getProcessCode());
         }

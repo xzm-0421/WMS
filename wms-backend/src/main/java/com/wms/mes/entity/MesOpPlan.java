@@ -23,6 +23,7 @@ public class MesOpPlan extends BaseEntity {
     private Long erpEntryId;
     private String moNo;
     private String productCode;
+    private Long erpMaterialId;
     private String productName;
     private String processCode;
     private String processName;

@@ -54,7 +54,7 @@ public class MesOpPlanService {
         MesOpPlan plan = getById(id);
         MesOpPlanDetailVo vo = new MesOpPlanDetailVo();
         vo.setPlan(plan);
-        vo.setRouteOps(masterDataService.listRouteOps(plan.getProductCode()));
+        vo.setRouteOps(masterDataService.listRouteOps(plan.getErpMaterialId(), plan.getProductCode()));
         return vo;
     }
 

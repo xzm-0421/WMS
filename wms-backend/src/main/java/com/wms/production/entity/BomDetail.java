@@ -16,6 +16,7 @@ public class BomDetail {
     private String bomCode;
     private Integer lineNo;
     private String materialCode;
+    private Long erpMaterialId;
     private String materialName;
     private String unitCode;
     private BigDecimal qtyPer;

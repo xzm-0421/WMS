@@ -12,6 +12,8 @@ public class MesReportSubmitRequest {
     private BigDecimal qty;
     private BigDecimal weightKg;
     private String equipmentCode;
+    /** 生产人员编码（报工选择，单选，可空） */
+    private String personnelCode;
     private String remark;
     private String defectNo;
     /** 移动端离线幂等键 */

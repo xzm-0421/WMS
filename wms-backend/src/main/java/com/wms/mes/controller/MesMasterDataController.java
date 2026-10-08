@@ -5,11 +5,15 @@ import com.wms.base.service.BaseMaterialService;
 import com.wms.common.result.ApiResult;
 import com.wms.common.result.PageResult;
 import com.wms.integration.kingdee.KingdeeBomService;
+import com.wms.mes.dto.MesPersonnelBindingRequest;
 import com.wms.mes.dto.MesRouteVo;
 import com.wms.mes.dto.MesSyncResult;
 import com.wms.mes.entity.MesEquipment;
+import com.wms.mes.entity.MesPersonnel;
 import com.wms.mes.entity.MesProcess;
+import com.wms.mes.entity.MesResource;
 import com.wms.mes.entity.MesRoute;
+import com.wms.mes.entity.MesWorkCenter;
 import com.wms.mes.service.MesKingdeePullService;
 import com.wms.mes.service.MesMasterDataService;
 import com.wms.production.dto.BomVo;
@@ -20,6 +24,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -168,5 +174,101 @@ public class MesMasterDataController {
     @PostMapping("/routes/refresh")
     public ApiResult<MesSyncResult> refreshRoutes() {
         return ApiResult.ok(pullService.syncRoutes());
+    }
+
+    @Operation(summary = "工作中心列表")
+    @GetMapping("/work-centers")
+    public ApiResult<PageResult<MesWorkCenter>> workCenters(
+            @RequestParam(required = false) String workCenterCode,
+            @RequestParam(required = false) String workCenterName,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResult.ok(masterDataService.pageWorkCenter(workCenterCode, workCenterName, status, current, size));
+    }
+
+    @Operation(summary = "工作中心选项（启用）")
+    @GetMapping("/work-centers/options")
+    public ApiResult<List<MesWorkCenter>> workCenterOptions() {
+        return ApiResult.ok(masterDataService.listActiveWorkCenters());
+    }
+
+    @Operation(summary = "工作中心详情")
+    @GetMapping("/work-centers/{workCenterCode}")
+    public ApiResult<MesWorkCenter> workCenterDetail(@PathVariable String workCenterCode) {
+        return ApiResult.ok(masterDataService.getWorkCenter(workCenterCode));
+    }
+
+    @Operation(summary = "从金蝶同步工作中心")
+    @PostMapping("/work-centers/refresh")
+    public ApiResult<MesSyncResult> refreshWorkCenters() {
+        return ApiResult.ok(pullService.syncWorkCenters());
+    }
+
+    @Operation(summary = "资源列表")
+    @GetMapping("/resources")
+    public ApiResult<PageResult<MesResource>> resources(
+            @RequestParam(required = false) String resourceCode,
+            @RequestParam(required = false) String resourceName,
+            @RequestParam(required = false) String resourceType,
+            @RequestParam(required = false) String workCenterCode,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResult.ok(masterDataService.pageResource(
+                resourceCode, resourceName, resourceType, workCenterCode, status, current, size));
+    }
+
+    @Operation(summary = "资源详情")
+    @GetMapping("/resources/{resourceCode}")
+    public ApiResult<MesResource> resourceDetail(@PathVariable String resourceCode) {
+        return ApiResult.ok(masterDataService.getResource(resourceCode));
+    }
+
+    @Operation(summary = "从金蝶同步资源")
+    @PostMapping("/resources/refresh")
+    public ApiResult<MesSyncResult> refreshResources() {
+        return ApiResult.ok(pullService.syncResources());
+    }
+
+    @Operation(summary = "人员列表")
+    @GetMapping("/personnel")
+    public ApiResult<PageResult<MesPersonnel>> personnel(
+            @RequestParam(required = false) String personnelCode,
+            @RequestParam(required = false) String personnelName,
+            @RequestParam(required = false) String deptCode,
+            @RequestParam(required = false) String workCenterCode,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResult.ok(masterDataService.pagePersonnel(
+                personnelCode, personnelName, deptCode, workCenterCode, status, current, size));
+    }
+
+    @Operation(summary = "人员详情")
+    @GetMapping("/personnel/{personnelCode}")
+    public ApiResult<MesPersonnel> personnelDetail(@PathVariable String personnelCode) {
+        return ApiResult.ok(masterDataService.getPersonnel(personnelCode));
+    }
+
+    @Operation(summary = "生产人员选项")
+    @GetMapping("/personnel/options")
+    public ApiResult<List<MesPersonnel>> personnelOptions(
+            @RequestParam(required = false) String workCenterCode) {
+        return ApiResult.ok(masterDataService.listActivePersonnel(workCenterCode));
+    }
+
+    @Operation(summary = "从金蝶同步人员")
+    @PostMapping("/personnel/refresh")
+    public ApiResult<MesSyncResult> refreshPersonnel() {
+        return ApiResult.ok(pullService.syncPersonnel());
+    }
+
+    @Operation(summary = "绑定系统用户（本地字段）")
+    @PutMapping("/personnel/{personnelCode}/binding")
+    public ApiResult<MesPersonnel> bindPersonnel(@PathVariable String personnelCode,
+                                                 @RequestBody MesPersonnelBindingRequest request) {
+        return ApiResult.ok(masterDataService.bindPersonnelUser(
+                personnelCode, request.getSysUserId(), request.getSysUsername()));
     }
 }
